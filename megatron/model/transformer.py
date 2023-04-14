@@ -11,7 +11,7 @@ from megatron import get_timers, get_args, core, get_num_microbatches
 from .module import MegatronModule
 from megatron.core import mpu, tensor_parallel
 from megatron.core.enums import ModelType
-from megatron.model import LayerNorm
+from megatron.model import LayerNorm, RMSNorm
 from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
@@ -714,7 +714,8 @@ class ParallelTransformerLayer(MegatronModule):
     def __init__(self, init_method, output_layer_init_method,
                  layer_number, layer_type=LayerType.encoder,
                  self_attn_mask_type=AttnMaskType.padding,
-                 drop_path_rate=0.):
+                 drop_path_rate=0.,
+                 norm_type='layernorm'):
         args = get_args()
 
         super(ParallelTransformerLayer, self).__init__()
@@ -727,13 +728,18 @@ class ParallelTransformerLayer(MegatronModule):
         self.bf16 = args.bf16
         self.fp32_residual_connection = args.fp32_residual_connection
 
+        self.norm_type = norm_type
+
         # Layernorm on the input data.
-        self.input_layernorm = LayerNorm(
-            args.hidden_size,
-            eps=args.layernorm_epsilon,
-            no_persist_layer_norm=args.no_persist_layer_norm,
-            sequence_parallel=args.sequence_parallel,
-            apply_layernorm_1p=args.apply_layernorm_1p)
+        if self.norm_type == 'layernorm':
+            self.input_layernorm = LayerNorm(
+                args.hidden_size,
+                eps=args.layernorm_epsilon,
+                no_persist_layer_norm=args.no_persist_layer_norm,
+                sequence_parallel=args.sequence_parallel,
+                apply_layernorm_1p=args.apply_layernorm_1p)
+        elif self.norm_type == 'rmsnorm':
+            self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
 
         # Self attention.
         self.self_attention = ParallelAttention(
@@ -747,12 +753,15 @@ class ParallelTransformerLayer(MegatronModule):
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else None
 
         # Layernorm on the attention output
-        self.post_attention_layernorm = LayerNorm(
-            args.hidden_size,
-            eps=args.layernorm_epsilon,
-            no_persist_layer_norm=args.no_persist_layer_norm,
-            sequence_parallel=args.sequence_parallel,
-            apply_layernorm_1p=args.apply_layernorm_1p)
+        if self.norm_type == 'layernorm':
+            self.post_attention_layernorm = LayerNorm(
+                args.hidden_size,
+                eps=args.layernorm_epsilon,
+                no_persist_layer_norm=args.no_persist_layer_norm,
+                sequence_parallel=args.sequence_parallel,
+                apply_layernorm_1p=args.apply_layernorm_1p)
+        elif self.norm_type == 'rmsnorm':
+            self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
 
         if self.layer_type == LayerType.decoder:
             self.inter_attention = ParallelAttention(
@@ -761,12 +770,15 @@ class ParallelTransformerLayer(MegatronModule):
                 layer_number,
                 attention_type=AttnType.cross_attn)
             # Layernorm on the attention output.
-            self.post_inter_attention_layernorm = LayerNorm(
-                args.hidden_size,
-                eps=args.layernorm_epsilon,
-                no_persist_layer_norm=args.no_persist_layer_norm,
-                sequence_parallel=args.sequence_parallel,
-                apply_layernorm_1p=args.apply_layernorm_1p)
+            if self.norm_type == 'layernorm':
+                self.post_inter_attention_layernorm = LayerNorm(
+                    args.hidden_size,
+                    eps=args.layernorm_epsilon,
+                    no_persist_layer_norm=args.no_persist_layer_norm,
+                    sequence_parallel=args.sequence_parallel,
+                    apply_layernorm_1p=args.apply_layernorm_1p)
+            elif self.norm_type == 'rmsnorm':
+                self.post_inter_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
 
         # MLP
         if args.num_experts is not None:
@@ -982,7 +994,8 @@ class ParallelTransformer(MegatronModule):
                  self_attn_mask_type=AttnMaskType.padding,
                  post_layer_norm=True,
                  pre_process=True, post_process=True,
-                 drop_path_rate=0.0):
+                 drop_path_rate=0.0,
+                 norm_type='layernorm'):
         super(ParallelTransformer, self).__init__()
         args = get_args()
 
@@ -1005,6 +1018,8 @@ class ParallelTransformer(MegatronModule):
             args.distribute_saved_activations and not args.sequence_parallel
 
         self.sequence_parallel = args.sequence_parallel
+
+        self.norm_type = norm_type
 
         # Transformer Engine Init.
         if self.transformer_impl == 'transformer_engine':
@@ -1048,7 +1063,8 @@ class ParallelTransformer(MegatronModule):
                     layer_number,
                     layer_type=layer_type,
                     self_attn_mask_type=self_attn_mask_type,
-                    drop_path_rate=self.drop_path_rates[layer_number - 1])
+                    drop_path_rate=self.drop_path_rates[layer_number - 1],
+                    norm_type=self.norm_type)
             else:
                 return transformer_engine.pytorch.TransformerLayer(
                     args.hidden_size,
@@ -1126,13 +1142,17 @@ class ParallelTransformer(MegatronModule):
                 [build_layer(i + 1 + offset) for i in range(self.num_layers)])
 
         if self.post_process and self.post_layer_norm:
-            # Final layer norm before output.
-            self.final_layernorm = LayerNorm(
-                args.hidden_size,
-                eps=args.layernorm_epsilon,
-                no_persist_layer_norm=args.no_persist_layer_norm,
-                sequence_parallel=args.sequence_parallel,
-                apply_layernorm_1p=args.apply_layernorm_1p)
+            if self.norm_type == 'layernorm':
+                # Final layer norm before output.
+                self.final_layernorm = LayerNorm(
+                    args.hidden_size,
+                    eps=args.layernorm_epsilon,
+                    no_persist_layer_norm=args.no_persist_layer_norm,
+                    sequence_parallel=args.sequence_parallel,
+                    apply_layernorm_1p=args.apply_layernorm_1p)
+            elif self.norm_type == 'rmsnorm':
+                self.final_layernorm = RMSNorm(args.hidden_size, eps=args.layernorm_epsilon)
+
 
     def _get_layer(self, layer_number):
         return self.layers[layer_number]

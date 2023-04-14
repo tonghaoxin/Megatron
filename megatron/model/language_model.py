@@ -53,7 +53,8 @@ def get_language_model(num_tokentypes, add_pooler,
                        scaled_init_method=None, add_encoder=True,
                        add_decoder=False,
                        decoder_attn_mask_type=AttnMaskType.causal,
-                       pre_process=True, post_process=True):
+                       pre_process=True, post_process=True,
+                       norm_type='layernorm'):
     """Build language model and return along with the key to save."""
     args = get_args()
 
@@ -75,7 +76,8 @@ def get_language_model(num_tokentypes, add_pooler,
         decoder_attn_mask_type=decoder_attn_mask_type,
         add_pooler=add_pooler,
         pre_process=pre_process,
-        post_process=post_process
+        post_process=post_process,
+        norm_type=norm_type
     )
     # key used for checkpoints.
     language_model_key = 'language_model'
@@ -182,7 +184,7 @@ class Embedding(MegatronModule):
         else:
             self.tokentype_embeddings = None
 
-        self.fp32_residual_connection = args.fp32_residual_connection 
+        self.fp32_residual_connection = args.fp32_residual_connection
         self.sequence_parallel = args.sequence_parallel
         # Embeddings dropout
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
@@ -335,7 +337,8 @@ class TransformerLanguageModel(MegatronModule):
                  decoder_attn_mask_type=AttnMaskType.causal,
                  add_pooler=False,
                  pre_process=True,
-                 post_process=True):
+                 post_process=True,
+                 norm_type='layernorm'):
         args = get_args()
         # TODO: passing share_word_embeddings=False will not work correctly for T5 and embeddings will not be synced. Fix later for T5.
         if args.untie_embeddings_and_output_weights: assert not add_decoder
@@ -353,6 +356,7 @@ class TransformerLanguageModel(MegatronModule):
         self.add_pooler = add_pooler
         self.encoder_hidden_state = None
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
+        self.norm_type = norm_type
 
         # Embeddings.
         if self.pre_process:
@@ -412,6 +416,7 @@ class TransformerLanguageModel(MegatronModule):
                     self_attn_mask_type=self.encoder_attn_mask_type,
                     pre_process=self.pre_process,
                     post_process=self.post_process,
+                    norm_type=self.norm_type
                 )
             self._encoder_key = 'encoder'
         else:
@@ -426,7 +431,8 @@ class TransformerLanguageModel(MegatronModule):
                 layer_type=LayerType.decoder,
                 self_attn_mask_type=self.decoder_attn_mask_type,
                 pre_process=self.pre_process,
-                post_process=self.post_process)
+                post_process=self.post_process,
+                norm_type=self.norm_type)
             self._decoder_key = 'decoder'
         else:
             self.decoder = None

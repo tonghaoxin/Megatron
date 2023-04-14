@@ -49,7 +49,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     # Args from environment
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
-        
+
     return args
 
 def validate_args(args, defaults={}):
@@ -541,6 +541,8 @@ def _add_network_size_args(parser):
                        action='store_true',
                        help='If set, use original BERT residula connection '
                        'ordering.')
+    group.add_argument('--rmsnorm-epsilon', type=float, default=1e-6,
+                       help='RMS norm epsilon.')
     group.add_argument('--openai-gelu', action='store_true',
                        help='Use OpenAIs GeLU implementation. This option'
                        'should not be used unless for backward compatibility'
@@ -1190,14 +1192,14 @@ def _add_vision_args(parser):
     group.add_argument('--swin-backbone-type', type=str, default='tiny',
                        choices=['tiny', 'base', 'h3'],
                        help='pretraining objectives')
-    
+
     # inpainting arguments
     group.add_argument('--mask-type', type=str, default='random',
                        choices=['random', 'row'],
                        help='mask types')
     group.add_argument('--mask-factor', type=float, default=1.0,
                        help='mask size scaling parameter')
- 
+
     # dino arguments
     group.add_argument('--iter-per-epoch', type=int, default=1250,
                        help='iterations per epoch')
