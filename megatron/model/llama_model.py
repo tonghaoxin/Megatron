@@ -8,7 +8,7 @@ from megatron import get_args
 from megatron.core import tensor_parallel
 from .module import MegatronModule
 
-from .enums import AttnMaskType, LayerType
+from .enums import AttnMaskType
 from .language_model import parallel_lm_logits
 from .language_model import get_language_model
 from .utils import init_method_normal
@@ -74,8 +74,11 @@ class LLaMAModel(MegatronModule):
         super(LLaMAModel, self).__init__(share_word_embeddings=not args.untie_embeddings_and_output_weights)
 
         # Rotary Embedding and SwiGLU are required for LLaMA model
-        args.use_rotary_position_embeddings = True
-        args.swiglu = True
+        if not args.use_rotary_position_embeddings:
+            raise RuntimeError("Rotary embedding is required for LLaMA model")
+        if not args.swiglu:
+            raise RuntimeError("SwiGLU is required for LLaMA model")
+
 
         self.parallel_output = parallel_output
         self.pre_process = pre_process
@@ -129,12 +132,12 @@ class LLaMAModel(MegatronModule):
             ret_attn_mask=ret_attn_mask,
             inference_params=inference_params)
 
-        if self.untie_embeddings_and_output_weights:
-            weight = self.language_model.output_layer.weight
-        else:
-            weight = self.word_embeddings_weight()
-
         if self.post_process:
+            if self.untie_embeddings_and_output_weights:
+                weight = self.language_model.output_layer.weight
+            else:
+                weight = self.word_embeddings_weight()
+
             return post_language_model_processing(
                 lm_output, labels,
                 weight,

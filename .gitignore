@@ -4,3 +4,6 @@ build
 .coverage_*
 *.egg-info
 *~
+data
+download
+checkpoints
