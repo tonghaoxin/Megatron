@@ -28,6 +28,11 @@ try:
 except ImportError:
     flash_attn_unpadded_func = None
 
+try:
+    from apex.normalization import FusedRMSNorm
+except ImportError:
+    FusedRMSNorm = None
+
 """ We use the following notation throughout this file:
      h: hidden size
      n: number of attention heads
@@ -739,7 +744,10 @@ class ParallelTransformerLayer(MegatronModule):
                 sequence_parallel=args.sequence_parallel,
                 apply_layernorm_1p=args.apply_layernorm_1p)
         elif self.norm_type == 'rmsnorm':
-            self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+            if args.fused_rmsnorm and FusedRMSNorm is not None:
+                self.input_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+            else:
+                self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
 
         # Self attention.
         self.self_attention = ParallelAttention(
@@ -761,7 +769,10 @@ class ParallelTransformerLayer(MegatronModule):
                 sequence_parallel=args.sequence_parallel,
                 apply_layernorm_1p=args.apply_layernorm_1p)
         elif self.norm_type == 'rmsnorm':
-            self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+            if args.fused_rmsnorm and FusedRMSNorm is not None:
+                self.post_attention_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+            else:
+                self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
 
         if self.layer_type == LayerType.decoder:
             self.inter_attention = ParallelAttention(
@@ -778,7 +789,10 @@ class ParallelTransformerLayer(MegatronModule):
                     sequence_parallel=args.sequence_parallel,
                     apply_layernorm_1p=args.apply_layernorm_1p)
             elif self.norm_type == 'rmsnorm':
-                self.post_inter_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                if args.fused_rmsnorm and FusedRMSNorm is not None:
+                    self.post_inter_attention_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                else:
+                    self.post_inter_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
 
         # MLP
         if args.num_experts is not None:
@@ -1151,7 +1165,10 @@ class ParallelTransformer(MegatronModule):
                     sequence_parallel=args.sequence_parallel,
                     apply_layernorm_1p=args.apply_layernorm_1p)
             elif self.norm_type == 'rmsnorm':
-                self.final_layernorm = RMSNorm(args.hidden_size, eps=args.layernorm_epsilon)
+                if args.fused_rmsnorm and FusedRMSNorm is not None:
+                    self.final_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                else:
+                    self.final_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
 
 
     def _get_layer(self, layer_number):

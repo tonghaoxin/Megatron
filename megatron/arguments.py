@@ -541,6 +541,8 @@ def _add_network_size_args(parser):
                        action='store_true',
                        help='If set, use original BERT residula connection '
                        'ordering.')
+    group.add_argument('--fused-rmsnorm', action='store_true',
+                       help='Use fused rmsnorm instead of default rmsnorm')
     group.add_argument('--rmsnorm-epsilon', type=float, default=1e-6,
                        help='RMS norm epsilon.')
     group.add_argument('--openai-gelu', action='store_true',
