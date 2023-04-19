@@ -401,6 +401,10 @@ class FlashSelfAttention(torch.nn.Module):
         output = rearrange(output, '(b s) ... -> b s ...', b=batch_size)
         return output
 
+    def extra_repr(self):
+        return 'causal={}, softmax_scale={}, attention_dropout={}'.format(
+                self.causal, self.softmax_scale, self.dropout_p)
+
 
 class ParallelAttention(MegatronModule):
     """Parallel self-attention layer abstract class.

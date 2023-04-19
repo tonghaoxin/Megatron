@@ -788,6 +788,8 @@ def _add_training_args(parser):
                        help='Disable fusing gradient accumulation to weight '
                        'gradient computation of linear layers',
                        dest='gradient_accumulation_fusion')
+    group.add_argument('--dump-model', action='store_true',
+                       help='Dump model to ./model.txt.')
     return parser
 
 

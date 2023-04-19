@@ -29,6 +29,14 @@ class RotaryEmbedding(nn.Module):
         from einops import rearrange
         return rearrange(emb, 'n d -> n 1 1 d')
 
+    def extra_repr(self):
+        """
+        extra_repr
+        Args:
+        Return: str
+        """
+        return 'inv_freq shape={}'.format(self.inv_freq.size())
+
 
 def _rotate_half(x):
     """

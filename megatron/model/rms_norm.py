@@ -34,3 +34,11 @@ class RMSNorm(torch.nn.Module):
         """
         output = self._norm(x.float()).type_as(x)
         return output * self.weight
+
+    def extra_repr(self):
+        """
+        extra_repr
+        Args:
+        Return: str
+        """
+        return 'weight shape={}, eps={}'.format(self.weight.size(), self.eps)

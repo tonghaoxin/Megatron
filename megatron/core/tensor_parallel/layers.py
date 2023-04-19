@@ -273,9 +273,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         if ctx.sequence_parallel:
             handle.wait()
 
-        # Doing gather + slicing during the NeMo forward pass can make this tensor 
-        # not be contiguous. PyTorch only checks if the tensor is contiguous, and only 
-        # clones it if it's not contiguous: 
+        # Doing gather + slicing during the NeMo forward pass can make this tensor
+        # not be contiguous. PyTorch only checks if the tensor is contiguous, and only
+        # clones it if it's not contiguous:
         # https://github.com/pytorch/pytorch/blob/c47cf9bc7f9e02f649ab4ed53fe4d35732c92ab6/torch/_refs/__init__.py#L2761
         grad_output = grad_output.contiguous()
         # Convert the tensor shapes to 2D for execution compatibility
@@ -574,6 +574,15 @@ class ColumnParallelLinear(torch.nn.Module):
         return output, output_bias
 
 
+    def extra_repr(self):
+        """
+        extra_repr
+        Args:
+        Return: str
+        """
+        return 'input_size={}, output_size={}'.format(self.input_size, self.output_size)
+
+
 class RowParallelLinear(torch.nn.Module):
     """Linear layer with row parallelism.
 
@@ -675,7 +684,6 @@ class RowParallelLinear(torch.nn.Module):
             self.register_parameter('bias', None)
 
 
-
     def forward(self, input_):
         """Forward of RowParallelLinear
 
@@ -714,3 +722,12 @@ class RowParallelLinear(torch.nn.Module):
             output = output_
             output_bias = self.bias
         return output, output_bias
+
+
+    def extra_repr(self):
+        """
+        extra_repr
+        Args:
+        Return: str
+        """
+        return 'input_size={}, output_size={}'.format(self.input_size, self.output_size)

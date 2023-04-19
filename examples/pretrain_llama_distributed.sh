@@ -26,7 +26,7 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --master_addr $MASTER_ADDR
                   --master_port $MASTER_PORT"
 
-LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
+LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
                --pipeline-model-parallel-size 2 \
                --num-layers 32 \
                --hidden-size 4096 \
@@ -48,11 +48,13 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --fp16
                --tokenizer-type SentencePieceTokenizer \
                --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
+               --dump-model \
                --swiglu \
                --use-rotary-position-embeddings \
                --rmsnorm-epsilon 1e-6 \
                --no-position-embedding \
                --disable-bias-linear \
+               --ffn-hidden-size 11008 \
                --use-flash-attn"
                # --sequence-parallel
                # --vocab-file $VOCAB_FILE \

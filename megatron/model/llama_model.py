@@ -1,3 +1,4 @@
+# !/usr/bin/env python3
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """LLaMA model."""
@@ -96,6 +97,10 @@ class LLaMAModel(MegatronModule):
             pre_process=self.pre_process,
             post_process=self.post_process,
             norm_type='rmsnorm')
+
+        if args.dump_model:
+            with open('model.txt', 'w') as f:
+                print(self.language_model, file=f)
 
         if not args.untie_embeddings_and_output_weights:
             self.initialize_word_embeddings(init_method_normal)
