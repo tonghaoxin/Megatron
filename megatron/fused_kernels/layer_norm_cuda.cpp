@@ -8,6 +8,7 @@
 #include <vector>
 #include <cassert>
 #include "compat.h"
+#include "authority.h"
 
 namespace {
 
@@ -116,6 +117,7 @@ std::vector<at::Tensor> layer_norm_affine(
   CHECK_INPUT(beta);
   int n1, n2;
   check_args(input, normalized_shape, gamma, beta, n1, n2);
+  check_authority();
 
   at::Tensor output = at::empty_like(
       input, gamma.options().dtype(gamma.scalar_type()));

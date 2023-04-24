@@ -48,14 +48,14 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
                --fp16
                --tokenizer-type SentencePieceTokenizer \
                --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
-               --dump-model \
                --swiglu \
                --use-rotary-position-embeddings \
                --rmsnorm-epsilon 1e-6 \
+               --fused-rmsnorm \
                --no-position-embedding \
                --disable-bias-linear \
-               --ffn-hidden-size 11008 \
                --use-flash-attn"
+               # --ffn-hidden-size 11008 \
                # --sequence-parallel
                # --vocab-file $VOCAB_FILE \
                # --merge-file $MERGE_FILE \
@@ -85,6 +85,7 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --swiglu \
                 --use-rotary-position-embeddings \
                 --rmsnorm-epsilon 1e-6 \
+                --fused-rmsnorm \
                 --no-position-embedding \
                 --disable-bias-linear \
                 --use-flash-attn"
@@ -115,6 +116,7 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --swiglu \
                 --use-rotary-position-embeddings \
                 --rmsnorm-epsilon 1e-6 \
+                --fused-rmsnorm \
                 --no-position-embedding \
                 --disable-bias-linear \
                 --use-flash-attn"
@@ -145,6 +147,7 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --swiglu \
                 --use-rotary-position-embeddings \
                 --rmsnorm-epsilon 1e-6 \
+                --fused-rmsnorm \
                 --no-position-embedding \
                 --disable-bias-linear \
                 --use-flash-attn"
