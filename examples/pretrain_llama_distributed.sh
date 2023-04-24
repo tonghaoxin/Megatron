@@ -30,6 +30,7 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
                --pipeline-model-parallel-size 2 \
                --num-layers 32 \
                --hidden-size 4096 \
+               --ffn-hidden-size 11008 \
                --num-attention-heads 32 \
                --micro-batch-size 1 \
                --global-batch-size 512 \
@@ -46,7 +47,7 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
                --recompute-method uniform \
                --no-async-tensor-model-parallel-allreduce \
                --fp16
-               --tokenizer-type SentencePieceTokenizer \
+               --tokenizer-type LLaMASentencePieceTokenizer \
                --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                --swiglu \
                --use-rotary-position-embeddings \
@@ -54,8 +55,9 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
                --fused-rmsnorm \
                --no-position-embedding \
                --disable-bias-linear \
+               --attention-dropout 0 \
+               --hidden-dropout 0 \
                --use-flash-attn"
-               # --ffn-hidden-size 11008 \
                # --sequence-parallel
                # --vocab-file $VOCAB_FILE \
                # --merge-file $MERGE_FILE \
@@ -64,6 +66,7 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --pipeline-model-parallel-size 4 \
                 --num-layers 40 \
                 --hidden-size 5120 \
+                --ffn-hidden-size 13824 \
                 --num-attention-heads 40 \
                 --micro-batch-size 1 \
                 --global-batch-size 512 \
@@ -80,7 +83,7 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --recompute-method uniform \
                 --no-async-tensor-model-parallel-allreduce \
                 --fp16
-                --tokenizer-type SentencePieceTokenizer \
+                --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                 --swiglu \
                 --use-rotary-position-embeddings \
@@ -88,6 +91,8 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --fused-rmsnorm \
                 --no-position-embedding \
                 --disable-bias-linear \
+                --attention-dropout 0 \
+                --hidden-dropout 0 \
                 --use-flash-attn"
                 # --sequence-parallel
 
@@ -95,6 +100,7 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --pipeline-model-parallel-size 4 \
                 --num-layers 60 \
                 --hidden-size 6656 \
+                --ffn-hidden-size 17920 \
                 --num-attention-heads 52 \
                 --micro-batch-size 1 \
                 --global-batch-size 4096 \
@@ -111,7 +117,7 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --recompute-method uniform \
                 --no-async-tensor-model-parallel-allreduce \
                 --fp16
-                --tokenizer-type SentencePieceTokenizer \
+                --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                 --swiglu \
                 --use-rotary-position-embeddings \
@@ -119,6 +125,8 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --fused-rmsnorm \
                 --no-position-embedding \
                 --disable-bias-linear \
+                --attention-dropout 0 \
+                --hidden-dropout 0 \
                 --use-flash-attn"
                 # --sequence-parallel
 
@@ -126,6 +134,7 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --pipeline-model-parallel-size 8 \
                 --num-layers 80 \
                 --hidden-size 8192 \
+                --ffn-hidden-size 22016 \
                 --num-attention-heads 64 \
                 --micro-batch-size 1 \
                 --global-batch-size 512 \
@@ -142,7 +151,7 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --recompute-method uniform \
                 --no-async-tensor-model-parallel-allreduce \
                 --fp16
-                --tokenizer-type SentencePieceTokenizer \
+                --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                 --swiglu \
                 --use-rotary-position-embeddings \
@@ -150,6 +159,8 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --fused-rmsnorm \
                 --no-position-embedding \
                 --disable-bias-linear \
+                --attention-dropout 0 \
+                --hidden-dropout 0 \
                 --use-flash-attn"
                 # --sequence-parallel
                 # --bf16

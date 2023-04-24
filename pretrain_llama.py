@@ -1,6 +1,6 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
-"""Pretrain GPT"""
+"""Pretrain LLaMA"""
 
 import torch
 from functools import partial
@@ -117,5 +117,5 @@ if __name__ == "__main__":
     pretrain(train_valid_test_datasets_provider, model_provider,
              ModelType.encoder_or_decoder,
              forward_step,
-             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'}
+             args_defaults={'tokenizer_type': 'LLaMASentencePieceTokenizer'}
     )

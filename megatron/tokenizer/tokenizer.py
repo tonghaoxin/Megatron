@@ -15,7 +15,7 @@ def build_tokenizer(args):
         print('> building {} tokenizer ...'.format(args.tokenizer_type),
               flush=True)
 
-    if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer']:
+    if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer', 'LLaMASentencePieceTokenizer']:
         assert args.vocab_file is not None
 
     # Select and instantiate the tokenizer.
@@ -36,6 +36,8 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'GPTSentencePieceTokenizer':
         assert args.tokenizer_model is not None
         tokenizer = _GPTSentencePieceTokenizer(args.tokenizer_model)
+    elif args.tokenizer_type == 'LLaMASentencePieceTokenizer':
+        tokenizer = _LLaMASentencePieceTokenizer(args.tokenizer_model)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -476,6 +478,54 @@ class _GPTSentencePieceTokenizer(_SentencePieceTokenizer):
 
     def tokenize(self, text):
         return self.tokenizer.encode_as_ids(text)
+
+    def detokenize(self, ids):
+        return self.tokenizer.decode_ids(ids)
+
+    @property
+    def cls(self):
+        return -1
+
+    @property
+    def sep(self):
+        return -1
+
+    @property
+    def mask(self):
+        return -1
+
+    @property
+    def eod(self):
+        return self._eos_id
+
+    @property
+    def additional_special_tokens_ids(self):
+        return None
+
+
+class _LLaMASentencePieceTokenizer(_SentencePieceTokenizer):
+    """SentencePieceTokenizer-Megatron wrapper"""
+
+    def __init__(self, model_file, add_bos_token=True, add_eos_token=False):
+        super().__init__(model_file, vocab_extra_ids=0)
+        self.add_bos_token = add_bos_token
+        self.add_eos_token = add_eos_token
+
+    def _initalize(self, vocab_extra_ids):
+        self._populate_vocab()
+
+        self._pad_id = self.tokenizer.pad_id()
+        self._bos_id = self.tokenizer.bos_id()
+        self._eos_id = self.tokenizer.eos_id()
+
+    def tokenize(self, text):
+        token_ids = self.tokenizer.encode_as_ids(text)
+
+        bos_token_id = [self.bos_token_id] if self.add_bos_token else []
+        eos_token_id = [self.eos_token_id] if self.add_eos_token else []
+
+        output = bos_token_id + token_ids + eos_token_id
+        return output
 
     def detokenize(self, ids):
         return self.tokenizer.decode_ids(ids)
