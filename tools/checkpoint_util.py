@@ -109,7 +109,7 @@ def main():
                                      allow_abbrev=False, conflict_handler='resolve')
 
     parser.add_argument('--model-type', type=str, required=True,
-                        choices=['GPT', 'BERT'],
+                        choices=['GPT', 'BERT', "LLAMA-65B", "LLAMA-7B"],
                         help='Type of the model')
     parser.add_argument('--loader', type=str, default='megatron',
                         help='Module name to load checkpoint, should be on python path')
@@ -133,6 +133,31 @@ def main():
     saver.add_arguments(parser)
 
     args = parser.parse_args()
+
+    # TODO: 判断前后并行策略是否相同
+    if args.target_pipeline_parallel_size is None and args.target_tensor_parallel_size is None:
+        print("--target-pipeline-parallel-size and --target-tensor-parallel-size not provided, "
+              "default to --source-pipeline-parallel-size and --source-tensor-parallel-size, "
+              "No need to convert. Exiting.")
+        exit(0)
+    elif args.target_pipeline_parallel_size is None and \
+        args.target_tensor_parallel_size == args.source_tensor_parallel_size:
+        print("--target-pipeline-parallel-size not provided, default to --source-pipeline-parallel-size."
+              "and --target-tensor-parallel-size equal to --source-tensor-parallel-size, "
+              "No need to convert. Exiting.")
+        exit(0)
+    elif args.target_tensor_parallel_size is None and \
+        args.target_pipeline_parallel_size == args.source_pipeline_parallel_size:
+        print("--target-tensor-parallel-size not provided, default to --source-tensor-parallel-size."
+              "and --target-pipeline-parallel-size equal to --source-pipeline-parallel-size, "
+              "No need to convert. Exiting.")
+        exit(0)
+    elif args.target_pipeline_parallel_size == args.source_pipeline_parallel_size and \
+        args.target_tensor_parallel_size == args.source_tensor_parallel_size:
+        print("--target-pipeline-parallel-size equal to --source-pipeline-parallel-size, "
+              "and --target-tensor-parallel-size equal to --source-tensor-parallel-size. "
+              "No need to convert. Exiting.")
+        exit(0)
 
     queue = mp.Queue(maxsize=args.max_queue_size)
 

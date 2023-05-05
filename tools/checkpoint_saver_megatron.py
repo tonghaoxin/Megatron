@@ -99,6 +99,7 @@ def save_checkpoint(queue, args):
                 '--tokenizer-type', str(md.tokenizer_type),
                 '--tensor-model-parallel-size', str(args.target_tensor_parallel_size),
                 '--pipeline-model-parallel-size', str(args.target_pipeline_parallel_size),
+                '--ffn-hidden-size', str(md.ffn_hidden_size),
                 '--no-masked-softmax-fusion',
                 '--no-bias-gelu-fusion',
                 '--no-bias-dropout-fusion',
@@ -112,7 +113,17 @@ def save_checkpoint(queue, args):
                 '--save-interval', '1',
                 '--save', args.save_dir
                 ]
-
+    
+    if md.async_tensor_model_parallel_allreduce == False:
+        sys.argv.append('--no-async-tensor-model-parallel-allreduce')
+    if md.use_rotary_position_embeddings:
+        sys.argv.append('--use-rotary-position-embeddings')
+    if md.swiglu:
+        sys.argv.append('--swiglu')
+    if md.add_position_embedding == False:
+        sys.argv.append('--no-position-embedding')
+    if md.add_bias_linear == False:
+        sys.argv.append('--disable-bias-linear')
     if md.make_vocab_size_divisible_by is not None:
         sys.argv.extend(['--make-vocab-size-divisible-by', str(md.make_vocab_size_divisible_by)])
     if md.params_dtype == torch.float16:
@@ -138,12 +149,20 @@ def save_checkpoint(queue, args):
     else:
         print("consumed_train_samples not provided.")
 
+    if hasattr(md, 'norm_type'):
+        margs.norm_type = md.norm_type
+    else:
+        margs.norm_type = "layernorm"
+
     # Determine how to make our models
     if md.model_type == 'GPT':
         from pretrain_gpt import model_provider
         margs.model_type = ModelType.encoder_or_decoder
     elif md.model_type == 'BERT':
         from pretrain_bert import model_provider
+        margs.model_type = ModelType.encoder_or_decoder
+    elif md.model_type in ['LLAMA-7B', 'LLAMA-65B']:
+        from pretrain_llama import model_provider
         margs.model_type = ModelType.encoder_or_decoder
     else:
         raise Exception(f'unrecognized model type: {args.model_type}')
@@ -155,6 +174,8 @@ def save_checkpoint(queue, args):
     # fake initializing distributed
     mpu.set_tensor_model_parallel_world_size(args.target_tensor_parallel_size)
     mpu.set_pipeline_model_parallel_world_size(args.target_pipeline_parallel_size)
+    
+    # FIXME
     mpu.set_tensor_model_parallel_rank(0)
     mpu.set_pipeline_model_parallel_rank(0)
     fused_kernels.load(margs)
@@ -163,7 +184,9 @@ def save_checkpoint(queue, args):
     #-----------
     embeddings_msg = queue_get("embeddings")
 
-    pos_embed = embeddings_msg.pop("position embeddings")
+    if margs.add_position_embedding:
+        pos_embed = embeddings_msg.pop("position embeddings")
+
     orig_word_embed = embeddings_msg.pop("word embeddings")
     check_message(embeddings_msg)
 
@@ -201,10 +224,13 @@ def save_checkpoint(queue, args):
     mpu.set_pipeline_model_parallel_rank(0)
     post_process = args.target_pipeline_parallel_size == 1
     models = get_models(args.target_tensor_parallel_size, md.params_dtype, True, post_process)
+
     for tp_rank, model in enumerate(models):
         print(f"word embeddings shape {model.language_model.embedding.word_embeddings.weight.shape}")
         model.language_model.embedding.word_embeddings.weight.data.copy_(out_word_embed[tp_rank])
-        model.language_model.embedding.position_embeddings.weight.data.copy_(pos_embed)
+
+        if margs.add_position_embedding: 
+            model.language_model.embedding.position_embeddings.weight.data.copy_(pos_embed)
 
     # Transformer layers
     #-------------------
@@ -221,54 +247,114 @@ def save_checkpoint(queue, args):
 
             # duplicated tensors
             input_layernorm_weight = msg.pop("input layernorm weight")
-            input_layernorm_bias = msg.pop("input layernorm bias")
-            dense_bias = msg.pop("dense bias")
             post_layernorm_weight = msg.pop("post layernorm weight")
-            post_layernorm_bias = msg.pop("post layernorm bias")
-            mlp_l1_bias = msg.pop("mlp l1 bias")
+
+            if margs.norm_type == "layernorm":
+                input_layernorm_bias = msg.pop("input layernorm bias")
+                post_layernorm_bias = msg.pop("post layernorm bias")
+
+            if margs.add_bias_linear:
+                dense_bias = msg.pop("dense bias")
+                mlp_l1_bias = msg.pop("mlp l1 bias")
 
             # Split up the parallel tensors
             qkv_weight = torch.chunk(msg.pop("qkv weight"), args.target_tensor_parallel_size, dim=0)
-            qkv_bias = torch.chunk(msg.pop("qkv bias"), args.target_tensor_parallel_size, dim=0)
             dense_weight = torch.chunk(msg.pop("dense weight"), args.target_tensor_parallel_size, dim=1)
-            mlp_l0_weight = torch.chunk(msg.pop("mlp l0 weight"), args.target_tensor_parallel_size, dim=0)
-            mlp_l0_bias = torch.chunk(msg.pop("mlp l0 bias"), args.target_tensor_parallel_size, dim=0)
+
+            data = msg.pop("mlp l0 weight")
+            orig_shape = data.shape
+            data = data.view(2, args.target_tensor_parallel_size, orig_shape[0] // (2 * args.target_tensor_parallel_size), orig_shape[1])
+            data = data.transpose(0, 1).contiguous()
+            data = data.view(*orig_shape)
+            mlp_l0_weight = torch.chunk(data, args.target_tensor_parallel_size, dim=0)
+
             mlp_l1_weight = torch.chunk(msg.pop("mlp l1 weight"), args.target_tensor_parallel_size, dim=1)
+
+            if margs.add_bias_linear:
+                qkv_bias = torch.chunk(msg.pop("qkv bias"), args.target_tensor_parallel_size, dim=0)
+                mlp_l0_bias = torch.chunk(msg.pop("mlp l0 bias"), args.target_tensor_parallel_size, dim=0)
 
             # Save them to the model
             for tp_rank in range(args.target_tensor_parallel_size):
                 l = models[tp_rank].language_model.encoder.layers[layer]
                 l.input_layernorm.weight.data.copy_(input_layernorm_weight)
-                l.input_layernorm.bias.data.copy_(input_layernorm_bias)
                 l.self_attention.query_key_value.weight.data.copy_(qkv_weight[tp_rank])
-                l.self_attention.query_key_value.bias.data.copy_(qkv_bias[tp_rank])
                 l.self_attention.dense.weight.data.copy_(dense_weight[tp_rank])
-                l.self_attention.dense.bias.data.copy_(dense_bias)
                 l.post_attention_layernorm.weight.data.copy_(post_layernorm_weight)
-                l.post_attention_layernorm.bias.data.copy_(post_layernorm_bias)
                 l.mlp.dense_h_to_4h.weight.data.copy_(mlp_l0_weight[tp_rank])
-                l.mlp.dense_h_to_4h.bias.data.copy_(mlp_l0_bias[tp_rank])
                 l.mlp.dense_4h_to_h.weight.data.copy_(mlp_l1_weight[tp_rank])
-                l.mlp.dense_4h_to_h.bias.data.copy_(mlp_l1_bias)
+
+                if margs.norm_type == "layernorm":
+                    l.input_layernorm.bias.data.copy_(input_layernorm_bias)
+                    l.post_attention_layernorm.bias.data.copy_(post_layernorm_bias)
+
+                if margs.add_bias_linear:
+                    l.self_attention.query_key_value.bias.data.copy_(qkv_bias[tp_rank])
+                    l.self_attention.dense.bias.data.copy_(dense_bias)
+                    l.mlp.dense_h_to_4h.bias.data.copy_(mlp_l0_bias[tp_rank])
+                    l.mlp.dense_4h_to_h.bias.data.copy_(mlp_l1_bias)
+
             total_layer_num = total_layer_num + 1
             check_message(msg)
-
 
         if post_process:
             msg = queue_get("final layernorm")
             final_layernorm_weight = msg.pop("weight")
-            final_layernorm_bias = msg.pop("bias")
+            if margs.norm_type == "layernorm":
+                final_layernorm_bias = msg.pop("bias")
+
             for tp_rank in range(args.target_tensor_parallel_size):
                 models[tp_rank].language_model.encoder.final_layernorm.weight.data.copy_(final_layernorm_weight)
-                models[tp_rank].language_model.encoder.final_layernorm.bias.data.copy_(final_layernorm_bias)
-                if pp_rank != 0:
+                if margs.norm_type == "layernorm":
+                    models[tp_rank].language_model.encoder.final_layernorm.bias.data.copy_(final_layernorm_bias)
+
+                if md.model_type not in ['LLAMA-7B', 'LLAMA-65B'] and pp_rank != 0:
                     # Copy word embeddings to final pipeline rank
                     models[tp_rank].word_embeddings.weight.data.copy_(out_word_embed[tp_rank])
+
             del final_layernorm_weight
-            del final_layernorm_bias
+            if margs.norm_type == "layernorm":
+                del final_layernorm_bias
             check_message(msg)
 
             msg = queue_get()
+            if msg != "done" and msg["name"] == "word embeddings for head":
+                # for LLaMA
+                head_embed_weight = msg.pop("weight")
+
+                # Deal with padding
+                if md.true_vocab_size is not None:
+                    # figure out what our padded vocab size is
+                    orig_vocab_size = head_embed_weight.shape[0]
+                    margs.padded_vocab_size = _vocab_size_with_padding(md.true_vocab_size, margs)
+
+                    # Cut out extra padding we don't need
+                    if orig_vocab_size > margs.padded_vocab_size:
+                        full_head_embed = head_embed_weight[0:margs.padded_vocab_size,:]
+
+                    # Expanding embedding to larger size by replicating final entry
+                    elif orig_vocab_size < margs.padded_vocab_size:
+                        padding_size = margs.padded_vocab_size - orig_vocab_size
+
+                        full_head_embed = torch.cat((
+                            head_embed_weight,
+                            head_embed_weight[-1].unsqueeze(0).expand(padding_size, -1)))
+
+                    # Same size!
+                    else:
+                        full_head_embed = head_embed_weight
+                else:
+                    print("Original vocab size not specified, leaving embedding table as-is. "
+                        "If you've changed the tensor parallel size this could cause problems.")
+                    margs.padded_vocab_size = head_embed_weight.shape[0]
+                    full_head_embed = head_embed_weight
+
+                out_head_embed = torch.chunk(full_head_embed, args.target_tensor_parallel_size, dim=0)
+                for tp_rank in range(args.target_tensor_parallel_size):
+                    models[tp_rank].word_embeddings.weight.data.copy_(out_head_embed[tp_rank])
+
+                msg = queue_get()
+
             if msg != "done" and msg["name"] == "pooler":
                 if not hasattr(models[0].language_model, 'pooler'):
                     print("ERROR: got a pooler, but model does not have one")
@@ -319,5 +405,8 @@ def save_checkpoint(queue, args):
 
         for tp_rank in range(args.target_tensor_parallel_size):
             mpu.set_tensor_model_parallel_rank(tp_rank)
-            save_checkpoint(md.iteration, [models[tp_rank]], None, None)
+            release = False
+            if md.iteration == 0:
+                release = True
+            save_checkpoint(md.iteration, [models[tp_rank]], None, None, release)
     print("Done!")

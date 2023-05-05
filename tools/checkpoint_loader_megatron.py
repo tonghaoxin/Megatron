@@ -15,6 +15,12 @@ def add_arguments(parser):
                        'trim padding from the embedding table.')
     group.add_argument('--megatron-path', type=str, default=None,
                        help='Base directory of deepspeed repository')
+    group.add_argument('--source-tensor-parallel-size', type=int, required=True,
+                       help='Source tensor model parallel size, defaults to the tensor parallel size '
+                       'in the input checkpoint')
+    group.add_argument('--source-pipeline-parallel-size', type=int, required=True,
+                       help='Source tensor model parallel size, default to the pipeline parall size '
+                       'in the input checkpoint')
 
 def _load_checkpoint(queue, args):
 
@@ -33,6 +39,7 @@ def _load_checkpoint(queue, args):
         from megatron.core import mpu
         from megatron.core.enums import ModelType
         from megatron import fused_kernels
+        from megatron.tokenizer.tokenizer import _vocab_size_with_padding
     except ModuleNotFoundError:
         print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
         queue.put("exit")
@@ -40,7 +47,7 @@ def _load_checkpoint(queue, args):
 
     # We want all arguments to come from us
     sys.argv = ['script.py',
-                '--no-masked-softmax-fusion',
+                '--no-masked-softmax-fusion', # FIXME?
                 '--no-bias-gelu-fusion',
                 '--no-bias-dropout-fusion',
                 '--use-cpu-initialization',
@@ -54,7 +61,48 @@ def _load_checkpoint(queue, args):
                 ]
 
     margs = parse_args()
+    margs.norm_type = "layernorm"
+
+    if args.model_type == 'LLAMA-65B':
+        margs.num_layers = 80
+        margs.hidden_size = 8192
+        margs.ffn_hidden_size = 22016
+        margs.num_attention_heads = 64
+        margs.max_position_embeddings = 2048
+        margs.async_tensor_model_parallel_allreduce = False
+        margs.seq_length = 2048
+        margs.fp16=True
+        margs.use_rotary_position_embeddings = True
+        margs.swiglu = True
+        margs.add_position_embedding = False
+        margs.add_bias_linear = False
+        margs.norm_type = "rmsnorm"
+        margs.make_vocab_size_divisible_by = 128
+        margs.tokenizer_type = "LLaMASentencePieceTokenizer"
+
+    elif args.model_type == 'LLAMA-7B':
+        margs.num_layers = 32
+        margs.hidden_size = 4096
+        margs.ffn_hidden_size = 11008
+        margs.num_attention_heads = 32
+        margs.max_position_embeddings = 2048
+        margs.async_tensor_model_parallel_allreduce = False
+        margs.seq_length = 2048
+        margs.fp16=True
+        margs.use_rotary_position_embeddings = True
+        margs.swiglu = True
+        margs.add_position_embedding = False
+        margs.add_bias_linear = False
+        margs.norm_type = "rmsnorm"
+        margs.make_vocab_size_divisible_by = 128
+        margs.tokenizer_type = "LLaMASentencePieceTokenizer"
+
     margs = load_args_from_checkpoint(margs)
+
+    # set up tp/pp
+    margs.tensor_model_parallel_size = args.source_tensor_parallel_size
+    margs.pipeline_model_parallel_size = args.source_pipeline_parallel_size
+    margs.iteration = 0 # FIXME
 
     # Arguments do sanity checks on the world size, but we don't care,
     # so trick it into thinking we are plenty of processes
@@ -88,6 +136,9 @@ def _load_checkpoint(queue, args):
     elif args.model_type == 'BERT':
         from pretrain_bert import model_provider
         margs.model_type = ModelType.encoder_or_decoder
+    elif args.model_type in ['LLAMA-65B', "LLAMA-7B"]:
+        from pretrain_llama import model_provider
+        margs.model_type = ModelType.encoder_or_decoder
     else:
         raise Exception(f'unrecognized model type: {args.model_type}')
 
@@ -101,7 +152,7 @@ def _load_checkpoint(queue, args):
         nonlocal consumed_valid_samples
         models = []
         for rank in range(count):
-            mpu.parallel_state.set_tensor_model_parallel_rank(rank)
+            mpu.set_tensor_model_parallel_rank(rank)
             model_ = [model_provider(pre_process, post_process).to(dtype)]
             margs.consumed_train_samples = 0
             margs.consumed_valid_samples = 0
@@ -124,11 +175,6 @@ def _load_checkpoint(queue, args):
         queue.put("exit")
         exit(1)
 
-    set_global_variables(margs)
-    mpu.parallel_state.set_tensor_model_parallel_world_size(margs.tensor_model_parallel_size)
-    mpu.parallel_state.set_pipeline_model_parallel_world_size(margs.pipeline_model_parallel_size)
-    fused_kernels.load(margs)
-
     # Get true (non-padded) vocab size
     if args.true_vocab_size is not None:
         true_vocab_size = args.true_vocab_size
@@ -140,7 +186,15 @@ def _load_checkpoint(queue, args):
             queue.put("exit")
             exit(1)
     else:
-        true_vocab_size = None
+        print("Both --true-vocab-size and --vocab-file not specified, aborting.")
+        queue.put("exit")
+        exit(1)
+
+    margs.padded_vocab_size = _vocab_size_with_padding(true_vocab_size, margs)
+    set_global_variables(margs)
+    mpu.set_tensor_model_parallel_world_size(margs.tensor_model_parallel_size)
+    mpu.set_pipeline_model_parallel_world_size(margs.pipeline_model_parallel_size)
+    fused_kernels.load(margs)
 
     # short aliases
     tp_size = margs.tensor_model_parallel_size
@@ -152,6 +206,7 @@ def _load_checkpoint(queue, args):
     md.num_layers = margs.num_layers
     md.hidden_size = margs.hidden_size
     md.seq_length = margs.seq_length
+    md.ffn_hidden_size = margs.ffn_hidden_size
     md.num_attention_heads = margs.num_attention_heads
     md.max_position_embeddings = margs.max_position_embeddings
     md.tokenizer_type = margs.tokenizer_type
@@ -163,8 +218,17 @@ def _load_checkpoint(queue, args):
     md.true_vocab_size = true_vocab_size
     md.make_vocab_size_divisible_by = margs.make_vocab_size_divisible_by
 
+    if md.model_type in ['LLAMA-65B', "LLAMA-7B"]:
+        md.async_tensor_model_parallel_allreduce = margs.async_tensor_model_parallel_allreduce
+        md.fp16 = margs.fp16
+        md.use_rotary_position_embeddings = margs.use_rotary_position_embeddings
+        md.swiglu = margs.swiglu
+        md.add_position_embedding = margs.add_position_embedding
+        md.add_bias_linear = margs.add_bias_linear
+        md.norm_type = margs.norm_type
+
     # Get first pipe stage
-    mpu.parallel_state.set_pipeline_model_parallel_rank(0)
+    mpu.set_pipeline_model_parallel_rank(0)
     post_process = pp_size == 1
     models = get_models(tp_size, md.params_dtype, True, post_process)
 
@@ -179,31 +243,39 @@ def _load_checkpoint(queue, args):
 
     # Send embeddings
     message = {
-        "position embeddings": models[0].language_model.embedding.position_embeddings.weight.data,
         "word embeddings": torch.cat(
             [models[tp_rank].language_model.embedding.word_embeddings.weight.data for tp_rank in range(tp_size)],
             dim = 0)
     }
+    if margs.add_position_embedding:
+        message["position embeddings"] = models[0].language_model.embedding.position_embeddings.weight.data
 
     queue_put("embeddings", message)
 
     total_layer_num = 0
     for pp_rank in range(pp_size):
         if pp_rank > 0:
-            mpu.parallel_state.set_pipeline_model_parallel_rank(pp_rank)
+            mpu.set_pipeline_model_parallel_rank(pp_rank)
             post_process = pp_rank == pp_size - 1
             models = get_models(tp_size, md.params_dtype, False, post_process)
+
+        # encoder
         for layer_num in range(len(models[0].language_model.encoder.layers)):
             message = {}
 
             # Get non-parallel tensors from tp_rank 0
             layer = models[0].language_model.encoder.layers[layer_num]
             message["input layernorm weight"] = layer.input_layernorm.weight.data
-            message["input layernorm bias"] = layer.input_layernorm.bias.data
-            message["dense bias"] = layer.self_attention.dense.bias.data
             message["post layernorm weight"] = layer.post_attention_layernorm.weight.data
-            message["post layernorm bias"] = layer.post_attention_layernorm.bias.data
-            message["mlp l1 bias"] = layer.mlp.dense_4h_to_h.bias.data
+
+            if margs.norm_type == "layernorm":
+                message["input layernorm bias"] = layer.input_layernorm.bias.data
+                message["post layernorm bias"] = layer.post_attention_layernorm.bias.data
+
+            # FIXME currently we do not have this information, but possibly through option
+            if margs.add_bias_linear:
+                message["dense bias"] = layer.self_attention.dense.bias.data
+                message["mlp l1 bias"] = layer.mlp.dense_4h_to_h.bias.data
 
             # Grab all parallel tensors for this layer
             qkv_weight = []
@@ -212,33 +284,60 @@ def _load_checkpoint(queue, args):
             mlp_l0_weight = []
             mlp_l0_bias = []
             mlp_l1_weight = []
+
             for tp_rank, model in enumerate(models):
                 layer = model.language_model.encoder.layers[layer_num]
                 qkv_weight.append(layer.self_attention.query_key_value.weight.data)
-                qkv_bias.append(layer.self_attention.query_key_value.bias.data)
                 dense_weight.append(layer.self_attention.dense.weight.data)
+                data = layer.mlp.dense_h_to_4h.weight.data
                 mlp_l0_weight.append(layer.mlp.dense_h_to_4h.weight.data)
-                mlp_l0_bias.append(layer.mlp.dense_h_to_4h.bias.data)
                 mlp_l1_weight.append(layer.mlp.dense_4h_to_h.weight.data)
+
+                if margs.add_bias_linear:
+                    qkv_bias.append(layer.self_attention.query_key_value.bias.data)
+                    mlp_l0_bias.append(layer.mlp.dense_h_to_4h.bias.data)
 
             # concat them
             message["qkv weight"] = torch.cat(qkv_weight, dim=0)
-            message["qkv bias"] = torch.cat(qkv_bias, dim=0)
             message["dense weight"] = torch.cat(dense_weight, dim=1)
-            message["mlp l0 weight"] = torch.cat(mlp_l0_weight, dim=0)
-            message["mlp l0 bias"] = torch.cat(mlp_l0_bias, dim=0)
+
+            
+            data = torch.cat(mlp_l0_weight, dim=0)
+            orig_shape = data.shape
+            data = data.view(tp_size, 2, orig_shape[0] // (2 * tp_size), orig_shape[1])
+            data = data.transpose(0, 1).contiguous()
+            data = data.view(*orig_shape)
+            message["mlp l0 weight"] = data
             message["mlp l1 weight"] = torch.cat(mlp_l1_weight, dim=1)
 
-            queue_put(f"transformer layer {total_layer_num}", message)
+            if margs.add_bias_linear:
+                message["qkv bias"] = torch.cat(qkv_bias, dim=0)
+                message["mlp l0 bias"] = torch.cat(mlp_l0_bias, dim=0)
 
+            queue_put(f"transformer layer {total_layer_num}", message)
             total_layer_num = total_layer_num + 1
 
     # Send final layernorm from tp_rank 0
     message = {
         "weight": models[0].language_model.encoder.final_layernorm.weight.data,
-        "bias": models[0].language_model.encoder.final_layernorm.bias.data
     }
+
+    if margs.norm_type == "layernorm":
+        message["bias"] = models[0].language_model.encoder.final_layernorm.bias.data
+
     queue_put("final layernorm", message)
+
+    if md.model_type in ['LLAMA-65B', "LLAMA-7B"]:
+        word_embeddings_for_head_weight = []
+        word_embeddings_for_head_bias = []
+
+        for tp_rank, model in enumerate(models):
+            word_embeddings_for_head_weight.append(model.word_embeddings.weight.data)
+            if margs.add_bias_linear:
+                word_embeddings_for_head_bias.append(model.word_embeddings.bias.data)
+
+        message = {"weight": torch.cat(word_embeddings_for_head_weight, dim=0)}
+        queue_put("word embeddings for head", message)
 
     # Send BERT lm head and binary head if it exists
     if md.model_type == 'BERT':
@@ -265,6 +364,7 @@ def _load_checkpoint(queue, args):
                 "bias": models[0].binary_head.bias.data
             }
             queue_put("binary head", message)
+
     queue.put("done")
 
 def load_checkpoint(queue, args):

@@ -203,7 +203,7 @@ def get_rng_state():
     return rng_state_list
 
 
-def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
+def save_checkpoint(iteration, model, optimizer, opt_param_scheduler, release=False):
     """Save a model checkpoint."""
     args = get_args()
 
@@ -218,7 +218,7 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
 
     # Checkpoint file names.
     model_checkpoint_name, optim_checkpoint_name = \
-        get_checkpoint_names(args.save, iteration, args.use_distributed_optimizer)
+        get_checkpoint_names(args.save, iteration, args.use_distributed_optimizer, release)
 
     # Collect args, model, RNG.
     model_state_dict = {}
@@ -283,7 +283,10 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
         tracker_filename = get_checkpoint_tracker_filename(args.save)
         with open(tracker_filename, 'w') as f:
-            f.write(str(iteration))
+            if release:
+                f.write("release")
+            else:
+                f.write(str(iteration))
 
     # Wait so everyone is done (not necessary)
     if torch.distributed.is_initialized():
@@ -458,7 +461,7 @@ def load_args_from_checkpoint(args, load_arg='load'):
 
     checkpoint_args = state_dict['args']
     checkpoint_version = state_dict.get('checkpoint_version', 0)
-    args.iteration = state_dict['iteration']
+    args.iteration = state_dict.get('iteration', 0)
 
     def _set_arg(arg_name, old_arg_name=None, force=False):
         if not force and getattr(args, arg_name, None) is not None:
