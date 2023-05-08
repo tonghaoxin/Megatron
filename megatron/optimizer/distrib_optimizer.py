@@ -15,6 +15,11 @@ from megatron.model.module import param_is_not_shared
 from .optimizer import MixedPrecisionOptimizer, _zero_grad_group_helper
 
 
+if hasattr(torch, "_TypedStorage"):
+    # simple alias for backward compatibility
+    torch._TypedStorage.untyped = torch._TypedStorage._untyped
+
+
 class Range:
     """
     A range represents a start and end points for indexing a shard
@@ -388,7 +393,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for model_index, model in enumerate(self.models):
             current_param_buffers = {}
             for dtype, grad_buffer in model._grad_buffers.items():
-                param_buffer = torch.tensor(grad_buffer.data.storage()._untyped(),
+                param_buffer = torch.tensor(grad_buffer.data.storage().untyped(), 
                                             dtype = params_dtype,
                                             device = grad_buffer.data.device)
                 param_buffer = param_buffer[:grad_buffer.numel_padded]
@@ -717,3 +722,40 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                           self.model_float16_groups)
         copy_group_params(self.shard_fp32_groups,
                           self.model_fp32_groups)
+
+    '''
+    # FIXME: something error!!!!
+    def _copy_model_params_to_main_params(self):
+        """
+        Copy model params to main params.
+        """
+        # Utility method for copying group params.
+        def copy_group_params(model_groups, shard_main_groups):
+            for model_group, shard_main_group in zip(model_groups,
+                                                     shard_main_groups):
+                for model_param, shard_main_param in zip(model_group,
+                                                         shard_main_group):
+
+                    param_range_map = self.get_model_param_range_map(model_param)
+                    # param_range = param_range_map["param"]
+                    # assert param_range.size == shard_main_param.nelement()
+                    
+                    # FIXME
+                    world_range = param_range_map["gbuf_world"]
+                    assert world_range.size == shard_main_param.nelement()
+                    
+                    model_id, dtype = self.model_param_gbuf_map[model_param]
+                    model_param_buffer = self.param_buffers[model_id][dtype]
+
+                    shard_model_param = model_param_buffer.view(-1) \
+                        [world_range.start:world_range.end]
+
+                    # shard_model_param.data.copy_(shard_main_param)
+                    shard_main_param.data.copy_(shard_model_param)
+
+        # Copy model groups to shard groups.
+        copy_group_params(self.model_float16_groups,
+                         self.shard_fp32_from_float16_groups)
+        copy_group_params(self.model_fp32_groups,
+                         self.shard_fp32_groups)
+    '''

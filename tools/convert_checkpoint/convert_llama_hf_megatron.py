@@ -319,7 +319,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
         "data_parallel_size": args.target_data_parallel_size,
         "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
         "rank": 0,
-        "tokenizer_type": "LLaMASentencePieceTokenizer", # TODO: 需要确认
+        "tokenizer_type": "LLaMASentencePieceTokenizer",
     }
 
     margs = types.SimpleNamespace()
@@ -352,13 +352,14 @@ def convert_checkpoint_from_transformers_to_megatron(args):
         ],
     }
     if args.use_distributed_optimizer:
-        for i in range(args.target_pipeline_model_parallel_size):
-            for j in range(args.target_tensor_model_parallel_size):
-                for k in range(args.target_data_parallel_size):
+        for _pp_rank in range(args.target_pipeline_model_parallel_size):
+            for _tp_rank in range(args.target_tensor_model_parallel_size):
+                for _dp_rank in range(args.target_data_parallel_size):
                     if args.target_pipeline_model_parallel_size == 1:
-                        checkpoint_dir = f"mp_rank_{i:02d}_{k:03d}"
+                        checkpoint_dir = f"mp_rank_{_tp_rank:02d}_{_dp_rank:03d}"
                     else:
-                        checkpoint_dir = f"mp_rank_{i:02d}_{j:03d}_{k:03d}"
+                        checkpoint_dir = f"mp_rank_{_tp_rank:02d}_{_pp_rank:03d}_{_dp_rank:03d}"
+
                     checkpoint_dir = os.path.join(release_dir, checkpoint_dir)
                     os.makedirs(checkpoint_dir, exist_ok=True)
                     torch.save(
@@ -497,7 +498,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                     params = params.transpose(0, 1).contiguous()
                     params = params.view(*_shape)
 
-                    print(f"==== find {op_name}, up {up_hf_layer}, to {layer_name} ====")
+                    print(f"==== find {op_name}, up {up_hf_layer}, to {layer_name}, shape {_shape} ====")
 
                 elif op_name.startswith("mlp.down_proj") and weight_or_bias == "weight":
                     layer_name = f"layers.{layer}.mlp.dense_4h_to_h.{weight_or_bias}"
