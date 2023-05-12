@@ -35,6 +35,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_inference_args(parser)
     parser = _add_transformer_engine_args(parser)
     parser = _add_retro_args(parser)
+    parser = _add_glm_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -49,6 +50,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     # Args from environment
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
+
 
     return args
 
@@ -241,8 +243,7 @@ def validate_args(args, defaults={}):
         args.num_layers = args.encoder_num_layers
 
     # Check required arguments.
-    required_args = ['num_layers', 'hidden_size', 'num_attention_heads',
-                     'max_position_embeddings']
+    required_args = ['num_layers', 'hidden_size', 'num_attention_heads']
     for req_arg in required_args:
         _check_arg_is_not_none(args, req_arg)
 
@@ -259,6 +260,15 @@ def validate_args(args, defaults={}):
         if args.ffn_hidden_size is None:
             args.ffn_hidden_size = int((4 * args.hidden_size * 2 / 3) / 64) * 64
 
+    if not args.glm:
+        assert args.max_position_embeddings is not None
+        if args.seq_length is not None:
+            assert args.max_position_embeddings >= args.seq_length
+        if args.decoder_seq_length is not None:
+            assert args.max_position_embeddings >= args.decoder_seq_length
+    else:
+        assert args.max_position_embeddings is None
+
     if args.kv_channels is None:
         assert args.hidden_size % args.num_attention_heads == 0
         args.kv_channels = args.hidden_size // args.num_attention_heads
@@ -270,10 +280,6 @@ def validate_args(args, defaults={}):
         assert args.encoder_seq_length is not None
         args.seq_length = args.encoder_seq_length
 
-    if args.seq_length is not None:
-        assert args.max_position_embeddings >= args.seq_length
-    if args.decoder_seq_length is not None:
-        assert args.max_position_embeddings >= args.decoder_seq_length
     if args.lr is not None:
         assert args.min_lr <= args.lr
     if args.save is not None:
@@ -545,6 +551,8 @@ def _add_network_size_args(parser):
                        action='store_true',
                        help='If set, use original BERT residula connection '
                        'ordering.')
+    group.add_argument('--deepnorm', action='store_true',
+                       help='use DeepNorm')
     group.add_argument('--fused-rmsnorm', action='store_true',
                        help='Use fused rmsnorm instead of default rmsnorm')
     group.add_argument('--rmsnorm-epsilon', type=float, default=1e-6,
@@ -557,6 +565,8 @@ def _add_network_size_args(parser):
                        help='Use squared relu activation instead of default gelu')
     group.add_argument('--swiglu', action='store_true',
                        help='Use gated linear units and SiLU activation instead of default gelu')
+    group.add_argument('--geglu', action='store_true',
+                       help='Use GELU activation instead of default gelu')
     group.add_argument('--onnx-safe', type=bool, required=False,
                        help='Use workarounds for known problems with '
                        'Torch ONNX exporter')
@@ -666,6 +676,13 @@ def _add_regularization_args(parser):
                        'numerical stability')
     group.add_argument('--sgd-momentum', type=float, default=0.9,
                        help='Momentum factor for sgd')
+    group.add_argument('--shrink-embedding-gradient-alpha', type=float, default=1.0,
+                       help='Shrink embedding gradient for alpha')
+    group.add_argument('--shrink-logit-embedding-gradient', action='store_true')
+    group.add_argument('--shrink-embedding-gradient-steps', nargs='*', default=None,
+                       help='--shrink-embedding-gradient-steps <x1> <x2>'
+                            'Shrink embedding gradient alpha for x1 steps,'
+                            'then warm it up to 1.0 with x2 steps')
 
     return parser
 
@@ -796,6 +813,10 @@ def _add_training_args(parser):
                        dest='gradient_accumulation_fusion')
     group.add_argument('--dump-model', action='store_true',
                        help='Dump model to ./model.txt. Useful for debugging.')
+    group.add_argument('--skip-train-iteration-range', type=str, nargs='+', default=None,
+                       help='Iteration ranges to skip. The values are one or more dash-separated ranges. e.g., 101-200 251-300.')
+    group.add_argument('--abort-on-unmet-fused-kernel-constraints', action='store_true',
+                       help="If set to True, the program will abort if the constraints for loading a fused kernel aren't met")
     return parser
 
 
@@ -813,6 +834,8 @@ def _add_initialization_args(parser):
                        'distribution used for weight initialization.')
     group.add_argument('--init-method-xavier-uniform', action='store_true',
                        help='Enable Xavier uniform parameter initialization')
+    group.add_argument('--data-shuffle-seed', type=int, default=None,
+                       help='Random seed used for shuffling GLM data')
 
     return parser
 
@@ -1240,4 +1263,40 @@ def _add_vision_args(parser):
     group.add_argument('--dino-warmup-teacher-temp-epochs', type=int, default=30,
                        help='warmup teacher temperaure epochs')
 
+    return parser
+
+def _add_glm_args(parser):
+    group = parser.add_argument_group("GLM", "GLM configurations")
+    group.add_argument('--glm', action='store_true', help="whether use the BlockLM pre-training")
+    group.add_argument("--gpt-prob", type=float, default=0.0)
+    # group.add_argument("--short-seq-prob", type=float, default=0.02)
+    group.add_argument("--single-span-prob", type=float, default=0.02)
+    # group.add_argument("--mask-ratio", type=float, default=0.15)
+    group.add_argument("--average-block-length", type=int, default=3)
+    group.add_argument("--min-gmask-ratio", type=float, default=0.2)
+    group.add_argument(
+        "--sandwich-ln",
+        action="store_true",
+        help="Use Sandwich-LN",
+    )
+    group.add_argument(
+        "--apply-pb-relax",
+        action="store_true",
+        help="Use pb-relax",
+    )
+    group.add_argument(
+        "--pb-relax-alpha",
+        type=int,
+        default=32,
+        help="Alpha value in pb-relax",
+    )
+    group.add_argument("--length-per-sample", type=int, default=None)
+    group.add_argument("--aggregated-samples-per-sequence", type=int, default=1)
+    group.add_argument('--aggregate-gpt-sample', action='store_true')
+    group.add_argument('--multitask-data-transform-steps', nargs='*', default=None,
+                       help='--multitask-data-transform-steps <x1> <x2>'
+                            'multitask ds1 -> ds2 in [x1, x2)')
+    group.add_argument('--rotary-embedding-2d', action='store_true',
+                       help='If set, use 2D rotary embedding for GLM.')
+    group.add_argument('--fast-decode', action='store_true')
     return parser

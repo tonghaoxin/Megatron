@@ -7,6 +7,7 @@ import math
 import os
 from typing import Optional
 import warnings
+from functools import partial
 
 import torch
 import torch.nn.functional as F
@@ -21,6 +22,7 @@ from megatron.core.parallel_state import (
     get_tensor_model_parallel_group,
     get_global_memory_buffer,
 )
+from megatron import get_args
 from .mappings import (
     copy_to_tensor_model_parallel_region,
     gather_from_tensor_model_parallel_region,
@@ -130,6 +132,21 @@ def _initialize_affine_weight_cpu(weight, output_size, input_size,
     return None
 
 
+def xavier_normal_tensor_parallel_(tensor, gain=1., tp_degree=1, partition_dim=None):
+    assert len(tensor.shape) == 2
+    if partition_dim is None:
+        partition_dim = tensor.partition_dim
+    fan_in, fan_out = tensor.shape
+    if partition_dim == 0:
+        fan_in *= tp_degree
+    else:
+        fan_out *= tp_degree
+
+    std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
+
+    return torch.nn.init._no_grad_normal_(tensor, 0, std)
+
+
 class VocabParallelEmbedding(torch.nn.Module):
     """Embedding parallelized in the vocabulary dimension.
 
@@ -153,6 +170,8 @@ class VocabParallelEmbedding(torch.nn.Module):
                  perform_initialization: bool=True,
                  padding_idx: Optional[int]=None):
         super(VocabParallelEmbedding, self).__init__()
+
+        args = get_args()
         # Keep the input dimensions.
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
@@ -171,6 +190,9 @@ class VocabParallelEmbedding(torch.nn.Module):
                 self.tensor_model_parallel_size)
         self.num_embeddings_per_partition = self.vocab_end_index - \
             self.vocab_start_index
+
+        if args.deepnorm:
+            init_method = partial(xavier_normal_tensor_parallel_, tp_degree=self.tensor_model_parallel_size)
 
         # Allocate weights and initialize.
         if use_cpu_initialization:

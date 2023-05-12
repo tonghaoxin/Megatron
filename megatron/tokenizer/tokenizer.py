@@ -19,7 +19,7 @@ def build_tokenizer(args):
               flush=True)
 
     if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer',
-                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer']:
+                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer', 'IceTokenizer']:
         assert args.vocab_file is not None
 
     # Select and instantiate the tokenizer.
@@ -46,6 +46,9 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'GalacticaHFTokenizer':
         assert args.hf_tokenizer_path is not None
         tokenizer = _GalacticaHFTokenizer(args.hf_tokenizer_path)
+    elif args.tokenizer_type == "IceTokenizer":
+        from .ice_tokenizer import _IceTokenizer
+        tokenizer = _IceTokenizer()
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))

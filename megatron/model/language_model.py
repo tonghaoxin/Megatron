@@ -33,6 +33,17 @@ def parallel_lm_logits(input_, word_embeddings_weight, parallel_output,
         input_parallel = tensor_parallel.copy_to_tensor_model_parallel_region(input_)
         async_grad_allreduce = False
 
+    if args.shrink_logit_embedding_gradient:
+        if hasattr(args, 'iteration'):
+            alpha = get_shrink_embedding_gradient_alpha(args.iteration + 1)
+        else:
+            alpha = args.shrink_embedding_gradient_alpha
+        word_embeddings_weight = word_embeddings_weight if alpha == 1.0 \
+            else (
+                word_embeddings_weight * alpha +
+                word_embeddings_weight.detach() * (1 - alpha)
+        )
+
     # Matrix multiply.
     logits_parallel = tensor_parallel.linear_with_grad_accumulation_and_async_allreduce(
         input=input_parallel,
@@ -123,6 +134,23 @@ class Pooler(MegatronModule):
         return pooled
 
 
+def get_shrink_embedding_gradient_alpha(iteration):
+    args = get_args()
+
+    alpha = args.shrink_embedding_gradient_alpha
+    if args.shrink_embedding_gradient_steps is None:
+        return alpha
+    else:
+        x1 = int(args.shrink_embedding_gradient_steps[0])
+        x2 = int(args.shrink_embedding_gradient_steps[1])
+        if iteration <= x1:
+            return alpha
+        elif iteration >= x1 + x2:
+            return 1.0
+        else:
+            return alpha + (1 - alpha) * (args.iteration - x1) / x2
+
+
 class Embedding(MegatronModule):
     """Language model embeddings.
 
@@ -179,8 +207,10 @@ class Embedding(MegatronModule):
                     _num_embeddings, self.hidden_size, self.padding_idx)
             else:
                 self.position_embeddings = torch.nn.Embedding(
-                    max_sequence_length, self.hidden_size)            
-            
+                    max_sequence_length, self.hidden_size)
+
+            self.position_embeddings = torch.nn.Embedding(
+                max_sequence_length, self.hidden_size)
             self._position_embeddings_key = 'position_embeddings'
             # Initialize the position embeddings.
             if args.perform_initialization:

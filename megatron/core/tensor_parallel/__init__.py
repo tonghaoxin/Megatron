@@ -9,7 +9,8 @@ from .layers import (
     set_defaults_if_not_set_tensor_model_parallel_attributes,
     copy_tensor_model_parallel_attributes,
     param_is_not_tensor_parallel_duplicate,
-    linear_with_grad_accumulation_and_async_allreduce
+    linear_with_grad_accumulation_and_async_allreduce,
+    xavier_normal_tensor_parallel_
 
 )
 
