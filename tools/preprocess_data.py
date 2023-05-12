@@ -95,7 +95,7 @@ def get_args():
     group.add_argument('--tokenizer-type', type=str, required=True,
                        choices=['BertWordPieceLowerCase','BertWordPieceCase',
                                 'GPT2BPETokenizer', 'SentencePieceTokenizer', 'GPTSentencePieceTokenizer',
-                                'LLaMASentencePieceTokenizer'],
+                                'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--vocab-file', type=str, default=None,
                        help='Path to the vocab file')
@@ -107,7 +107,12 @@ def get_args():
                        help='Language to use for NLTK-powered sentence splitting.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='sentencepeice tokenizer model.')
-
+    group.add_argument('--hf-tokenizer-path', type=str, default=None,
+                       help='HuggingFace tokenizer path: '
+                       '1) A string, the *model id* of a predefined tokenizer '
+                       'hosted inside a model repo on huggingface.co'
+                       '2) A path to a *directory* containing vocabulary '
+                       'files required by the tokenizer')
 
     group = parser.add_argument_group(title='output data')
     group.add_argument('--output-prefix', type=str, required=True,

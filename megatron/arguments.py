@@ -526,6 +526,9 @@ def _add_network_size_args(parser):
                        help='Use rotary positional embeddings or not')
     group.add_argument('--rotary-percent', type=float, default=1.0,
                        help='Percent of rotary dimension to use, default 100%')
+    group.add_argument('--use-learned-position-embeddings', action='store_true',
+                       help='Use learned positional embeddings for opt/galactica '
+                       'model training')
     group.add_argument('--no-position-embedding',
                        action='store_false',
                        help='Disable position embedding.',
@@ -639,6 +642,8 @@ def _add_regularization_args(parser):
                        help='Post attention dropout probability.')
     group.add_argument('--hidden-dropout', type=float, default=0.1,
                        help='Dropout probability for hidden state transformer.')
+    group.add_argument('--embedding-dropout', type=float, default=0.1,
+                       help='Dropout probability for word embeddings.')
     group.add_argument('--weight-decay', type=float, default=0.01,
                        help='Weight decay coefficient for L2 regularization.')
     group.add_argument('--start-weight-decay', type=float,
@@ -790,7 +795,7 @@ def _add_training_args(parser):
                        'gradient computation of linear layers',
                        dest='gradient_accumulation_fusion')
     group.add_argument('--dump-model', action='store_true',
-                       help='Dump model to ./model.txt.')
+                       help='Dump model to ./model.txt. Useful for debugging.')
     return parser
 
 
@@ -1075,10 +1080,17 @@ def _add_data_args(parser):
                                 'GPT2BPETokenizer',
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
-                                'LLaMASentencePieceTokenizer'],
+                                'LLaMASentencePieceTokenizer',
+                                'GalacticaHFTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
+    group.add_argument('--hf-tokenizer-path', type=str, default=None,
+                       help='HuggingFace tokenizer path: '
+                       '1) A string, the *model id* of a predefined tokenizer '
+                       'hosted inside a model repo on huggingface.co'
+                       '2) A path to a *directory* containing vocabulary '
+                       'files required by the tokenizer')
     group.add_argument('--data-impl', type=str, default='infer',
                        choices=['lazy', 'cached', 'mmap', 'infer'],
                        help='Implementation of indexed datasets.')

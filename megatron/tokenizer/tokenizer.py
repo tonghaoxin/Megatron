@@ -2,6 +2,9 @@
 
 """Megatron tokenizers."""
 
+import re
+import warnings
+
 from abc import ABC
 from abc import abstractmethod
 
@@ -15,7 +18,8 @@ def build_tokenizer(args):
         print('> building {} tokenizer ...'.format(args.tokenizer_type),
               flush=True)
 
-    if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer', 'LLaMASentencePieceTokenizer']:
+    if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer',
+                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer']:
         assert args.vocab_file is not None
 
     # Select and instantiate the tokenizer.
@@ -37,7 +41,11 @@ def build_tokenizer(args):
         assert args.tokenizer_model is not None
         tokenizer = _GPTSentencePieceTokenizer(args.tokenizer_model)
     elif args.tokenizer_type == 'LLaMASentencePieceTokenizer':
+        assert args.tokenizer_model is not None
         tokenizer = _LLaMASentencePieceTokenizer(args.tokenizer_model)
+    elif args.tokenizer_type == 'GalacticaHFTokenizer':
+        assert args.hf_tokenizer_path is not None
+        tokenizer = _GalacticaHFTokenizer(args.hf_tokenizer_path)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -549,3 +557,83 @@ class _LLaMASentencePieceTokenizer(_SentencePieceTokenizer):
     @property
     def additional_special_tokens_ids(self):
         return None
+
+
+class _GalacticaHFTokenizer(AbstractTokenizer):
+    """_GalacticaHFTokenizer tokenizer."""
+
+    def __init__(self, tokenizer_path):
+        name = 'GalacticaHFTokenizer'
+        super().__init__(name)
+
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        self._set_tokenizer()
+
+    def _set_tokenizer(self):
+        """configures the tokenizer for galactica."""
+        # from https://github.com/paperswithcode/galai/blob/main/galai/model.py#L143
+        # setup padding
+        self.tokenizer.pad_token_id = 1
+        self.tokenizer.pad_token = "<pad>"
+        self.tokenizer.padding_side = "left"
+
+        # setup truncation
+        self.tokenizer.truncation_side = "left"
+
+        # setup special tokens
+        self.tokenizer.bos_token_id = 0
+        self.tokenizer.bos_token = "<s>"
+
+        self.tokenizer.eos_token_id = 2
+        self.tokenizer.eos_token = "</s>"
+
+        self.tokenizer.unk_token = "<unk>"
+        self.tokenizer.unk_token_id = 3
+
+    @property
+    def vocab_size(self):
+        return self.tokenizer.vocab_size
+
+    @property
+    def vocab(self):
+        return self.tokenizer.vocab()
+
+    def _escape_custom_split_sequence(self, text):
+        """ Applies custom splitting to the text for GALILEO's tokenization"""
+        # from https://github.com/paperswithcode/galai/blob/main/galai/utils.py#L43
+        def _insert_split_marker(m: re.Match):
+            """
+            Applies split marker based on a regex match of special tokens such as
+            [START_DNA].
+            """
+            SPLIT_MARKER = f"SPL{1}T-TH{1}S-Pl3A5E"
+            start_token, _, sequence, end_token = m.groups()
+            sequence = re.sub(r"(.)", fr"{SPLIT_MARKER}\1", sequence, flags=re.DOTALL)
+            return f"{start_token}{sequence}{SPLIT_MARKER}{end_token}"
+
+        CUSTOM_SEQ_RE = re.compile(r"(\[START_(DNA|SMILES|I_SMILES|AMINO)])(.*?)(\[END_\2])")
+        return CUSTOM_SEQ_RE.sub(_insert_split_marker, text)
+
+    def tokenize(self, input_text):
+        text = self._escape_custom_split_sequence(input_text)
+        if not text:
+            warnings.warn("Found an empty input text. Changing to end-of-document token instead.",
+                    UserWarning
+                )
+            text = self.tokenizer.eos_token
+        return self.tokenizer.encode(text)
+
+    def detokenize(self, token_ids):
+        return self.tokenizer.decode(token_ids)
+
+    @property
+    def eod(self):
+        return self.tokenizer.eos_token_id
+
+    @property
+    def pad(self):
+        return self.tokenizer.pad_token_id
+
+    def inv_vocab(self):
+        pass

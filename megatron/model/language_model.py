@@ -12,6 +12,7 @@ from .enums import LayerType, AttnMaskType
 from .module import MegatronModule
 from .retro_transformer import ParallelRetroEncoder, ParallelRetroTransformer
 from .rotary_pos_embedding import apply_rotary_pos_emb, RotaryEmbedding
+from .learned_positional_embedding import LearnedPositionalEmbedding
 from .transformer import ParallelTransformer
 from .utils import get_linear_layer
 from .utils import init_method_normal, scaled_init_method_normal
@@ -54,7 +55,7 @@ def get_language_model(num_tokentypes, add_pooler,
                        add_decoder=False,
                        decoder_attn_mask_type=AttnMaskType.causal,
                        pre_process=True, post_process=True,
-                       norm_type='layernorm'):
+                       norm_type='layernorm', padding_idx=None):
     """Build language model and return along with the key to save."""
     args = get_args()
 
@@ -77,7 +78,8 @@ def get_language_model(num_tokentypes, add_pooler,
         add_pooler=add_pooler,
         pre_process=pre_process,
         post_process=post_process,
-        norm_type=norm_type
+        norm_type=norm_type,
+        padding_idx=padding_idx,
     )
     # key used for checkpoints.
     language_model_key = 'language_model'
@@ -141,12 +143,14 @@ class Embedding(MegatronModule):
                  max_sequence_length,
                  embedding_dropout_prob,
                  init_method,
-                 num_tokentypes=0):
+                 num_tokentypes=0,
+                 padding_idx=None):
         super(Embedding, self).__init__()
 
         self.hidden_size = hidden_size
         self.init_method = init_method
         self.num_tokentypes = num_tokentypes
+        self.padding_idx = padding_idx
 
         args = get_args()
 
@@ -156,15 +160,27 @@ class Embedding(MegatronModule):
             init_method=self.init_method,
             params_dtype=args.params_dtype,
             use_cpu_initialization=args.use_cpu_initialization,
-            perform_initialization=args.perform_initialization
+            perform_initialization=args.perform_initialization,
+            padding_idx=self.padding_idx,
         )
         self._word_embeddings_key = 'word_embeddings'
 
         # Position embedding (serial).
         self.add_position_embedding = args.add_position_embedding
+        self.use_learned_position_embeddings = args.use_learned_position_embeddings
+
         if self.add_position_embedding:
-            self.position_embeddings = torch.nn.Embedding(
-                max_sequence_length, self.hidden_size)
+            if self.use_learned_position_embeddings:
+                 # FIXME: use learned position embedding for opt/galactica model
+                if self.padding_idx is not None:
+                    _num_embeddings = max_sequence_length + self.padding_idx + 1
+
+                self.position_embeddings = LearnedPositionalEmbedding(
+                    _num_embeddings, self.hidden_size, self.padding_idx)
+            else:
+                self.position_embeddings = torch.nn.Embedding(
+                    max_sequence_length, self.hidden_size)            
+            
             self._position_embeddings_key = 'position_embeddings'
             # Initialize the position embeddings.
             if args.perform_initialization:
@@ -221,7 +237,13 @@ class Embedding(MegatronModule):
         # Embeddings.
         words_embeddings = self.word_embeddings(input_ids)
         if self.add_position_embedding:
-            position_embeddings = self.position_embeddings(position_ids)
+            if self.use_learned_position_embeddings:
+                if self.padding_idx is not None:
+                    position_embeddings = self.position_embeddings(input=input_ids)
+                else:
+                    position_embeddings = self.position_embeddings(input=None, positions=position_ids)
+            else:
+                position_embeddings = self.position_embeddings(position_ids)
             embeddings = words_embeddings + position_embeddings
         else:
             embeddings = words_embeddings
@@ -338,7 +360,8 @@ class TransformerLanguageModel(MegatronModule):
                  add_pooler=False,
                  pre_process=True,
                  post_process=True,
-                 norm_type='layernorm'):
+                 norm_type='layernorm',
+                 padding_idx=None):
         args = get_args()
         # TODO: passing share_word_embeddings=False will not work correctly for T5 and embeddings will not be synced. Fix later for T5.
         if args.untie_embeddings_and_output_weights: assert not add_decoder
@@ -363,9 +386,10 @@ class TransformerLanguageModel(MegatronModule):
             self.embedding = Embedding(self.hidden_size,
                                        args.padded_vocab_size,
                                        args.max_position_embeddings,
-                                       args.hidden_dropout,
+                                       args.embedding_dropout,
                                        self.init_method,
-                                       self.num_tokentypes)
+                                       self.num_tokentypes,
+                                       padding_idx)
             self._embedding_key = 'embedding'
 
         # Rotary positional embeddings
