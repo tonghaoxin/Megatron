@@ -8,10 +8,17 @@ import importlib.util
 import torch
 
 from torch import einsum, nn
+import torch.nn.functional as F
 
-__all__ = ['RotaryEmbedding', 'apply_rotary_pos_emb']
+
+__all__ = ['RotaryEmbedding', 'GLMRotaryEmbedding', 'apply_rotary_pos_emb', 'apply_rotary_pos_emb_index']
+
 
 class RotaryEmbedding(nn.Module):
+    """
+    Original RotaryEmbedding
+    """
+
     def __init__(self, dim):
         super().__init__()
         inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
@@ -38,6 +45,65 @@ class RotaryEmbedding(nn.Module):
         return 'inv_freq shape={}'.format(self.inv_freq.size())
 
 
+class GLMRotaryEmbedding(nn.Module):
+    """
+    GLM-style RotaryEmbedding
+    """
+
+    def __init__(self, dim, base=10000, precision=torch.half, learnable=False):
+        """
+        __init__ function
+        Args:
+            dim:
+            base:
+            precision:
+            learnable:
+        Return:
+        """
+        super().__init__()
+        inv_freq = 1. / (base ** (torch.arange(0, dim, 2).float() / dim))
+        self.learnable = learnable
+        if learnable:
+            self.inv_freq = torch.nn.Parameter(inv_freq)
+            self.max_seq_len_cached = None
+        else:
+            self.register_buffer('inv_freq', inv_freq)
+            self.max_seq_len_cached = None
+            self.cos_cached = None
+            self.sin_cached = None
+        self.precision = precision
+
+    def forward(self, x, seq_dim=1, seq_len=None):
+        """
+        forward function
+        Args:
+            x:
+            seq_dim:
+            seq_len:
+        Return: (Tensor, Tensor)
+        """
+        if seq_len is None:
+            seq_len = x.shape[seq_dim]
+        if self.max_seq_len_cached is None or (seq_len > self.max_seq_len_cached):
+            self.max_seq_len_cached = None if self.learnable else seq_len
+            t = torch.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype)
+            freqs = torch.einsum('i,j->ij', t, self.inv_freq)
+            # Different from paper, but it uses a different permutation in order to obtain the same calculation
+            emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
+            if self.precision == torch.bfloat16:
+                emb = emb.float()
+            # [sx, 1 (b * np), hn]
+            cos_cached = emb.cos()[:, None, :]
+            sin_cached = emb.sin()[:, None, :]
+            if self.precision == torch.bfloat16:
+                cos_cached = cos_cached.bfloat16()
+                sin_cached = sin_cached.bfloat16()
+            if self.learnable:
+                return cos_cached, sin_cached
+            self.cos_cached, self.sin_cached = cos_cached, sin_cached
+        return self.cos_cached[:seq_len, ...], self.sin_cached[:seq_len, ...]
+
+
 def _rotate_half(x):
     """
     change sign so the last dimension becomes [-odd, +even]
@@ -46,6 +112,15 @@ def _rotate_half(x):
     x = rearrange(x, '... (j d) -> ... j d', j=2)
     x1, x2 = x.unbind(dim=-2)
     return torch.cat((-x2, x1), dim=-1)
+
+
+def rotate_half(x):
+    """
+    another version of _rotate_half
+    """
+    x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+    # dim=-1 triggers a bug in earlier torch versions
+    return torch.cat((-x2, x1), dim=x1.ndim - 1)
 
 
 def apply_rotary_pos_emb(t, freqs):
@@ -62,3 +137,15 @@ def apply_rotary_pos_emb(t, freqs):
     # second part is sine component, need to change signs with _rotate_half method
     t = (t * freqs.cos()) + (_rotate_half(t) * freqs.sin())
     return torch.cat((t, t_pass), dim=-1)
+
+
+@torch.jit.script
+def apply_rotary_pos_emb_index(q, k, cos, sin, position_id):
+    """
+    RoPE function using position_id
+    """
+    # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, 1, hn] -> [sq, b, hn]
+    cos, sin = F.embedding(position_id, cos.squeeze()).unsqueeze(2), \
+               F.embedding(position_id, sin.squeeze()).unsqueeze(2)
+    q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+    return q, k

@@ -11,7 +11,7 @@ from megatron.core import mpu, tensor_parallel
 from .enums import LayerType, AttnMaskType
 from .module import MegatronModule
 from .retro_transformer import ParallelRetroEncoder, ParallelRetroTransformer
-from .rotary_pos_embedding import apply_rotary_pos_emb, RotaryEmbedding
+from .rotary_pos_embedding import RotaryEmbedding
 from .learned_positional_embedding import LearnedPositionalEmbedding
 from .transformer import ParallelTransformer
 from .utils import get_linear_layer
@@ -45,15 +45,21 @@ def parallel_lm_logits(input_, word_embeddings_weight, parallel_output,
         )
 
     # Matrix multiply.
-    logits_parallel = tensor_parallel.linear_with_grad_accumulation_and_async_allreduce(
-        input=input_parallel,
-        weight=word_embeddings_weight,
-        bias=bias,
-        gradient_accumulation_fusion=args.gradient_accumulation_fusion,
-        async_grad_allreduce=async_grad_allreduce,
-        sequence_parallel_enabled=args.sequence_parallel)
-    # Gather if needed.
+    if args.glm:
+        if bias is None:
+            logits_parallel = F.linear(input_parallel, word_embeddings_weight)
+        else:
+            logits_parallel = F.linear(input_parallel, word_embeddings_weight, bias)
+    else:
+        logits_parallel = tensor_parallel.linear_with_grad_accumulation_and_async_allreduce(
+            input=input_parallel,
+            weight=word_embeddings_weight,
+            bias=bias,
+            gradient_accumulation_fusion=args.gradient_accumulation_fusion,
+            async_grad_allreduce=async_grad_allreduce,
+            sequence_parallel_enabled=args.sequence_parallel)
 
+    # Gather if needed.
     if parallel_output:
         return logits_parallel
 
@@ -196,6 +202,7 @@ class Embedding(MegatronModule):
         # Position embedding (serial).
         self.add_position_embedding = args.add_position_embedding
         self.use_learned_position_embeddings = args.use_learned_position_embeddings
+        self.positional_encoding_2d = args.glm
 
         if self.add_position_embedding:
             if self.use_learned_position_embeddings:
@@ -208,6 +215,13 @@ class Embedding(MegatronModule):
             else:
                 self.position_embeddings = torch.nn.Embedding(
                     max_sequence_length, self.hidden_size)
+                if self.positional_encoding_2d:
+                    self.block_position_embeddings = torch.nn.Embedding(
+                        max_sequence_length, self.hidden_size)
+                    # Initialize the block position embeddings
+                    self.init_method(self.block_position_embeddings.weight)
+                else:
+                    self.block_position_embeddings = None
 
             self.position_embeddings = torch.nn.Embedding(
                 max_sequence_length, self.hidden_size)
@@ -234,6 +248,9 @@ class Embedding(MegatronModule):
         self.sequence_parallel = args.sequence_parallel
         # Embeddings dropout
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
+
+        # GLM
+        self.glm = args.glm
 
     def zero_parameters(self):
         """Zero out all parameters in embedding."""
@@ -263,9 +280,26 @@ class Embedding(MegatronModule):
         args = get_args()
         self.init_method(self.tokentype_embeddings.weight)
 
+    def get_shrink_embedding_gradient_alpha(self):
+        args = get_args()
+        if hasattr(args, 'iteration'):
+            return get_shrink_embedding_gradient_alpha(args.iteration + 1)
+        else:
+            return args.shrink_embedding_gradient_alpha
+
     def forward(self, input_ids, position_ids, tokentype_ids=None):
         # Embeddings.
         words_embeddings = self.word_embeddings(input_ids)
+        if self.glm:
+            alpha = self.get_shrink_embedding_gradient_alpha()
+            embeddings = words_embeddings if alpha == 1.0 \
+                else (
+                    words_embeddings * alpha +
+                    words_embeddings.detach() * (1 - alpha)
+                )
+        else:
+            embeddings = words_embeddings
+
         if self.add_position_embedding:
             if self.use_learned_position_embeddings:
                 if self.padding_idx is not None:
@@ -273,10 +307,16 @@ class Embedding(MegatronModule):
                 else:
                     position_embeddings = self.position_embeddings(input=None, positions=position_ids)
             else:
-                position_embeddings = self.position_embeddings(position_ids)
-            embeddings = words_embeddings + position_embeddings
-        else:
-            embeddings = words_embeddings
+                if self.positional_encoding_2d:
+                    position_ids, block_position_ids = position_ids[:,
+                                                       0], position_ids[:, 1]
+                    position_embeddings = self.position_embeddings(position_ids)
+                    block_position_embeddings = self.block_position_embeddings(
+                        block_position_ids)
+                    position_embeddings = position_embeddings + block_position_embeddings
+                else:
+                    position_embeddings = self.position_embeddings(position_ids)
+            embeddings = embeddings + position_embeddings
 
         if tokentype_ids is not None:
             assert self.tokentype_embeddings is not None
@@ -366,6 +406,30 @@ class Embedding(MegatronModule):
                       'checkpoint but could not find it', flush=True)
 
 
+class GLMEmbedding(Embedding):
+
+    def forward(self, *inputs, **kwargs):
+        input_ids = inputs[0]
+        position_ids = inputs[1]
+        attention_mask = inputs[2]
+
+        if len(inputs) == 4:
+            tokentype_ids = inputs[3]
+        else:
+            tokentype_ids = None
+
+        embeddings = super().forward(input_ids,
+                                     position_ids,
+                                     tokentype_ids=tokentype_ids)
+
+        return embeddings, attention_mask, position_ids
+
+    # @property
+    # def word_embeddings_weight(self):
+    #     """Easy accessory for the Megatron pipeline engine to tie embeddings across stages."""
+    #     return self.word_embeddings.weight
+
+
 class TransformerLanguageModel(MegatronModule):
     """Transformer language model.
 
@@ -410,16 +474,26 @@ class TransformerLanguageModel(MegatronModule):
         self.encoder_hidden_state = None
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
         self.norm_type = norm_type
+        self.glm = args.glm
 
         # Embeddings.
         if self.pre_process:
-            self.embedding = Embedding(self.hidden_size,
-                                       args.padded_vocab_size,
-                                       args.max_position_embeddings,
-                                       args.embedding_dropout,
-                                       self.init_method,
-                                       self.num_tokentypes,
-                                       padding_idx)
+            if not self.glm:
+                self.embedding = Embedding(self.hidden_size,
+                                           args.padded_vocab_size,
+                                           args.max_position_embeddings,
+                                           args.hidden_dropout,
+                                           self.init_method,
+                                           self.num_tokentypes,
+                                           padding_idx)
+            else:
+                self.embedding = GLMEmbedding(self.hidden_size,
+                                              args.padded_vocab_size,
+                                              args.max_position_embeddings,
+                                              args.hidden_dropout,
+                                              self.init_method,
+                                              self.num_tokentypes,
+                                              padding_idx)
             self._embedding_key = 'embedding'
 
         # Rotary positional embeddings
@@ -550,8 +624,15 @@ class TransformerLanguageModel(MegatronModule):
 
         # Encoder embedding.
         if self.pre_process:
-            encoder_input = self.embedding(enc_input_ids, enc_position_ids,
-                                           tokentype_ids=tokentype_ids)
+            if not self.glm:
+                encoder_input = self.embedding(enc_input_ids, enc_position_ids,
+                                               tokentype_ids=tokentype_ids)
+            else:
+                encoder_input, enc_attn_mask, enc_position_ids \
+                    = self.embedding(enc_input_ids,
+                                     enc_position_ids,
+                                     enc_attn_mask,
+                                     tokentype_ids)
         else:
             encoder_input = None
 
@@ -579,7 +660,8 @@ class TransformerLanguageModel(MegatronModule):
                         encoder_input,
                         enc_attn_mask,
                         inference_params=inference_params,
-                        rotary_pos_emb=rotary_pos_emb)
+                        rotary_pos_emb=rotary_pos_emb,
+                        position_ids=enc_position_ids)
             else:
                 encoder_output = self.encoder_hidden_state
         else:
