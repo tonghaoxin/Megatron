@@ -5,7 +5,7 @@ import enum
 class LayerType(enum.Enum):
     encoder = 1
     decoder = 2
- 
+
 class AttnType(enum.Enum):
     self_attn = 1
     cross_attn = 2
@@ -13,6 +13,11 @@ class AttnType(enum.Enum):
 class AttnMaskType(enum.Enum):
     padding = 1
     causal = 2
+
+class PositionEmbeddingType(enum.Enum):
+    rotary = 1
+    absolute = 2
+    alibi = 3
 
 # For backward compatibility with old model checkpoints
 from megatron.core.enums import ModelType

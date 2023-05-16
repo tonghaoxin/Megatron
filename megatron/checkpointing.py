@@ -95,7 +95,8 @@ def get_checkpoint_names(checkpoints_path, iteration, use_distributed_optimizer,
         common_path = os.path.join(checkpoints_path, directory,
                         f'mp_rank_{tensor_rank:02d}_{pipeline_rank:03d}')
 
-    if use_distributed_optimizer:
+    args = get_args()
+    if use_distributed_optimizer and not release and not args.finetune and not args.no_load_optim:
         model_name = os.path.join(common_path, "model_rng.pt")
         optim_name = os.path.join(
             common_path + "_%03d" % mpu.get_data_parallel_rank(),
@@ -451,7 +452,7 @@ def load_args_from_checkpoint(args, load_arg='load'):
 
     # For args we only care about model state dict
     state_dict = model_state_dict
-    
+
     if not state_dict:
         print_rank_0('Checkpoint not found to provide arguments, using provided arguments.')
         return args

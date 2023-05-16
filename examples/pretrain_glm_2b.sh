@@ -111,37 +111,31 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --seq-length $SEQ_LEN \
                --num-workers 1 \
                --data-path $DATA_PATH \
+               --skip-train-iteration-range 40701-40900 42401-42600 \
                --save $CHECKPOINT_PATH \
                --abort-on-unmet-fused-kernel-constraints \
                --split 949,50,1 \
                --distributed-backend nccl \
                --init-method-std 0.0052 \
-               --no-async-tensor-model-parallel-allreduce \
                --shrink-logit-embedding-gradient \
                --shrink-embedding-gradient-alpha 0.1 \
                --no-position-embedding \
+               --no-async-tensor-model-parallel-allreduce \
+               --no-scatter-gather-tensors-in-pipeline \
+               --no-gradient-accumulation-fusion \
                --tokenizer-model IceTokenizer \
                --use-distributed-optimizer \
-               --recompute-activations \
+               --recompute-granularity full \
+               --recompute-method uniform \
                --fp16"
-               # --hidden-dropout 0 \
-               # --recompute-granularity full \
-               # --recompute-method uniform \
-               # --no-gradient-accumulation-fusion \
-               # --pipeline_model_parallel_split_rank
-               # --skip-train-iteration-range 40701-40900 42401-42600 \
                # --load $CHECKPOINT_PATH \
+               # --hidden-dropout 0 \
+               # --recompute-activations \
+               # --pipeline_model_parallel_split_rank \
                # --use-flash-attn \
-               # --load-deepspeed-model-only \
 	             # --multitask-data-path $MULTITASK_DATA_PATH \
 	             # --multitask-ratio 0.05 \
-               # --tokenizer-type IceTokenizer"
                # --rampup-batch-size 192 24 $BATCH_WARMUP_SAMPLES \
-               # --vocab-file $VOCAB_FILE \
-               # --merge-file $MERGE_FILE \
-               # --tokenizer-type IceTokenizer \
-               # --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
-               # --tokenizer-name-or-path $ROOT_DIR/../download/tokenizer.model \
 
 OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8 NCCL_IB_DISABLE=0"
 
