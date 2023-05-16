@@ -980,6 +980,8 @@ def _add_distributed_args(parser):
     group.add_argument('--model-parallel-size', type=int, default=None,
                        help='Old model parallel argument, do not use. Use '
                        '--tensor-model-parallel-size instead.')
+    group.add_argument('--pipeline-model-parallel-partition-balanced', action='store_true',
+                       help='split pipeline model parallel use partition balanced.')
     group.add_argument('--num-layers-per-virtual-pipeline-stage', type=int, default=None,
                        help='Number of layers per virtual pipeline stage')
     group.add_argument('--distributed-backend', default='nccl',
