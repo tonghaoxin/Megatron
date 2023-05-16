@@ -1,3 +1,5 @@
+# !/usr/bin/env python3
+
 import argparse
 import json
 import os
@@ -116,7 +118,14 @@ def add_transformers_checkpoint_args(parser):
             "Only used when converting a Megatron checkpoint to a Transformers checkpoint."
         ),
     )
-
+    parser.add_argument(
+        "--untie_embeddings_and_output_weights", # FIXME
+        type=bool,
+        default=False,
+        help=(
+            "Untie embeddings and output weights. llama need set to True"
+        ),
+    )
     return parser
 
 
@@ -286,6 +295,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
 
     # load the transformers model state dict and config
     sub_dirs = [x for x in os.listdir(args.load_path) if x.startswith("pytorch_model")]
+    # print(f"----sub_dirs: {sub_dirs}, len: {len(sub_dirs)}")
     if len(sub_dirs) == 1:
         checkpoint_name = "pytorch_model.bin"
         state_dict = torch.load(os.path.join(args.load_path, checkpoint_name), map_location="cpu")
@@ -549,7 +559,12 @@ def convert_checkpoint_from_transformers_to_megatron(args):
 
             head_out_embed = torch.chunk(full_head_embed, args.target_tensor_model_parallel_size, dim=0)
             for i in range(args.target_tensor_model_parallel_size):
-                params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.word_embeddings_for_head")
+                if not args.untie_embeddings_and_output_weights:
+                    params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.word_embeddings_for_head")
+                else:
+                    # only weight
+                    params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.output_layer")
+                
                 params_dict["weight"] = head_out_embed[i]
 
         # saving the state dict as per the tp_rank and pp_rank
