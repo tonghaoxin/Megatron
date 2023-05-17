@@ -448,12 +448,14 @@ class ParallelAttention(MegatronModule):
     """
 
     def __init__(self, init_method,
-                 output_layer_init_method, layer_number,
+                 output_layer_init_method,
+                 layer_number, layer_index,
                  attention_type=AttnType.self_attn,
                  attn_mask_type=AttnMaskType.padding):
         super(ParallelAttention, self).__init__()
         args = get_args()
         self.layer_number = max(1, layer_number)
+        self.layer_index = layer_index
         self.attention_type = attention_type
         self.attn_mask_type = attn_mask_type
         self.params_dtype = args.params_dtype
@@ -546,7 +548,13 @@ class ParallelAttention(MegatronModule):
 
         self.core_attention = CoreAttention(self.layer_number,
                                             self.attn_mask_type)
-        self.checkpoint_core_attention = args.recompute_granularity == 'selective'
+
+        self.checkpoint_core_attention = False
+        if args.recompute_granularity == 'selective':
+            self.checkpoint_core_attention = True
+        elif args.recompute_granularity == 'hybrid' and \
+                self.layer_index >= args.recompute_num_layers:
+            self.checkpoint_core_attention = True
 
         if self.use_flash_attn:
             self.core_attention_flash = FlashSelfAttention(
@@ -807,7 +815,8 @@ class ParallelTransformerLayer(MegatronModule):
     """
 
     def __init__(self, init_method, output_layer_init_method,
-                 layer_number, layer_type=LayerType.encoder,
+                 layer_number, layer_index,
+                 layer_type=LayerType.encoder,
                  self_attn_mask_type=AttnMaskType.padding,
                  drop_path_rate=0.,
                  norm_type='layernorm'):
@@ -815,6 +824,7 @@ class ParallelTransformerLayer(MegatronModule):
 
         super(ParallelTransformerLayer, self).__init__()
         self.layer_number = layer_number
+        self.layer_index = layer_index
         self.layer_type = layer_type
 
         self.apply_residual_connection_post_layernorm \
@@ -847,6 +857,7 @@ class ParallelTransformerLayer(MegatronModule):
             init_method,
             output_layer_init_method,
             layer_number,
+            layer_index,
             attention_type=AttnType.self_attn,
             attn_mask_type=self_attn_mask_type)
         self.hidden_dropout = args.hidden_dropout
@@ -872,6 +883,7 @@ class ParallelTransformerLayer(MegatronModule):
                 init_method,
                 output_layer_init_method,
                 layer_number,
+                layer_index,
                 attention_type=AttnType.cross_attn)
             # Layernorm on the attention output.
             if self.norm_type == 'layernorm':
@@ -1203,13 +1215,14 @@ class ParallelTransformer(MegatronModule):
         self.drop_path_rates = [rate.item() for rate in torch.linspace(0, self.drop_path_rate, args.num_layers)]
 
         # Transformer layers.
-        def build_layer(layer_number):
+        def build_layer(layer_number, layer_index):
             if args.transformer_impl == 'local':
                 if not self.glm:
                     return ParallelTransformerLayer(
                         init_method,
                         output_layer_init_method,
                         layer_number,
+                        layer_index,
                         layer_type=layer_type,
                         self_attn_mask_type=self_attn_mask_type,
                         drop_path_rate=self.drop_path_rates[layer_number - 1],
@@ -1219,6 +1232,7 @@ class ParallelTransformer(MegatronModule):
                         init_method,
                         output_layer_init_method,
                         layer_number,
+                        layer_index,
                         layer_type=layer_type,
                         self_attn_mask_type=self_attn_mask_type,
                         drop_path_rate=self.drop_path_rates[layer_number - 1],
@@ -1301,7 +1315,7 @@ class ParallelTransformer(MegatronModule):
             self.layers = torch.nn.ModuleList([ NoopTransformerLayer(1) ])
         else:
             self.layers = torch.nn.ModuleList(
-                [build_layer(i + 1 + offset) for i in range(self.num_layers)])
+                [build_layer(i + 1 + offset, i) for i in range(self.num_layers)])
 
         if self.post_process and self.post_layer_norm:
             if self.norm_type == 'layernorm':
@@ -1476,7 +1490,8 @@ class ParallelTransformer(MegatronModule):
                 is_first_microbatch = self.microbatch_count % get_num_microbatches() == 0
 
                 # Forward pass.
-                if self.recompute_granularity == 'full':
+                # if self.recompute_granularity == 'full':
+                if self.recompute_granularity in ['full', 'hybrid']:
                     hidden_states = self._checkpointed_forward(hidden_states,
                                                                attention_mask,
                                                                encoder_output,

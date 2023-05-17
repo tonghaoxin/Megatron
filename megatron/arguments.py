@@ -116,6 +116,11 @@ def validate_args(args, defaults={}):
         args.recompute_granularity = 'selective'
     del args.recompute_activations
 
+    if args.recompute_granularity == 'hybrid':
+        args.recompute_method = 'block'
+        if args.rank == 0:
+            print('set recompute-method=block since recompute-granularity=hybrid')
+
     # Set input defaults.
     for key in defaults:
         # For default to be valid, it should not be provided in the
@@ -337,11 +342,6 @@ def validate_args(args, defaults={}):
     if args.fp16:
         assert args.transformer_impl == 'local', \
             'transformer-engine not yet approved for fp16 training and inference'
-
-    if args.recompute_granularity == 'selective':
-        assert args.recompute_method is None, \
-            'recompute method is not yet supported for ' \
-            'selective recomputing granularity'
 
     # disable sequence parallelism when tp=1
     # to avoid change in numerics when
@@ -726,13 +726,16 @@ def _add_training_args(parser):
                        help='recompute activation to allow for training '
                        'with larger models, sequences, and batch sizes.')
     group.add_argument('--recompute-granularity', type=str, default=None,
-                       choices=['full', 'selective'],
+                       choices=['full', 'selective', 'hybrid'],
                        help='Checkpoint activations to allow for training '
                        'with larger models, sequences, and batch sizes. '
-                       'It is supported at two granularities 1) full: '
+                       'It is supported at three granularities 1) full: '
                        'whole transformer layer is recomputed, '
                        '2) selective: core attention part of the transformer '
-                       'layer is recomputed.')
+                       'layer is recomputed, '
+                       '3) hybrid: full:block method for recompute-num-layers '
+                       'within each pipeline stage, selective method for the reset of layers '
+                       'within each pipeline stage')
     group.add_argument('--distribute-saved-activations',
                        action='store_true',
                        help='If set, distribute recomputed activations '
