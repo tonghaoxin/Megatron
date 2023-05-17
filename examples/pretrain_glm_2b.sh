@@ -121,13 +121,12 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --shrink-embedding-gradient-alpha 0.1 \
                --no-position-embedding \
                --no-async-tensor-model-parallel-allreduce \
-               --no-scatter-gather-tensors-in-pipeline \
-               --no-gradient-accumulation-fusion \
                --tokenizer-model IceTokenizer \
                --use-distributed-optimizer \
-               --recompute-granularity full \
-               --recompute-method uniform \
+               --recompute-granularity hybrid \
                --fp16"
+               # --no-scatter-gather-tensors-in-pipeline \
+               # --no-gradient-accumulation-fusion \
                # --load $CHECKPOINT_PATH \
                # --hidden-dropout 0 \
                # --recompute-activations \
