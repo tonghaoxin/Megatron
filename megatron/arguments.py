@@ -1115,7 +1115,8 @@ def _add_data_args(parser):
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
                                 'LLaMASentencePieceTokenizer',
-                                'GalacticaHFTokenizer'],
+                                'GalacticaHFTokenizer',
+                                'IceTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')

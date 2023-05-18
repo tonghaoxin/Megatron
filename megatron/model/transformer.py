@@ -37,6 +37,12 @@ try:
 except ImportError:
     FusedRMSNorm = None
 
+try:
+    import nvtx
+except ImportError:
+    pass
+
+
 """ We use the following notation throughout this file:
      h: hidden size
      n: number of attention heads
@@ -172,6 +178,7 @@ class ParallelMLP(MegatronModule):
             skip_bias_add=True,
             **_args_to_kwargs())
 
+    @nvtx.annotate("ParallelMLP forward", color="teal")
     def forward(self, hidden_states):
 
         # [s, b, 4hp]
@@ -202,6 +209,7 @@ class SwitchMLP(MegatronModule):
         for i in range(args.num_experts):
             self.experts.append(ParallelMLP(init_method, output_layer_init_method))
 
+    @nvtx.annotate("SwitchMLP forward", color="teal")
     def forward(self, hidden_states):
         # hidden_states: [s, b, h]
         s = hidden_states.size(0)
@@ -286,6 +294,7 @@ class CoreAttention(MegatronModule):
         # on average it should not be partition dependent.
         self.attention_dropout = torch.nn.Dropout(args.attention_dropout)
 
+    @nvtx.annotate("CoreAttention forward", color="cyan")
     def forward(self, query_layer, key_layer,
                 value_layer, attention_mask):
 
@@ -395,6 +404,7 @@ class FlashSelfAttention(torch.nn.Module):
         self.softmax_scale = softmax_scale
         self.dropout_p = attention_dropout
 
+    @nvtx.annotate("FlashSelfAttention forward", color="cyan")
     def forward(self, q, k, v):
         """Implements the multihead softmax attention.
         Arguments
@@ -482,9 +492,8 @@ class ParallelAttention(MegatronModule):
         self.num_attention_heads_per_partition = core.utils.divide(
             args.num_attention_heads, world_size)
 
-        # Rotary Embedding for GLM
-        # Rotary embedding with position_ids
-        if args.use_rotary_position_embeddings:
+        # Rotary positional embedding for GLM with position_ids
+        if args.use_rotary_position_embeddings and args.glm:
             rotary_dim = self.hidden_size_per_attention_head \
                 if args.kv_channels is None else args.kv_channels
 
@@ -577,8 +586,10 @@ class ParallelAttention(MegatronModule):
             skip_bias_add=True,
             **_args_to_kwargs())
 
+    @nvtx.annotate("ParallelAttention _checkpointed_attention_forward", color="lightskyblue")
     def _checkpointed_attention_forward(self, query_layer, key_layer,
-                                        value_layer, attention_mask):
+                                        value_layer, attention_mask,
+                                        rotary_pos_emb=None):
         """Forward method with activation checkpointing."""
         def custom_forward(*inputs):
             query_layer = inputs[0]
@@ -589,9 +600,13 @@ class ParallelAttention(MegatronModule):
                                           value_layer, attention_mask)
             return output_
 
+        q_pos_emb, k_pos_emb = (None, None) if rotary_pos_emb is None \
+            else rotary_pos_emb
+
         hidden_states = tensor_parallel.checkpoint(
             custom_forward,
-            False, query_layer, key_layer, value_layer, attention_mask)
+            False, query_layer, key_layer, value_layer, attention_mask,
+            q_pos_emb, k_pos_emb)
 
         return hidden_states
 
@@ -604,6 +619,7 @@ class ParallelAttention(MegatronModule):
             dtype=self.params_dtype,
             device=torch.cuda.current_device())
 
+    @nvtx.annotate("ParallelAttention forward", color="greenyellow")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None,
                 rotary_pos_emb=None, position_ids=None):
@@ -672,6 +688,8 @@ class ParallelAttention(MegatronModule):
         # Rotary embeddings
         # ==================================
 
+        # call GLMRotaryEmbedding forward to get rotary_pos_emb with given position_ids
+        # and set corresponding apply_rotary_fn
         if position_ids is not None:
             apply_rotary_fn = apply_rotary_pos_emb_index
             # [b, sq] -> [sq, b]
@@ -736,12 +754,14 @@ class ParallelAttention(MegatronModule):
         # apply relative positional encoding (rotary embedding)
         if rotary_pos_emb is not None:
             q_pos_emb, k_pos_emb = rotary_pos_emb
+            # call apply_rotary_fn with position_ids
             if position_ids is not None:
                 query_layer, key_layer = apply_rotary_fn(query_layer,
                                                          key_layer,
                                                          q_pos_emb,
                                                          k_pos_emb,
                                                          position_ids)
+            # call apply_rotary_fn without position_ids
             else:
                 query_layer = apply_rotary_fn(query_layer, q_pos_emb)
                 key_layer = apply_rotary_fn(key_layer, k_pos_emb)
@@ -831,7 +851,8 @@ class ParallelTransformerLayer(MegatronModule):
             = args.apply_residual_connection_post_layernorm
 
         self.deepnorm = args.deepnorm
-        self.deepnorm_coeff = get_deepnorm_coefficients()
+        if self.deepnorm:
+            self.deepnorm_coeff = get_deepnorm_coefficients()
 
         self.bf16 = args.bf16
         self.fp32_residual_connection = args.fp32_residual_connection
@@ -912,10 +933,11 @@ class ParallelTransformerLayer(MegatronModule):
         self.bias_dropout_add_exec_handler = \
                 nullcontext if use_nvfuser else torch.enable_grad
 
+    @nvtx.annotate("ParallelTransformerLayer forward", color="mediumorchid")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
-                inference_params=None, rotary_pos_emb=None,
-                position_ids=None):
+                rotary_pos_emb=None, position_ids=None,
+                inference_params=None):
         # hidden_states: [s, b, h]
 
         # Layer norm at the beginning of the transformer layer.
@@ -1049,6 +1071,7 @@ class GLMParallelTransformerLayer(ParallelTransformerLayer):
        If no mask is provided, the module will query `self._args.attn_mask`
        for the mask and only return `super().forward(...)`
     """
+    @nvtx.annotate("GLMParallelTransformerLayer forward", color="crimson")
     def forward(self, *inputs, **kwargs):
         # Attention mask is an activation.
         attention_mask = inputs[1]
@@ -1106,42 +1129,61 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
                 assert args.decoder_num_layers % num_ranks_in_decoder == 0, \
                     'decoder_num_layers (%d) must be divisible by number of ranks given to decoder (%d)' % (args.decoder_num_layers, num_ranks_in_decoder)
             if mpu.is_pipeline_stage_before_split():
-                layer_list, layer_index = utils.partition_balanced(args.encoder_num_layers, num_ranks_in_encoder)
-                num_layers = (
-                    0
-                    if args.standalone_embedding_stage
-                    and mpu.get_pipeline_model_parallel_rank() == 0 else
-                    #args.encoder_num_layers // num_ranks_in_encoder
-                    layer_list[mpu.get_pipeline_model_parallel_rank()]
-                )
+                if not args.pipeline_model_parallel_partition_balanced:
+                    num_layers = (
+                        0
+                        if args.standalone_embedding_stage
+                        and mpu.get_pipeline_model_parallel_rank() == 0 else
+                        args.encoder_num_layers // num_ranks_in_encoder
+                    )
+                else:
+                    layer_list, layer_index = utils.partition_balanced(args.encoder_num_layers, num_ranks_in_encoder)
+                    num_layers = (
+                        0
+                        if args.standalone_embedding_stage
+                        and mpu.get_pipeline_model_parallel_rank() == 0 else
+                        layer_list[mpu.get_pipeline_model_parallel_rank()]
+                    )
             else:
-                #num_layers = args.decoder_num_layers // num_ranks_in_decoder
-                layer_list, layer_index = utils.partition_balanced(args.decoder_num_layers, num_ranks_in_decoder)
-                num_layers = layer_list[mpu.get_pipeline_model_parallel_rank()]
+                if not args.pipeline_model_parallel_partition_balanced:
+                    num_layers = args.decoder_num_layers // num_ranks_in_decoder
+                else:
+                    layer_list, layer_index = utils.partition_balanced(args.decoder_num_layers, num_ranks_in_decoder)
+                    num_layers = layer_list[mpu.get_pipeline_model_parallel_rank()]
         else:
             assert args.num_layers == args.encoder_num_layers
-            if not args.pipeline_model_parallel_partition_balanced:
-                assert args.num_layers % args.transformer_pipeline_model_parallel_size == 0, \
-                'num_layers must be divisible by transformer_pipeline_model_parallel_size'
 
             # When a standalone embedding stage is used, all transformer layers
             # are divided among pipeline rank >= 1, while on pipeline rank 0,
             # ranks either contain the input embedding layer (virtual pp rank 0),
             # or no layers at all (virtual pp rank >= 1).
-            layer_list, layer_index = utils.partition_balanced(args.num_layers, args.transformer_pipeline_model_parallel_size)
-            num_layers = (
-                0
-                if args.standalone_embedding_stage
-                and mpu.get_pipeline_model_parallel_rank() == 0 else
-                #args.num_layers // args.transformer_pipeline_model_parallel_size
-                layer_list[mpu.get_pipeline_model_parallel_rank()]
-            )
+            if not args.pipeline_model_parallel_partition_balanced:
+                assert args.num_layers % args.transformer_pipeline_model_parallel_size == 0, \
+                'num_layers must be divisible by transformer_pipeline_model_parallel_size'
+
+                num_layers = (
+                    0
+                    if args.standalone_embedding_stage
+                    and mpu.get_pipeline_model_parallel_rank() == 0 else
+                    args.num_layers // args.transformer_pipeline_model_parallel_size
+                )
+            else:
+                layer_list, layer_index = utils.partition_balanced(args.num_layers, args.transformer_pipeline_model_parallel_size)
+                num_layers = (
+                    0
+                    if args.standalone_embedding_stage
+                    and mpu.get_pipeline_model_parallel_rank() == 0 else
+                    layer_list[mpu.get_pipeline_model_parallel_rank()]
+                )
     else:
-        layer_index = [0]
+        if args.pipeline_model_parallel_partition_balanced:
+            layer_index = [0]
         if not is_decoder:
             num_layers = args.encoder_num_layers
         else:
             num_layers = args.decoder_num_layers
+    if not args.pipeline_model_parallel_partition_balanced:
+        return num_layers, None
     return num_layers, layer_index
 
 
@@ -1282,25 +1324,33 @@ class ParallelTransformer(MegatronModule):
             # layers to stages like (each list is a model chunk):
             # Stage 0: [0, 1]  [4, 5]
             # Stage 1: [2, 3]  [6, 7]
+            if not args.pipeline_model_parallel_partition_balanced:
+                offset_res = mpu.get_pipeline_model_parallel_rank() * self.num_layers
+            else:
+                offset_res = self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
             offset = mpu.get_virtual_pipeline_model_parallel_rank() * (
-                args.num_layers // args.virtual_pipeline_model_parallel_size) + \
-                self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
-                #(mpu.get_pipeline_model_parallel_rank() * self.num_layers)
+                args.num_layers // args.virtual_pipeline_model_parallel_size) + offset_res
         else:
             # Each stage gets a contiguous set of layers.
             if args.model_type == ModelType.encoder_and_decoder and \
                     mpu.get_pipeline_model_parallel_world_size() > 1:
                 pipeline_rank = mpu.get_pipeline_model_parallel_rank()
                 if layer_type == LayerType.encoder:
-                    offset = self.prefix_sum_inc[pipeline_rank]
-                    #offset = pipeline_rank * self.num_layers
+                    if not args.pipeline_model_parallel_partition_balanced:
+                        offset = pipeline_rank * self.num_layers
+                    else:
+                        offset = self.prefix_sum_inc[pipeline_rank]
                 else:
                     num_ranks_in_enc = args.pipeline_model_parallel_split_rank
-                    offset = self.prefix_sum_inc[pipeline_rank - num_ranks_in_enc]
-                    #offset = (pipeline_rank - num_ranks_in_enc) * self.num_layers
+                    if not args.pipeline_model_parallel_partition_balanced:
+                        offset = (pipeline_rank - num_ranks_in_enc) * self.num_layers
+                    else:
+                        offset = self.prefix_sum_inc[pipeline_rank - num_ranks_in_enc]
             else:
-                offset = self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
-                #offset = mpu.get_pipeline_model_parallel_rank() * self.num_layers
+                if not args.pipeline_model_parallel_partition_balanced:
+                    offset = mpu.get_pipeline_model_parallel_rank() * self.num_layers
+                else:
+                    offset = self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
 
         if self.num_layers == 0:
             # When a standalone embedding stage is used (e.g.,
@@ -1336,6 +1386,7 @@ class ParallelTransformer(MegatronModule):
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
 
+    @nvtx.annotate("ParallelTransformer _checkpointed_forward", color="deeppink")
     def _checkpointed_forward(self, hidden_states, attention_mask,
                               encoder_output, enc_dec_attn_mask,
                               rotary_pos_emb, is_first_microbatch,
@@ -1434,6 +1485,7 @@ class ParallelTransformer(MegatronModule):
         forward_step_func"""
         self.input_tensor = input_tensor
 
+    @nvtx.annotate("ParallelTransformer forward", color="paleturquoise")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
                 inference_params=None, rotary_pos_emb=None,

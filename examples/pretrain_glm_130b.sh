@@ -134,17 +134,17 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --distributed-backend nccl \
                --recompute-activations \
                --init-method-std 0.0052 \
+               --tokenizer-type IceTokenizer\
                --no-async-tensor-model-parallel-allreduce \
                --no-gradient-accumulation-fusion \
                --shrink-logit-embedding-gradient \
                --shrink-embedding-gradient-alpha 0.1 \
                --no-position-embedding \
-               --tokenizer-model IceTokenizer\
                --fp16"
-               #--no-gradient-accumulation-fusion \
-               #--pipeline_model_parallel_split_rank
-               #--skip-train-iteration-range 40701-40900 42401-42600 \
-               #--load $CHECKPOINT_PATH \
+               # --no-gradient-accumulation-fusion \
+               # --pipeline_model_parallel_split_rank
+               # --skip-train-iteration-range 40701-40900 42401-42600 \
+               # --load $CHECKPOINT_PATH \
                # --use-flash-attn \
                # --load-deepspeed-model-only \
 	             # --multitask-data-path $MULTITASK_DATA_PATH \
