@@ -96,7 +96,7 @@ def get_checkpoint_names(checkpoints_path, iteration, use_distributed_optimizer,
                         f'mp_rank_{tensor_rank:02d}_{pipeline_rank:03d}')
 
     args = get_args()
-    if use_distributed_optimizer and not release and not args.finetune and not args.no_load_optim:
+    if use_distributed_optimizer:
         model_name = os.path.join(common_path, "model_rng.pt")
         optim_name = os.path.join(
             common_path + "_%03d" % mpu.get_data_parallel_rank(),

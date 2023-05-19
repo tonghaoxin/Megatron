@@ -687,7 +687,7 @@ class TransformerLanguageModel(MegatronModule):
                         enc_attn_mask,
                         inference_params=inference_params,
                         rotary_pos_emb=rotary_pos_emb,
-                        position_ids=enc_position_ids)
+                        position_ids=enc_position_ids if self.glm else None)
             else:
                 encoder_output = self.encoder_hidden_state
         else:
