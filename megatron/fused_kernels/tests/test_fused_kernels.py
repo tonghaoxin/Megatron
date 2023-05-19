@@ -11,7 +11,7 @@ from megatron.fused_kernels import load
 
 def test_load_fused_kernels():
     try:
-        import fused_mix_prec_layer_norm_cuda
+        import fused_layer_norm_cuda
         import scaled_masked_softmax_cuda
         import scaled_upper_triang_masked_softmax_cuda
         import torch
@@ -328,7 +328,7 @@ def test_masked_softmax_backward():
 
 
 def test_allmasked_softmax_forward():
-    import scaled_masked_softmax_cuda 
+    import scaled_masked_softmax_cuda
 
     batch = 2
     attn = 16
@@ -345,7 +345,7 @@ def test_allmasked_softmax_forward():
 
 def test_allmasked_softmax_backward():
     import scaled_masked_softmax_cuda
-    
+
     batch = 2
     attn = 16
     scale_t = torch.tensor([1.0])

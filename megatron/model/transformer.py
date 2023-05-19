@@ -151,6 +151,7 @@ class ParallelMLP(MegatronModule):
         elif args.onnx_safe:
             self.activation_func = erf_gelu
         elif args.swiglu:
+            @torch.jit.script
             def swiglu(x):
                 x = torch.chunk(x, 2, dim=-1)
                 return F.silu(x[0]) * x[1]
@@ -160,6 +161,7 @@ class ParallelMLP(MegatronModule):
                 return torch.pow(F.relu(x), 2)
             self.activation_func = squared_relu
         elif args.geglu:
+            @torch.jit.script
             def geglu(x):
                 x = x.chunk(2, dim=(x.ndim - 1))
                 return x[0] * F.gelu(x[1])
