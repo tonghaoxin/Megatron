@@ -265,7 +265,6 @@ class CoreAttention(MegatronModule):
         self.layer_number = max(1, layer_number)
         self.attn_mask_type = attn_mask_type
         self.sequence_parallel = args.sequence_parallel
-        self.rotary_embedding_2d = args.rotary_embedding_2d
 
         projection_size = args.kv_channels * args.num_attention_heads
 
@@ -473,6 +472,7 @@ class ParallelAttention(MegatronModule):
         self.attn_mask_type = attn_mask_type
         self.params_dtype = args.params_dtype
         self.sequence_parallel = args.sequence_parallel
+        self.rotary_embedding_2d = args.rotary_embedding_2d
 
         self.use_flash_attn = args.use_flash_attn
         if self.use_flash_attn:

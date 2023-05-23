@@ -6,7 +6,7 @@ EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 DATA_PATH=/workspace/chatglm/AdvertiseGen/
-CONFIG_PATH=/workspace/chatglm/model/ChatGLM-6B/THUDM/chatglm-6b/
+HF_TOKENIZER_PATH=/workspace/chatglm/model/ChatGLM-6B/THUDM/chatglm-6b/
 CHECKPOINT_PATH=/workspace/chatglm/model/ChatGLM-6B/THUDM/tp1-pp1-dp8
 TENSORBOARD_PATH=./tensorborads/$EXP_NAME
 LOG_PATH=./logs/$EXP_NAME
@@ -36,8 +36,7 @@ GLM_ARGS="--num-layers $NLAYERS \
           --glm \
           --rotary-embedding-2d \
           --model-type-custom chatglm-6b \
-          --hf-tokenizer-path $CONFIG_PATH \
-          --config-path $CONFIG_PATH \
+          --hf-tokenizer-path $HF_TOKENIZER_PATH \
           --gpt-prob 0.7 \
           --single-span-prob 0.02 \
           --short-seq-prob 0.02 \
@@ -61,8 +60,6 @@ TRAIN_SAMPLES=$((TRAIN_TOKENS / SEQ_LEN))
 LR_DECAY_SAMPLES=$((TRAIN_SAMPLES * 90 / 100))  # Decay for the first 90% tokens then continue at fixed --min-lr
 LR_WARMUP_SAMPLES=$((TRAIN_SAMPLES * 5 / 1000))  # 0.5% warmup
 BATCH_WARMUP_SAMPLES=$((TRAIN_SAMPLES * 25 / 1000))  # 2.5% warmup
-
-ZERO_STAGE=1
 
 OPTIMIZER_ARGS="--optimizer adam \
                 --adam-beta1 0.9 \
