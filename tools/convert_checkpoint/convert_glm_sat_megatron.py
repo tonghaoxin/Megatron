@@ -14,17 +14,22 @@ from tqdm import tqdm
 #=============================
 # global variables
 #=============================
-total_layers = 0
 
-name_map = {}
-name_map['input_layernorm'] = 'input_layernorm'
-name_map['attention.query_key_value'] = 'self_attention.query_key_value'
-name_map['attention.dense'] = 'self_attention.dense'
-name_map['post_attention_layernorm'] = 'post_attention_layernorm'
-name_map['mlp.dense_h_to_4h'] = 'mlp.dense_h_to_4h'
-name_map['mlp.dense_4h_to_h'] = 'mlp.dense_4h_to_h'
-name_map['attention.rotary_emb.inv_freq'] = 'self_attention.rotary_emb.inv_freq'
-name_map['final_layernorm'] = 'final_layernorm'
+name_map = {
+    "input_layernorm": "input_layernorm",
+    "attention.query_key_value": "self_attention.query_key_value",
+    "attention.dense": "self_attention.dense",
+    "post_attention_layernorm": "post_attention_layernorm",
+    "mlp.dense_h_to_4h": "mlp.dense_h_to_4h",
+    "mlp.dense_4h_to_h": "mlp.dense_4h_to_h",
+    "attention.rotary_emb.inv_freq": "self_attention.rotary_emb.inv_freq",
+    "final_layernorm": "final_layernorm",
+}
+
+LAYER_CONCAT_DIM = {
+    "attention.dense.weight": 1,
+    "mlp.dense_4h_to_h.weight": 1,
+}
 
 SEQUENTIAL_LAYERS = [
     "input_layernorm.weight",
@@ -35,17 +40,13 @@ SEQUENTIAL_LAYERS = [
     "mlp.dense_4h_to_h.bias",
     "final_layernorm.weight",
     "final_layernorm.bias",
+    "attention.rotary_emb.inv_freq",
 ]
 
-GLU_LAYERS = [
-    "mlp.dense_h_to_4h.weight",
-    "mlp.dense_h_to_4h.bias",
-]
-
-LAYER_CONCAT_DIM = {
-    "attention.dense.weight": 1,
-    "mlp.dense_4h_to_h.weight": 1,
-}
+# GLU_LAYERS = [
+#     "mlp.dense_h_to_4h.weight",
+#     "mlp.dense_h_to_4h.bias",
+# ]
 
 
 def parse_arguments():
@@ -150,7 +151,7 @@ def add_megatron_checkpoint_args(parser):
     parser.add_argument(
         "--model_type",
         default='glm-130b',
-        choices=['glm-130b', 'glm-10b-chinese'],
+        choices=['glm-130b', 'glm-10b-chinese', 'chatglm-6b'],
         help=(
             "The GLM model type of the converted checkpoint."
         ),
@@ -186,9 +187,9 @@ def recursive_print(name, val, spaces=0):
         print(msg, ":", val)
 
 
-def load_states(args):
+def merge_sat_sharded_states(args):
     """
-    Load states from SAT into a dict.
+    Merge shareded checkpoints from SAT into a single checkpoint.
 
     Args:
         args: the input arguments
@@ -225,6 +226,22 @@ def load_states(args):
         recursive_print(None, merged_state_dict)
 
     return merged_state_dict
+
+
+def merge_transformers_sharded_states(path, num_checkpoints):
+    """
+    Merge sharded checkpoints from transformers into a single checkpoint.
+
+    Args:
+        path (str): the path to the sharded checkpoints
+        num_checkpoints (int): the number of checkpoints to merge
+    """
+    state_dict = {}
+    for i in range(1, num_checkpoints + 1):
+        checkpoint_path = os.path.join(path, f"pytorch_model-{i:05d}-of-{num_checkpoints:05d}.bin")
+        current_chunk = torch.load(checkpoint_path, map_location="cpu")
+        state_dict.update(current_chunk)
+    return state_dict
 
 
 def get_element_from_dict_by_path(d, path):
@@ -265,47 +282,24 @@ def get_num_layers_per_pipeline(args, margs):
     return layer_list, layer_index
 
 
-# TODO: Now not support glm model
-def convert_checkpoint_from_megatron_to_sat(args):
-    pass
-
-
-def convert_checkpoint_from_sat_to_megatron(args):
-    """
-    Convert a checkpoint from SAT to Megatron-LM. This allows converted checkpoints with variable
-    tensor parallelism and pipeline parallelism sizes. It takes as input a checkpoint from SAT
-    which can have multiple shards.
-
-    Args:
-        args (argparse.Namespace): the arguments to the script
-
-    """
-    os.makedirs(args.save_path, exist_ok=True)
-    # Search in directory above this
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-    if args.megatron_path is not None:
-        sys.path.insert(0, args.megatron_path)
-
-    try:
-        from megatron.tokenizer.tokenizer import _vocab_size_with_padding
-    except ModuleNotFoundError:
-        print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
-        exit(1)
-
-    # load SAT model state dict (merged)
-    state_dict = load_states(args)
-
-    # Saving the tracker file
-    tracker_filepath = os.path.join(args.save_path, "latest_checkpointed_iteration.txt")
-    with open(tracker_filepath, "w") as f:
-        f.write("release")
-
-    # create `release` dir in args.load_path
-    release_dir = os.path.join(args.save_path, "release")
-    os.makedirs(release_dir, exist_ok=True)
-
-    # megatron args
+def preprocess(args):
     if args.model_type == 'glm-130b':
+        # load SAT model state dict (merged)
+        state_dict = merge_sat_sharded_states(args)
+
+        # disable embedding padding workflow
+        args.add_embedding_padding = False
+
+        # disable positional embedding
+        args.add_position_embedding = False
+
+        # use rotary positional embeddings
+        args.use_rotary_position_embeddings = True
+
+        # do not use rotary embedding 2d
+        args.use_rotary_embedding_2d = False
+
+        # set megatron args
         megatron_args = {
             "orig_vocab_size": 150009,
             "max_position_embeddings": None,
@@ -320,7 +314,24 @@ def convert_checkpoint_from_sat_to_megatron(args):
             "rank": 0,
             "tokenizer_type": "IceTokenizer",
         }
+
     elif args.model_type == 'glm-10b-chinese':
+        # load SAT model state dict (merged)
+        state_dict = merge_sat_sharded_states(args)
+
+        # disable embedding padding workflow
+        args.add_embedding_padding = False
+
+        # enable positional embedding
+        args.add_position_embedding = True
+
+        # do not use rotary positional embeddings
+        args.use_rotary_position_embeddings = False
+
+        # do not use rotary embedding 2d
+        args.use_rotary_embedding_2d = False
+
+        # set megatron args
         megatron_args = {
             "orig_vocab_size": 50048,
             "max_position_embeddings": 1024,
@@ -336,6 +347,53 @@ def convert_checkpoint_from_sat_to_megatron(args):
             "tokenizer_type": "ChineseSPTokenizer",
         }
 
+    elif args.model_type == 'chatglm-6b':
+        # load transformer model state dict
+        sub_dirs = [x for x in os.listdir(args.load_path) if x.startswith("pytorch_model")]
+        if len(sub_dirs) == 1:
+            checkpoint_name = "pytorch_model.bin"
+            state_dict = torch.load(os.path.join(args.load_path, checkpoint_name), map_location="cpu")
+        else:
+            num_checkpoints = len(sub_dirs) - 1
+            state_dict = merge_transformers_sharded_states(args.load_path, num_checkpoints)
+
+        # enable embedding padding workflow
+        args.add_embedding_padding = True
+
+        # disable positional embedding
+        args.add_position_embedding = False
+
+        # use rotary positional embeddings
+        args.use_rotary_position_embeddings = True
+
+        # use rotary embedding 2d
+        args.use_rotary_embedding_2d = True
+
+        # set megatron args
+        from transformers import AutoConfig
+        config = AutoConfig.from_pretrained(args.load_path,
+                                            trust_remote_code=True,
+                                            max_sequence_length=1024,
+                                            position_encoding_2d=args.use_rotary_embedding_2d)
+        print(f"--------- Model hf config: ----------- \n {config}")
+
+        megatron_args = {
+            "orig_vocab_size": config.vocab_size,
+            "max_position_embeddings": None,
+            "hidden_size": config.hidden_size,
+            "num_layers": config.num_layers,
+            "num_attention_heads": config.num_attention_heads,
+            "ffn_hidden_size": config.inner_hidden_size,
+            "tensor_model_parallel_size": args.target_tensor_model_parallel_size,
+            "pipeline_model_parallel_size": args.target_pipeline_model_parallel_size,
+            "data_parallel_size": args.target_data_parallel_size,
+            "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
+            "rank": 0,
+            "tokenizer_type": "ChatGLMTokenizer",
+        }
+
+
+    # set up margs
     margs = types.SimpleNamespace()
     for k, v in megatron_args.items():
         setattr(margs, k, v)
@@ -348,6 +406,48 @@ def convert_checkpoint_from_sat_to_megatron(args):
     else:
         dtype = torch.float32
     setattr(margs, "params_dtype", dtype)
+
+    return args, margs, state_dict
+
+
+# TODO: Now not support glm model
+def convert_checkpoint_from_megatron_to_sat(args):
+    pass
+
+
+def convert_checkpoint_from_sat_to_megatron(args, margs, state_dict):
+    """
+    Convert a checkpoint from SAT to Megatron-LM. This allows converted checkpoints with variable
+    tensor parallelism and pipeline parallelism sizes. It takes as input a checkpoint from SAT
+    which can have multiple shards.
+
+    Args:
+        args (argparse.Namespace): the arguments to the script
+        margs (types.SimpleNamespace): the megatron-related arguments for checkpoint conversion
+        state_dict (dict): the merged model state dict loaded from load_path
+
+    """
+    os.makedirs(args.save_path, exist_ok=True)
+    # Search in directory above this
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+    if args.megatron_path is not None:
+        sys.path.insert(0, args.megatron_path)
+
+    if args.add_embedding_padding:
+        try:
+            from megatron.tokenizer.tokenizer import _vocab_size_with_padding
+        except ModuleNotFoundError:
+            print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
+            exit(1)
+
+    # Saving the tracker file
+    tracker_filepath = os.path.join(args.save_path, "latest_checkpointed_iteration.txt")
+    with open(tracker_filepath, "w") as f:
+        f.write("release")
+
+    # create `release` dir in args.load_path
+    release_dir = os.path.join(args.save_path, "release")
+    os.makedirs(release_dir, exist_ok=True)
 
     # save dummy optim state dict
     dummy_optim_state_dict = {}
@@ -388,16 +488,23 @@ def convert_checkpoint_from_sat_to_megatron(args):
     for i in range(args.target_tensor_model_parallel_size):
         output_state_dict.append({})
 
+    # get params_dtype
+    dtype = getattr(margs, 'params_dtype', torch.float32)
+
     # Embedding layer
     print("converting embedding layer")
-    if args.model_type == 'glm-130b':
+    if args.model_type in ['glm-130b', 'chatglm-6b']:
         word_embedding = state_dict["transformer.word_embeddings.weight"].to(dtype)
     elif args.model_type == 'glm-10b-chinese':
         word_embedding = state_dict["word_embeddings.weight"].to(dtype)
+
+    if args.add_position_embedding:
         position_embedding = state_dict["transformer.position_embeddings.weight"].to(dtype)
         block_position_embedding = state_dict["transformer.block_position_embeddings.weight"].to(dtype)
+        out_position_embed = torch.chunk(position_embedding, args.target_tensor_model_parallel_size, dim=0)
+        out_block_position_embed = torch.chunk(block_position_embedding, args.target_tensor_model_parallel_size, dim=0)
 
-    if args.model_type == 'glm-10b-chinese':
+    if args.add_embedding_padding:
         orig_vocab_size = getattr(margs, 'orig_vocab_size', 0)
         padded_vocab_size = _vocab_size_with_padding(orig_vocab_size, margs)
         print(f"Embedding padded vocab size: {padded_vocab_size}, ori vocab size: {orig_vocab_size}")
@@ -416,10 +523,7 @@ def convert_checkpoint_from_sat_to_megatron(args):
 
         # Split into new tensor model parallel sizes
         out_word_embed = torch.chunk(full_word_embed, args.target_tensor_model_parallel_size, dim=0)
-        out_position_embed = torch.chunk(position_embedding, args.target_tensor_model_parallel_size, dim=0)
-        out_block_position_embed = torch.chunk(block_position_embedding, args.target_tensor_model_parallel_size, dim=0)
     else:
-        # GLM-130B has no position embed, and its checkpoint of word_embed has already been padded
         out_word_embed = torch.chunk(word_embedding, args.target_tensor_model_parallel_size, dim=0)
 
     for i in range(args.target_tensor_model_parallel_size):
@@ -429,7 +533,7 @@ def convert_checkpoint_from_sat_to_megatron(args):
         )
         word_emb_dict["weight"] = out_word_embed[i].clone()
 
-        if args.model_type == 'glm-10b-chinese':
+        if args.add_position_embedding:
             # positional embeddings
             position_embeddings_dict = get_element_from_dict_by_path(
                 output_state_dict[i], "model.language_model.embedding.position_embeddings"
@@ -445,6 +549,24 @@ def convert_checkpoint_from_sat_to_megatron(args):
     # Transformer layers
     print("converting transformer layers")
 
+    # The hidden size per head
+    hidden_size = getattr(margs, 'hidden_size', 0)
+    heads = getattr(margs, 'num_attention_heads', 1)
+    hidden_size_per_head = hidden_size // heads
+
+    # Rotary positional embedding
+    if args.use_rotary_position_embeddings:
+        try:
+            from megatron.model.rotary_pos_embedding import GLMRotaryEmbedding
+        except ModuleNotFoundError:
+            print("Unable to import megatron.model.rotary_pos_embedding, please verify the Megatron version that you specified. Exiting.")
+            exit(1)
+
+        rotary_emb = GLMRotaryEmbedding(
+                hidden_size_per_head // (2 if args.use_rotary_embedding_2d else 1),
+                base=10000,
+                precision=dtype)
+
     # Obtain num_layers for each pipeline stage
     layer_list, layer_index = get_num_layers_per_pipeline(args, margs)
 
@@ -459,6 +581,8 @@ def convert_checkpoint_from_sat_to_megatron(args):
             output_state_dict = []
             for i in range(args.target_tensor_model_parallel_size):
                 output_state_dict.append({})
+
+        find_rope_invfreq = False
 
         for layer in range(num_layers):
             pp_layer_id = layer + layer_offset
@@ -487,8 +611,19 @@ def convert_checkpoint_from_sat_to_megatron(args):
                 params = state_dict[layer_name].to(dtype)
 
                 # obtain the mapped layer name
+                if op_name == 'attention.rotary_emb':
+                    assert args.use_rotary_position_embeddings == True, \
+                f"args.use_rotary_position_embeddings is required to be set to True since we capture the rotary_emb op"
+                    op_name = 'attention.rotary_emb.inv_freq'
+                    find_rope_invfreq = True
+
                 mapped_op_name = name_map[op_name]
-                layer_name = f"layers.{layer}.{mapped_op_name}.{weight_or_bias}"
+
+                if mapped_op_name == 'self_attention.rotary_emb.inv_freq':
+                    layer_name = f"layers.{layer}.{mapped_op_name}"
+                else:
+                    layer_name = f"layers.{layer}.{mapped_op_name}.{weight_or_bias}"
+
                 print(f"==== find {op_name}, to {layer_name} ====")
 
                 # count nonzero for bias
@@ -496,7 +631,9 @@ def convert_checkpoint_from_sat_to_megatron(args):
                     print("torch.count_nonzero(params):",torch.count_nonzero(params))
 
                 # chunk non-sequential layers according to target tp degree
-                op_name = op_name + "." + weight_or_bias
+                if op_name != 'attention.rotary_emb.inv_freq':
+                    op_name = op_name + "." + weight_or_bias
+
                 if op_name not in SEQUENTIAL_LAYERS:
                     print(f"op_name: {op_name}; params.shape: {params.shape}")
                     params = torch.chunk(params,
@@ -510,20 +647,14 @@ def convert_checkpoint_from_sat_to_megatron(args):
                         params[i].clone() if (op_name not in SEQUENTIAL_LAYERS) else params
                     )
 
-            # rotary positional embedding
-            if args.model_type == 'glm-130b':
-                # The hidden size per head
-                hidden_size = getattr(margs, 'hidden_size', 0)
-                heads = getattr(margs, 'num_attention_heads', 1)
-                hidden_size_per_head = hidden_size // heads
-
-                inv_freq = 1.0 / (10000 ** (torch.arange(0, hidden_size_per_head, 2).to(dtype) / hidden_size_per_head))
+            # manually create rotary positional embedding inv_freq
+            if args.use_rotary_position_embeddings and not find_rope_invfreq:
                 op_name = "attention.rotary_emb.inv_freq"
                 mapped_op_name = name_map[op_name]
                 layer_name = f"layers.{layer}.{mapped_op_name}"
                 for i in range(args.target_tensor_model_parallel_size):
                     params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.encoder")
-                    params_dict[layer_name] = inv_freq
+                    params_dict[layer_name] = rotary_emb.inv_freq.to(dtype)
 
         if pp_rank == args.target_pipeline_model_parallel_size - 1:
             # handle final layernorm
@@ -542,8 +673,7 @@ def convert_checkpoint_from_sat_to_megatron(args):
             else:
                 head_embed = state_dict[f"lm_head.weight"].to(dtype)
 
-                if args.model_type == 'glm-10b-chinese':
-                    # GLM-130B has no position embed, and its checkpoint of word_embed has already been padded
+                if args.add_embedding_padding:
                     orig_vocab_size = getattr(margs, 'orig_vocab_size', 0)
                     padded_vocab_size = _vocab_size_with_padding(orig_vocab_size, margs)
 
@@ -557,8 +687,8 @@ def convert_checkpoint_from_sat_to_megatron(args):
                     # Same size!
                     else:
                         full_head_embed = head_embed
-
                     head_embed = full_head_embed
+
             head_out_embed = torch.chunk(head_embed, args.target_tensor_model_parallel_size, dim=0)
             for i in range(args.target_tensor_model_parallel_size):
                 params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.word_embeddings_for_head")
@@ -592,11 +722,12 @@ def convert_checkpoint_from_sat_to_megatron(args):
 
 def main():
     args = parse_arguments()
+    args, margs, state_dict = preprocess(args)
 
     if args.convert_checkpoint_from_megatron_to_sat:
         convert_checkpoint_from_megatron_to_sat(args)
     else:
-        convert_checkpoint_from_sat_to_megatron(args)
+        convert_checkpoint_from_sat_to_megatron(args, margs, state_dict)
 
 
 if __name__ == "__main__":
