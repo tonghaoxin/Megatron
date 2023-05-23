@@ -265,6 +265,7 @@ class CoreAttention(MegatronModule):
         self.layer_number = max(1, layer_number)
         self.attn_mask_type = attn_mask_type
         self.sequence_parallel = args.sequence_parallel
+        self.rotary_embedding_2d = args.rotary_embedding_2d
 
         projection_size = args.kv_channels * args.num_attention_heads
 
@@ -503,7 +504,7 @@ class ParallelAttention(MegatronModule):
                 rotary_dim = int(rotary_dim * args.rotary_percent)
 
             self.rotary_emb = GLMRotaryEmbedding(
-                    self.hidden_size_per_attention_head,
+                    self.hidden_size_per_attention_head // (2 if self.rotary_embedding_2d else 1),
                     base=10000,
                     precision=args.params_dtype,
                     learnable=args.learnable_rotary_embedding)
@@ -758,11 +759,22 @@ class ParallelAttention(MegatronModule):
             q_pos_emb, k_pos_emb = rotary_pos_emb
             # call apply_rotary_fn with position_ids
             if position_ids is not None:
-                query_layer, key_layer = apply_rotary_fn(query_layer,
-                                                         key_layer,
-                                                         q_pos_emb,
-                                                         k_pos_emb,
-                                                         position_ids)
+                if self.rotary_embedding_2d:
+                    q1, q2 = query_layer.chunk(2, dim=(query_layer.ndim - 1))
+                    k1, k2 = key_layer.chunk(2, dim=(key_layer.ndim - 1))
+                    cos, sin = self.rotary_emb(q1, seq_len=position_ids.max() + 1)
+                    position_ids, block_position_ids = position_ids[0, :, :].transpose(0, 1).contiguous(), \
+                        position_ids[1, :, :].transpose(0, 1).contiguous()
+                    q1, k1 = apply_rotary_fn(q1, k1, cos, sin, position_ids)
+                    q2, k2 = apply_rotary_fn(q1, k1, cos, sin, block_position_ids)
+                    query_layer = torch.concat([q1, q2], dim=(query_layer.ndim - 1))
+                    key_layer = torch.concat([k1, k2], dim=(key_layer.ndim - 1))
+                else:
+                    query_layer, key_layer = apply_rotary_fn(query_layer,
+                                                             key_layer,
+                                                             q_pos_emb,
+                                                             k_pos_emb,
+                                                             position_ids)
             # call apply_rotary_fn without position_ids
             else:
                 query_layer = apply_rotary_fn(query_layer, q_pos_emb)
