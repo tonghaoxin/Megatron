@@ -94,7 +94,7 @@ def add_megatron_checkpoint_args(parser):
             "Only used when converting a Transformers checkpoint to a Megatron checkpoint."
         ),
     )
-    
+
     parser.add_argument(
         "--untie_embeddings_and_output_weights",
         type=bool,
@@ -292,7 +292,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
 
     config = OPTConfig.from_pretrained(args.load_path)
     print(f"--------- Model hf config: ----------- \n {config}")
-    
+
     # Saving the tracker file
     tracker_filepath = os.path.join(args.save_path, "latest_checkpointed_iteration.txt")
     with open(tracker_filepath, "w") as f:
@@ -399,7 +399,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
         word_emb_dict = get_element_from_dict_by_path(
             output_state_dict[i], "model.language_model.embedding.word_embeddings"
         )
-        word_emb_dict["weight"] = out_word_embed[i]
+        word_emb_dict["weight"] = out_word_embed[i].clone()
 
         # embed_positions
         position_embeddings_dict = get_element_from_dict_by_path(
@@ -444,9 +444,9 @@ def convert_checkpoint_from_transformers_to_megatron(args):
             ]
 
             for layer_name in layers_to_copy:
-                
+
                 print(f"======= start convert layer: {layer_name} =======")
-                
+
                 m = layer_re.match(layer_name)
                 # Stop if that's not a layer
                 if m is None:
@@ -473,15 +473,15 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                 elif op_name.startswith("self_attn.q_proj") and weight_or_bias == "weight":
                     # handle k_proj, v_proj
                     layer_name = f"layers.{layer}.self_attention.query_key_value.{weight_or_bias}"
-                    
+
                     k_hf_layer = f"model.decoder.layers.{layer_index}.self_attn.k_proj.{weight_or_bias}"
                     v_hf_layer = f"model.decoder.layers.{layer_index}.self_attn.v_proj.{weight_or_bias}"
-                    
+
                     k_params = state_dict[k_hf_layer].to(dtype)
                     v_params = state_dict[v_hf_layer].to(dtype)
-                    
+
                     params = torch.cat([params, k_params, v_params], dim=0)
-                    
+
                     params = transformers_to_megatron_fix_query_key_value_ordering(
                         params,
                         3.0,
@@ -489,7 +489,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                         heads,
                         hidden_size_per_head,
                     )
-                    
+
                     print(f"==== find {op_name}, k {k_hf_layer}, v {v_hf_layer} wob {weight_or_bias} to {layer_name} ====")
 
                 elif op_name.startswith("fc1") and weight_or_bias == "weight":
@@ -507,7 +507,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                 # skip
                 else:
                     continue
-    
+
                 if weight_or_bias != "weight":
                     print("torch.count_nonzero(params):",torch.count_nonzero(params))
 
@@ -521,7 +521,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                 for i in range(args.target_tensor_model_parallel_size):
                     params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.encoder")
                     params_dict[layer_name] = (
-                        params[i] if (op_name + "." + weight_or_bias in tensor_parallel_params) else params
+                        params[i].clone() if (op_name + "." + weight_or_bias in tensor_parallel_params) else params
                     )
 
         if pp_rank == args.target_pipeline_model_parallel_size - 1:
@@ -549,12 +549,12 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                 full_head_embed = torch.cat((head_embed, head_embed[-1].unsqueeze(0).expand(padding_size, -1)))
             # Same size!
             else:
-                full_head_embed = head_embed            
+                full_head_embed = head_embed
 
             head_out_embed = torch.chunk(full_head_embed, args.target_tensor_model_parallel_size, dim=0)
             for i in range(args.target_tensor_model_parallel_size):
                 params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.word_embeddings_for_head")
-                params_dict["weight"] = head_out_embed[i]
+                params_dict["weight"] = head_out_embed[i].clone()
 
         # saving the state dict as per the tp_rank and pp_rank
         for tp_rank in range(args.target_tensor_model_parallel_size):
