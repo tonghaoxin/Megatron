@@ -1116,7 +1116,8 @@ def _add_data_args(parser):
                                 'GPTSentencePieceTokenizer',
                                 'LLaMASentencePieceTokenizer',
                                 'GalacticaHFTokenizer',
-                                'IceTokenizer'],
+                                'IceTokenizer',
+                                'ChatGLMTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
@@ -1136,7 +1137,10 @@ def _add_data_args(parser):
                        'end-of-document token.')
     group.add_argument('--eod-mask-loss', action='store_true',
                        help='Mask loss for the end of document tokens.')
-
+    
+    group.add_argument('--model-type-custom', type=str, required=False, default=None, help='model type for chatglm-6b.')
+    group.add_argument('--preprocessing-num-workers', type=int, default=2,
+                       help='preprocessing num workers token trans string to int')
     return parser
 
 

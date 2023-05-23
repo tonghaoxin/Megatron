@@ -95,7 +95,7 @@ def get_args():
     group.add_argument('--tokenizer-type', type=str, required=True,
                        choices=['BertWordPieceLowerCase','BertWordPieceCase',
                                 'GPT2BPETokenizer', 'SentencePieceTokenizer', 'GPTSentencePieceTokenizer',
-                                'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer'],
+                                'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer', "ChatGLMTokenizer"],
                        help='What type of tokenizer to use.')
     group.add_argument('--vocab-file', type=str, default=None,
                        help='Path to the vocab file')

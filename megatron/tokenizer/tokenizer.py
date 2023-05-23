@@ -8,9 +8,9 @@ import warnings
 from abc import ABC
 from abc import abstractmethod
 
+from transformers import AutoTokenizer
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
-
 
 def build_tokenizer(args):
     """Initialize tokenizer."""
@@ -19,7 +19,8 @@ def build_tokenizer(args):
               flush=True)
 
     if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer',
-                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer', 'IceTokenizer']:
+                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer', 
+                                   'IceTokenizer', 'ChatGLMTokenizer']:
         assert args.vocab_file is not None
 
     # Select and instantiate the tokenizer.
@@ -49,6 +50,21 @@ def build_tokenizer(args):
     elif args.tokenizer_type == "IceTokenizer":
         from .ice_tokenizer import _IceTokenizer
         tokenizer = _IceTokenizer()
+    elif args.tokenizer_type == "ChatGLMTokenizer":
+        assert args.hf_tokenizer_path is not None
+
+        # prevent transformers from logging info and warnings on each rank
+        import transformers
+        import logging
+        if args.rank == 0:
+            transformers.utils.logging.set_verbosity(logging.INFO)
+        else:
+            # shut the warnings on replicas
+            transformers.utils.logging.set_verbosity(logging.ERROR)
+
+        if args.rank == 0:
+            print(" vocab file is un-used. loading tokenizer from pre-trained model")
+        tokenizer = AutoTokenizer.from_pretrained(args.hf_tokenizer_path, trust_remote_code=True)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
