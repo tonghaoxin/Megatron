@@ -160,6 +160,8 @@ class ParallelMLP(MegatronModule):
             def squared_relu(x):
                 return torch.pow(F.relu(x), 2)
             self.activation_func = squared_relu
+        elif args.relu:
+            self.activation_func = F.relu
         elif args.geglu:
             @torch.jit.script
             def geglu(x):

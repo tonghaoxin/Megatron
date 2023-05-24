@@ -73,6 +73,9 @@ def build_tokenizer(args):
                                        add_task_mask=args.task_mask,
                                        add_decoder_mask=args.block_mask_prob > 0.0 or args.context_mask_ratio > 0.0,
                                        fix_command_token=args.fix_command_token)
+    elif args.tokenizer_type == 'OptTokenizer':
+        assert args.hf_tokenizer_path is not None or (args.vocab_file is not None and args.merge_file is not None)
+        tokenizer = _OptTokenizer(args.hf_tokenizer_path, args.vocab_file, args.merge_file)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -650,6 +653,52 @@ class _GalacticaHFTokenizer(AbstractTokenizer):
                 )
             text = self.tokenizer.eos_token
         return self.tokenizer.encode(text)
+
+    def detokenize(self, token_ids):
+        return self.tokenizer.decode(token_ids)
+
+    @property
+    def eod(self):
+        return self.tokenizer.eos_token_id
+
+    @property
+    def pad(self):
+        return self.tokenizer.pad_token_id
+
+    def inv_vocab(self):
+        pass
+
+class _OptTokenizer(AbstractTokenizer):
+    """_OptTokenizer tokenizer."""
+
+    def __init__(self, tokenizer_path, vocab_file, merges_file):
+        name = 'OptTokenizer'
+        super().__init__(name)
+
+        # from https://github.com/facebookresearch/metaseq/blob/main/metaseq/tasks/streaming_language_modeling.py#173
+        from tokenizers import ByteLevelBPETokenizer, Tokenizer
+        if tokenizer_path is not None:
+            self.tokenizer = Tokenizer.from_pretrained(tokenizer_path)
+        else:
+            self.tokenizer = ByteLevelBPETokenizer.from_file(vocab_file, merges_file)
+
+        assert self.tokenizer.id_to_token(0) in {"<BOS>", "<s>"}
+        assert self.tokenizer.id_to_token(1) in {"<PAD>", "<pad>"}
+        assert self.tokenizer.id_to_token(2) in {"<EOS>", "</s>"}
+        assert self.tokenizer.id_to_token(3) in {"<UNK>", "<unk>"}
+        self.tokenizer.pad_token_id = 1
+        self.tokenizer.eos_token_id = 2
+
+    @property
+    def vocab_size(self):
+        return self.tokenizer.get_vocab_size()
+
+    @property
+    def vocab(self):
+        return self.tokenizer.vocab()
+
+    def tokenize(self, input_text):
+        return self.tokenizer.encode(input_text)
 
     def detokenize(self, token_ids):
         return self.tokenizer.decode(token_ids)
