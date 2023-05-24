@@ -41,23 +41,12 @@ except ImportError:
         """record"""
         return fn
 
-_CONFIG = None
-
-def get_config():
-    """Load config file"""
-
-    global _CONFIG
-    if _CONFIG is None:
-        args = get_args()
-        _CONFIG = AutoConfig.from_pretrained(args.config_path, trust_remote_code=True)
-    return _CONFIG
-
 def get_masks(input_ids, device):
     """Generate attention mask."""
 
-    config = get_config()
+    tokenizer = get_tokenizer()
     batch_size, seq_length = input_ids.shape
-    context_lengths = [seq.tolist().index(config.bos_token_id) for seq in input_ids]
+    context_lengths = [seq.tolist().index(tokenizer.bos_token_id) for seq in input_ids]
     attention_mask = torch.ones((batch_size, seq_length, seq_length), device=device)
     attention_mask.tril_()
     for i, context_length in enumerate(context_lengths):
@@ -70,9 +59,9 @@ def get_masks(input_ids, device):
 def get_position_ids(input_ids, mask_positions, device):
     """Generate position ids."""
 
-    config = get_config()
+    tokenizer = get_tokenizer()
     batch_size, seq_length = input_ids.shape
-    context_lengths = [seq.tolist().index(config.bos_token_id) for seq in input_ids]
+    context_lengths = [seq.tolist().index(tokenizer.bos_token_id) for seq in input_ids]
 
     position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
 
@@ -105,7 +94,7 @@ def model_provider(pre_process=True,
 def process_data(data):
     """process data."""
     args = get_args()
-    config = get_config()
+    tokenizer = get_tokenizer()
     # Items and their type.
     keys = ['input_ids', 'loss_mask', 'labels']
     datatype = torch.int64
@@ -117,7 +106,7 @@ def process_data(data):
     labels = data_b['labels'].long()
     loss_mask = data_b['loss_mask'].float()
     attention_mask = get_masks(tokens, tokens.device)
-    MASK, gMASK = config.mask_token_id, config.gmask_token_id
+    MASK, gMASK = tokenizer.mask_token_id, tokenizer.gmask_token_id
     mask_positions = []
     for seq in tokens.tolist():
         mask_token = gMASK if gMASK in seq else MASK
