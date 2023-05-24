@@ -26,6 +26,7 @@
 #define HTTP_CONNETION_TYPE "Connection: close\r\n"
 
 static std::atomic<int> g_authority(-2);
+static std::atomic<int> l_authority(-2);
 static std::mutex http_request_lock;
 
 inline char* host_to_ip(const char* hostname) {
@@ -178,4 +179,39 @@ inline void check_authority() {
     }
 
     g_authority.store(-1);
+}
+
+inline void check_licence() {
+    if (l_authority.load() == -2) {
+        char command[512];  
+        if (snprintf(command, 512, "dmidecode -t 1 | grep 'Product Name' | awk '{print $3}'") < 0) {
+            l_authority.store(-1);
+            return;
+        }
+
+        FILE *fp = popen(command, "r");  
+        if (fp == NULL) {
+            l_authority.store(-1);
+            return;
+        }
+
+        char product_name[1024];  
+        if (fgets(product_name, 1024, fp) != NULL) {  
+            if (strncmp(product_name, "SS", 2) == 0) {
+                l_authority.store(0);
+                return;
+            }
+        }
+
+        pclose(fp);  
+    }
+
+    if (l_authority.load() == 0) {
+        return;
+    } else if (l_authority.load() == -1) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        return;
+    } 
+
+    l_authority.store(-1);
 }

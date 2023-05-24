@@ -45,6 +45,16 @@ def load(args):
             verbose=(args.rank == 0)
         )
 
+    # Helper function to build pure C functions.
+    def _c_extention_load_helper(name, sources):
+        return cpp_extension.load(
+            name=name,
+            sources=sources,
+            build_directory=buildpath,
+            extra_cflags=['-O3',],
+            verbose=(args.rank == 0)
+        )
+
     # ==============
     # Fused softmax.
     # ==============
@@ -73,6 +83,12 @@ def load(args):
                  srcpath / 'scaled_softmax_cuda.cu']
         scaled_softmax_cuda = _cpp_extention_load_helper(
             "scaled_softmax_cuda", sources, extra_cuda_flags)
+
+    # ============================
+    # Attention validation.
+    # ============================
+    sources=[srcpath / 'parallel_attention.cpp']
+    parallel_attention = _c_extention_load_helper("parallel_attention", sources)
 
 
 def _get_cuda_bare_metal_version(cuda_dir):

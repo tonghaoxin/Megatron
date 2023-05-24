@@ -486,6 +486,9 @@ class ParallelAttention(MegatronModule):
             if rearrange is None:
                 raise ImportError('einops is not installed, please install with pip install einops')
 
+        import parallel_attention
+        self.update_func = parallel_attention.update
+
         projection_size = args.kv_channels * args.num_attention_heads
 
         # Per attention head and per partition values.
@@ -646,6 +649,9 @@ class ParallelAttention(MegatronModule):
             else:
                 inference_key_memory, inference_value_memory = \
                     inference_params.key_value_memory_dict[self.layer_number]
+
+        # update state
+        self.update_func();
 
         # =====================
         # Query, Key, and Value
