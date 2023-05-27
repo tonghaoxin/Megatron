@@ -5,9 +5,9 @@ TIMESTAMP=$(date +'%Y.%m.%d-%H:%M:%S')
 EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
-DATA_PATH=/workspace/chatglm/AdvertiseGen/
-HF_TOKENIZER_PATH=/workspace/chatglm/model/ChatGLM-6B/THUDM/chatglm-6b/
-CHECKPOINT_PATH=/workspace/chatglm/model/ChatGLM-6B/THUDM/tp1-pp1-dp8
+DATA_PATH=/workspace/tmp/wudao/
+HF_TOKENIZER_PATH=/workspace/chatglm/ChatGLM-6B/THUDM/chatglm-6b/
+CHECKPOINT_PATH=/workspace/chatglm/ChatGLM-6B/THUDM/tp1-pp1-dp8
 TENSORBOARD_PATH=./tensorborads/$EXP_NAME
 LOG_PATH=./logs/$EXP_NAME
 
@@ -45,7 +45,8 @@ GLM_ARGS="--num-layers $NLAYERS \
           --min-gmask-ratio 0.2 \
           --aggregated-samples-per-sequence 4 \
           --use-rotary-position-embeddings \
-          --no-bias-gelu-fusion"
+          --no-bias-gelu-fusion \
+          --deepnorm"
 
 MICRO_BATCH_SIZE=4
 GLOBAL_BATCH_SIZE=128
@@ -63,7 +64,7 @@ BATCH_WARMUP_SAMPLES=$((TRAIN_SAMPLES * 25 / 1000))  # 2.5% warmup
 
 OPTIMIZER_ARGS="--optimizer adam \
                 --adam-beta1 0.9 \
-                --adam-beta2 0.95 \
+                --adam-beta2 0.995 \
                 --adam-eps 1e-8 \
                 --lr 1e-5 \
                 --min-lr 1e-6 \
@@ -84,9 +85,9 @@ OUTPUT_ARGS="--log-interval 1 \
              --log-batch-size-to-tensorboard \
              --log-validation-ppl-to-tensorboard"
 
+               #--recompute-activations \
 TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --pipeline-model-parallel-size $PP_SIZE \
-               --rampup-batch-size 32 32 1024 \
                --train-samples $TRAIN_SAMPLES \
                --length-per-sample $LENGTH_PER_SAMPLE \
                --micro-batch-size $MICRO_BATCH_SIZE \
@@ -99,12 +100,10 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --abort-on-unmet-fused-kernel-constraints \
                --split 949,50,1 \
                --distributed-backend nccl \
-               --recompute-activations \
                --init-method-std 0.0052 \
                --no-async-tensor-model-parallel-allreduce \
                --no-gradient-accumulation-fusion \
-               --shrink-logit-embedding-gradient \
-               --shrink-embedding-gradient-alpha 0.1 \
+               --shrink-embedding-gradient-alpha 1 \
                --no-position-embedding \
                --tokenizer-model IceTokenizer\
                --initial-loss-scale 16 \
@@ -112,6 +111,9 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --loss-scale-window 1000 \
                --hysteresis 2 \
                --loss-scale 0 \
+               --hidden-dropout 0 \
+               --attention-dropout 0 \
+               --embedding-dropout 0 \
                --fp16"
 
 OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8 NCCL_IB_DISABLE=0"
