@@ -45,7 +45,6 @@ GLM_ARGS="--num-layers $NLAYERS \
           --min-gmask-ratio 0.2 \
           --aggregated-samples-per-sequence 4 \
           --use-rotary-position-embeddings \
-          --no-bias-gelu-fusion \
           --deepnorm"
 
 MICRO_BATCH_SIZE=4
