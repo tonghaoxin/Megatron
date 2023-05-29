@@ -772,7 +772,7 @@ class ParallelAttention(MegatronModule):
                     position_ids, block_position_ids = position_ids[0, :, :].transpose(0, 1).contiguous(), \
                         position_ids[1, :, :].transpose(0, 1).contiguous()
                     q1, k1 = apply_rotary_fn(q1, k1, cos, sin, position_ids)
-                    q2, k2 = apply_rotary_fn(q1, k1, cos, sin, block_position_ids)
+                    q2, k2 = apply_rotary_fn(q2, k2, cos, sin, block_position_ids)
                     query_layer = torch.concat([q1, q2], dim=(query_layer.ndim - 1))
                     key_layer = torch.concat([k1, k2], dim=(key_layer.ndim - 1))
                 else:

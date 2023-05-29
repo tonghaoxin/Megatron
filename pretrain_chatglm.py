@@ -30,8 +30,6 @@ from megatron.core.enums import ModelType
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.data.chatglm6b_data import build_train_valid_test_datasets
 
-from transformers import AutoConfig
-
 
 try:
     from torch.distributed.elastic.multiprocessing.errors import record
@@ -143,11 +141,8 @@ def get_batch_pipe(data):
 
 
 
-def loss_func(loss_mask, output_tensor):
+def loss_func(loss_mask, loss):
     """loss func."""
-    losses = output_tensor.float()
-    loss_mask = loss_mask.view(-1).float()
-    loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()
 
     # Reduce loss for logging.
     averaged_loss = average_losses_across_data_parallel_group([loss])
@@ -193,7 +188,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     else:
         raise NotImplementedError("No dataloading argument passed")
 
-    print_rank_0("> finished creating GPT datasets ...")
+    print_rank_0("> finished creating ChatGLM datasets ...")
     return train_ds, valid_ds, test_ds
 
 
