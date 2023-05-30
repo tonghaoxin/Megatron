@@ -1320,7 +1320,7 @@ def _add_glm_args(parser):
 
 def _add_chatglm_args(parser):
     group = parser.add_argument_group("CHATGLM", "Chat-GLM configurations")
-    group.add_argument("--prompt-resource-name", type=str, default="default content", 
+    group.add_argument("--prompt-resource-name", type=str, default="content", 
                        help='dataset file question key in per line')
     group.add_argument("--prompt-target-name", type=str, default="summary",
                        help='dataset file answer in per line ')
