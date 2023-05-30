@@ -36,6 +36,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_transformer_engine_args(parser)
     parser = _add_retro_args(parser)
     parser = _add_glm_args(parser)
+    parser = _add_chatglm_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -1138,9 +1139,6 @@ def _add_data_args(parser):
     group.add_argument('--eod-mask-loss', action='store_true',
                        help='Mask loss for the end of document tokens.')
     
-    group.add_argument('--model-type-custom', type=str, required=False, default=None, help='model type for chatglm-6b.')
-    group.add_argument('--preprocessing-num-workers', type=int, default=2,
-                       help='preprocessing num workers token trans string to int')
     return parser
 
 
@@ -1278,6 +1276,9 @@ def _add_vision_args(parser):
                        help='teacher temperature')
     group.add_argument('--dino-warmup-teacher-temp-epochs', type=int, default=30,
                        help='warmup teacher temperaure epochs')
+    group.add_argument('--model-type-custom', type=str, required=False, default=None, 
+                        choices=['chatglm-6b', 'glm-10', 'glm-130b'],
+                       help='custom model type such as chatglm-6b, glm-10, glm-130b')
 
     return parser
 
@@ -1315,4 +1316,15 @@ def _add_glm_args(parser):
     group.add_argument('--rotary-embedding-2d', action='store_true',
                        help='If set, use 2D rotary embedding for GLM.')
     group.add_argument('--fast-decode', action='store_true')
+    return parser
+
+def _add_chatglm_args(parser):
+    group = parser.add_argument_group("CHATGLM", "Chat-GLM configurations")
+    group.add_argument("--prompt-resource-name", type=str, default="default content", 
+                       help='dataset file question key in per line')
+    group.add_argument("--prompt-target-name", type=str, default="summary",
+                       help='dataset file answer in per line ')
+    group.add_argument("--prompt-history-name", type=str, default=None)    
+    group.add_argument('--preprocessing-num-workers', type=int, default=2,
+                       help='preprocessing num workers token trans string to int')
     return parser

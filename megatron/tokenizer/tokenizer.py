@@ -11,6 +11,7 @@ from abc import abstractmethod
 from transformers import AutoTokenizer
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
+from .tokenization_chatglm import ChatGLMTokenizer
 
 def build_tokenizer(args):
     """Initialize tokenizer."""
@@ -62,9 +63,7 @@ def build_tokenizer(args):
             # shut the warnings on replicas
             transformers.utils.logging.set_verbosity(logging.ERROR)
 
-        if args.rank == 0:
-            print(" vocab file is un-used. loading tokenizer from pre-trained model")
-        tokenizer = AutoTokenizer.from_pretrained(args.hf_tokenizer_path, trust_remote_code=True)
+        tokenizer = ChatGLMTokenizer(vocab_file=args.tokenizer_model, num_image_tokens=0)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))

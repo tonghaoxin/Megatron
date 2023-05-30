@@ -1,14 +1,10 @@
 """ chatglm dataset """
 from datasets import load_dataset
 from megatron import get_tokenizer
+from megatron import get_args
 
 import os
-from transformers.utils import (
-    logging,
-)
 
-
-logger = logging.get_logger(__name__)
 
 def build_train_valid_test_datasets(
     data_prefix, splits_string, train_valid_test_num_samples, seq_length,
@@ -26,16 +22,17 @@ def build_train_valid_test_datasets(
         cache_dir="",
         use_auth_token=False,
     )
+    args = get_args()
 
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
     column_names_train = raw_datasets["train"].column_names
 
-    prompt_column = "content"
-    response_column = "summary"
-    history_column = None
-    valid_dataset, test_dataset = None, None
-    
+    prompt_column = args.prompt_resource_name if args.prompt_resource_name else "content"
+    response_column = args.prompt_target_name if args.prompt_resource_name else "summary"
+    history_column = args.prompt_history_name if args.prompt_history_name else None
+    test_dataset = None
+    valid_dataset = None
     train_dataset = raw_datasets["train"]
     prefix = ""
     
@@ -91,7 +88,7 @@ def build_train_valid_test_datasets(
                 
 
         return model_inputs
-    
+    # 将string转换到int
     train_dataset = train_dataset.map(
                 preprocess_data,
                 batched=True,
@@ -105,5 +102,4 @@ def build_train_valid_test_datasets(
                 type=train_dataset.format["type"], columns=train_dataset.column_names, 
                 format_kwargs=train_dataset.format["format_kwargs"]
             )
-        
     return train_dataset, valid_dataset, test_dataset

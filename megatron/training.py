@@ -904,7 +904,7 @@ def cyclic_iter(iter):
 
 def build_train_valid_test_data_loaders(
         build_train_valid_test_datasets_provider):
-    """XXX"""
+    """build dataloader from dataset provider"""
     args = get_args()
 
     (train_dataloader, valid_dataloader, test_dataloader) = (None, None, None)
@@ -945,20 +945,11 @@ def build_train_valid_test_data_loaders(
             train_val_test_num_samples)
 
         # Build dataloders.
-        if args.model_type_custom is not None and args.model_type_custom == "chatglm-6b":
-            from megatron.data.data_samplers_chatglm6b import build_pretraining_data_loader as build_pretraining_data_loader_hf
-            train_dataloader = build_pretraining_data_loader_hf(
-                train_ds, args.consumed_train_samples)
-            # valid_dataloader = build_pretraining_data_loader_hf(
-            #     valid_ds, args.consumed_valid_samples)
-            # test_dataloader = build_pretraining_data_loader_hf(test_ds, 0)
-        else:
-            train_dataloader = build_pretraining_data_loader(
-                train_ds, args.consumed_train_samples)
-            valid_dataloader = build_pretraining_data_loader(
-                valid_ds, args.consumed_valid_samples)
-            test_dataloader = build_pretraining_data_loader(test_ds, 0)
-
+        train_dataloader = build_pretraining_data_loader(
+            train_ds, args.consumed_train_samples)
+        valid_dataloader = build_pretraining_data_loader(
+            valid_ds, args.consumed_valid_samples)
+        test_dataloader = build_pretraining_data_loader(test_ds, 0)
 
         # Flags to know if we need to do training/validation/testing.
         do_train = train_dataloader is not None and args.train_iters > 0

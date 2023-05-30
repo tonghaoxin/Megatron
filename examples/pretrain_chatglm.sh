@@ -104,7 +104,7 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --no-gradient-accumulation-fusion \
                --shrink-embedding-gradient-alpha 1 \
                --no-position-embedding \
-               --tokenizer-model IceTokenizer\
+               --tokenizer-model /workspace/chatglm/model/ChatGLM-6B/THUDM/chatglm-6b/ice_text.model\
                --initial-loss-scale 16 \
                --min-loss-scale 1 \
                --loss-scale-window 1000 \
