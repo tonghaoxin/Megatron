@@ -52,7 +52,7 @@ def build_tokenizer(args):
         from .ice_tokenizer import _IceTokenizer
         tokenizer = _IceTokenizer()
     elif args.tokenizer_type == "ChatGLMTokenizer":
-        assert args.hf_tokenizer_path is not None
+        assert args.tokenizer_model is not None
 
         # prevent transformers from logging info and warnings on each rank
         import transformers

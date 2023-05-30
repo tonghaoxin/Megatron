@@ -1138,7 +1138,10 @@ def _add_data_args(parser):
                        'end-of-document token.')
     group.add_argument('--eod-mask-loss', action='store_true',
                        help='Mask loss for the end of document tokens.')
-    
+
+    group.add_argument('--seq2seq-data-collator', action='store_true',
+                       help='Use Data Collator For Seq2Seq')
+
     return parser
 
 

@@ -10,75 +10,53 @@ from torch.utils.data import Dataset, DataLoader
 from megatron import get_args
 from megatron.core import mpu
 from megatron.global_vars import get_tokenizer
-from megatron.data.data_samplers_chatglm6b import get_train_sampler
-
-from transformers import (
-    DataCollatorForSeq2Seq
-)
-
-from transformers.trainer_utils import (
-    seed_worker,
-)
+from transformers import DataCollatorForSeq2Seq
 
 def build_pretraining_data_loader(dataset, consumed_samples):
     """Buld dataloader given an input dataset."""
 
     if dataset is None:
         return None
+
     args = get_args()
-    if args.model_type_custom is not None and args.model_type_custom == "chatglm-6b":
-        if dataset is None:
-            raise ValueError("Trainer: training requires a train_dataset.")
 
-        tokenizer = get_tokenizer()
-        data_collator = DataCollatorForSeq2Seq(
-                tokenizer,
-                model=None,
-                label_pad_token_id=-100,
-                pad_to_multiple_of=None,
-                padding=False
-            )
+    data_collator = DataCollatorForSeq2Seq(
+        get_tokenizer(),
+        model=None,
+        label_pad_token_id=-100,
+        pad_to_multiple_of=None,
+        padding=False
+    ) if args.seq2seq_data_collator else None
 
-        # 构造sampler, 再构造DataLoader
-        train_sampler = get_train_sampler(dataset)
-
-        return DataLoader(
+    # Megatron sampler
+    if args.dataloader_type == 'single':
+        batch_sampler = MegatronPretrainingSampler(
+            total_samples=len(dataset),
+            consumed_samples=consumed_samples,
+            micro_batch_size=args.micro_batch_size,
+            data_parallel_rank=mpu.get_data_parallel_rank(),
+            data_parallel_size=mpu.get_data_parallel_world_size())
+    elif args.dataloader_type == 'cyclic':
+        batch_sampler = MegatronPretrainingRandomSampler(
             dataset,
-            batch_size=args.micro_batch_size,
-            sampler=train_sampler,
-            collate_fn=data_collator,
-            drop_last=False,
-            num_workers=args.num_workers,
-            pin_memory=True,
-            worker_init_fn=seed_worker,
-        )
+            total_samples=len(dataset),
+            consumed_samples=consumed_samples,
+            micro_batch_size=args.micro_batch_size,
+            data_parallel_rank=mpu.get_data_parallel_rank(),
+            data_parallel_size=mpu.get_data_parallel_world_size(),
+            data_sharding=args.data_sharding)
     else:
-        # Megatron sampler
-        if args.dataloader_type == 'single':
-            batch_sampler = MegatronPretrainingSampler(
-                total_samples=len(dataset),
-                consumed_samples=consumed_samples,
-                micro_batch_size=args.micro_batch_size,
-                data_parallel_rank=mpu.get_data_parallel_rank(),
-                data_parallel_size=mpu.get_data_parallel_world_size())
-        elif args.dataloader_type == 'cyclic':
-            batch_sampler = MegatronPretrainingRandomSampler(
-                dataset,
-                total_samples=len(dataset),
-                consumed_samples=consumed_samples,
-                micro_batch_size=args.micro_batch_size,
-                data_parallel_rank=mpu.get_data_parallel_rank(),
-                data_parallel_size=mpu.get_data_parallel_world_size(),
-                data_sharding=args.data_sharding)
-        else:
-            raise Exception('{} dataloader type is not supported.'.format(
-                    args.dataloader_type))
+        raise Exception('{} dataloader type is not supported.'.format(
+                args.dataloader_type))
 
-        # Torch dataloader.
-        return torch.utils.data.DataLoader(dataset,
-                                        batch_sampler=batch_sampler,
-                                        num_workers=args.num_workers,
-                                        pin_memory=True)
+    # Torch dataloader.
+    return DataLoader(
+        dataset,
+        batch_sampler=batch_sampler,
+        num_workers=args.num_workers,
+        collate_fn=data_collator,
+        pin_memory=True
+    )
 
 class MegatronPretrainingSampler:
 

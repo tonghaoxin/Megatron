@@ -6,7 +6,6 @@ EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 DATA_PATH=/workspace/data/wudao/
-HF_TOKENIZER_PATH=/workspace/THUDM/chatglm-6b/
 CHECKPOINT_PATH=/workspace/THUDM/chatglm-6b/tp1-pp1-dp8
 TENSORBOARD_PATH=./tensorborads/$EXP_NAME
 LOG_PATH=./logs/$EXP_NAME
@@ -36,8 +35,8 @@ GLM_ARGS="--num-layers $NLAYERS \
           --glm \
           --rotary-embedding-2d \
           --model-type-custom chatglm-6b \
-          --hf-tokenizer-path $HF_TOKENIZER_PATH \
           --use-rotary-position-embeddings \
+          --seq2seq-data-collator \
           --deepnorm"
 
 MICRO_BATCH_SIZE=4
