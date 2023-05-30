@@ -68,8 +68,8 @@ OUTPUT_ARGS="--log-interval 1 \
              --log-batch-size-to-tensorboard \
              --log-validation-ppl-to-tensorboard"
 
-TRAINING_ARGS="--train-iters 500000 \
-               --lr-decay-iters 320000 \
+TRAINING_ARGS="--train-iters 5000 \
+               --lr-decay-iters 3200 \
                --lr-warmup-fraction 0.01 \
                --tensor-model-parallel-size $TP_SIZE \
                --pipeline-model-parallel-size $PP_SIZE \
