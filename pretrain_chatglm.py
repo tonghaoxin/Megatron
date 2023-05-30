@@ -110,6 +110,10 @@ def process_data(data):
         mask_token = gMASK if gMASK in seq else MASK
         mask_positions.append(seq.index(mask_token))
     position_ids = get_position_ids(tokens, mask_positions, tokens.device)
+
+    labels = torch.cat((labels[:, 1:], labels[:, :1]), dim=1)
+    loss_mask[:, -1] = 0
+
     return (tokens, labels, loss_mask), (attention_mask, position_ids)
 
 
@@ -141,8 +145,11 @@ def get_batch_pipe(data):
 
 
 
-def loss_func(loss_mask, loss):
+def loss_func(loss_mask, output_tensor):
     """loss func."""
+    losses = output_tensor.float()
+    loss_mask = loss_mask.view(-1).float()
+    loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()
 
     # Reduce loss for logging.
     averaged_loss = average_losses_across_data_parallel_group([loss])

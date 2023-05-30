@@ -38,15 +38,6 @@ def post_language_model_processing(lm_output, labels, logit_weights,
         logit_weights,
         parallel_output)
 
-    args = get_args()
-    if args.model_type_custom == "chatglm-6b":
-        assert labels is not None
-        lm_logits = output.permute(1, 0, 2).contiguous()
-        shift_logits = lm_logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        loss_fct = CrossEntropyLoss(ignore_index=-100)
-        return loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-
     if labels is None:
         # [s b h] => [b s h]
         return output.transpose(0, 1).contiguous()
