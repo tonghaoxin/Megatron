@@ -384,6 +384,7 @@ class Embedding(MegatronModule):
                         = state_dict[key]
         self.word_embeddings.load_state_dict(state_dict_, strict=strict)
 
+
         # Position embedding.
         if self.add_position_embedding:
             if self._position_embeddings_key in state_dict:
@@ -675,6 +676,7 @@ class TransformerLanguageModel(MegatronModule):
                 encoder_output = self.encoder_hidden_state
         else:
             encoder_output = enc_hidden_states.to(encoder_input.dtype)
+
 
         if self.post_process:
             if self.add_pooler:

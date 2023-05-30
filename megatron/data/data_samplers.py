@@ -11,6 +11,7 @@ from megatron import get_args
 from megatron.core import mpu
 from megatron.global_vars import get_tokenizer
 from transformers import DataCollatorForSeq2Seq
+from .collator import ConstructBlockStrategy
 
 def build_pretraining_data_loader(dataset, consumed_samples):
     """Buld dataloader given an input dataset."""
@@ -19,14 +20,35 @@ def build_pretraining_data_loader(dataset, consumed_samples):
         return None
 
     args = get_args()
+    tokenizer = get_tokenizer()
 
-    data_collator = DataCollatorForSeq2Seq(
-        get_tokenizer(),
-        model=None,
-        label_pad_token_id=-100,
-        pad_to_multiple_of=None,
-        padding=False
-    ) if args.seq2seq_data_collator else None
+    data_collator = None
+
+    if args.seq2seq_data_collator:
+        data_collator = DataCollatorForSeq2Seq(
+            get_tokenizer(),
+            model=None,
+            label_pad_token_id=-100,
+            pad_to_multiple_of=None,
+            padding=False
+        )
+    elif args.block_lm:
+        data_collator = ConstructBlockStrategy(args, tokenizer, args.seq_length, bert_prob=args.bert_prob,
+                                            gap_sentence_prob=args.gap_sentence_prob,
+                                            gap_sentence_ratio=args.gap_sentence_ratio,
+                                            gpt_infill_prob=args.gpt_infill_prob,
+                                            average_block_length=args.avg_block_length,
+                                            gpt_min_ratio=args.gpt_min_ratio,
+                                            block_mask_prob=args.block_mask_prob,
+                                            context_mask_ratio=args.context_mask_ratio,
+                                            short_seq_prob=args.short_seq_prob,
+                                            single_span_prob=args.single_span_prob,
+                                            shuffle_blocks=not args.no_shuffle_block,
+                                            block_position_encoding=not args.no_block_position,
+                                            sentinel_token=args.sentinel_token,
+                                            encoder_decoder=args.encoder_decoder,
+                                            task_mask=args.task_mask, random_position=args.random_position,
+                                            masked_lm=args.masked_lm).construct_blocks
 
     # Megatron sampler
     if args.dataloader_type == 'single':
@@ -57,6 +79,7 @@ def build_pretraining_data_loader(dataset, consumed_samples):
         collate_fn=data_collator,
         pin_memory=True
     )
+
 
 class MegatronPretrainingSampler:
 
@@ -173,7 +196,7 @@ class MegatronPretrainingRandomSampler:
                            * self.micro_batch_size
             bucket_offset = current_epoch_samples // self.data_parallel_size
             start_idx = self.data_parallel_rank * bucket_size
-            
+
             g = torch.Generator()
             g.manual_seed(self.epoch)
             random_idx = torch.randperm(bucket_size, generator=g).tolist()

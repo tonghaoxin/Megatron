@@ -37,6 +37,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_retro_args(parser)
     parser = _add_glm_args(parser)
     parser = _add_chatglm_args(parser)
+    parser = _add_blocklm_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -1059,6 +1060,11 @@ def _add_validation_args(parser):
 def _add_data_args(parser):
     group = parser.add_argument_group(title='data and dataloader')
 
+    group.add_argument('--data-name', type=str, default=None,
+                       choices=['wudao', 'stories', 'pile', 'cc-news', 'bert-large',
+                                'bert-base', 'wikibook', 'baike', 'zhidao', 'zhihu',
+                                'openwebtext', 'wikipedia-key', 'wikipedia'],
+                                help='Which data to use.')
     group.add_argument('--data-path', nargs='*', default=None,
                        help='Path to the training dataset. Accepted format:'
                        '1) a single data path, 2) multiple datasets in the'
@@ -1126,7 +1132,8 @@ def _add_data_args(parser):
                                 'LLaMASentencePieceTokenizer',
                                 'GalacticaHFTokenizer',
                                 'IceTokenizer',
-                                'ChatGLMTokenizer'],
+                                'ChatGLMTokenizer',
+                                'GLMChineseTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
@@ -1296,8 +1303,6 @@ def _add_vision_args(parser):
 def _add_glm_args(parser):
     group = parser.add_argument_group("GLM", "GLM configurations")
     group.add_argument("--gpt-prob", type=float, default=0.0)
-    # group.add_argument("--short-seq-prob", type=float, default=0.02)
-    group.add_argument("--single-span-prob", type=float, default=0.02)
     # group.add_argument("--mask-ratio", type=float, default=0.15)
     group.add_argument("--average-block-length", type=int, default=3)
     group.add_argument("--min-gmask-ratio", type=float, default=0.2)
@@ -1324,6 +1329,34 @@ def _add_glm_args(parser):
                        help='--multitask-data-transform-steps <x1> <x2>'
                             'multitask ds1 -> ds2 in [x1, x2)')
     group.add_argument('--fast-decode', action='store_true')
+    return parser
+
+def _add_blocklm_args(parser):
+    group = parser.add_argument_group("GLM", "block lm configurations")
+    group.add_argument('--block-lm', action='store_true', help="whether use the BlockLM pre-training")
+    group.add_argument('--masked-lm', action='store_true', help='whether to use the mlm objective')
+    group.add_argument('--bert-prob', type=float, default=0.5)
+    group.add_argument('--gpt-infill-prob', type=float, default=0.5)
+    group.add_argument('--gpt-min-ratio', type=float, default=0.5)
+    group.add_argument('--gap-sentence-prob', type=float, default=0.0)
+    group.add_argument('--gap-sentence-ratio', type=float, default=0.15)
+    group.add_argument('--single-span-prob', type=float, default=0.0)
+    group.add_argument('--task-mask', action='store_true', help="Use different mask for generation and blank filling")
+    group.add_argument('--no-shuffle-block', action='store_true', help="not shuffle the blocks when filling the blank")
+    group.add_argument('--no-block-position', action='store_true',
+                       help='Use (rough) absolute positions instead of block positions')
+    group.add_argument('--sentinel-token', action='store_true',
+                       help="Use sentinel (mask) tokens to replace 2d position encoding")
+    group.add_argument('--block-mask-prob', type=float, default=0.0)
+    group.add_argument('--context-mask-ratio', type=float, default=0.0)
+    group.add_argument('--random-position', action='store_true',
+                       help="Use random start position to cover all the position embeddings")
+    group.add_argument('--encoder-decoder', action='store_true',
+                       help="use the encoder-decoder architecture for blocklm")
+    group.add_argument('--continuous-prompt', action='store_true', help="Use continuous prompt for PET")
+    group.add_argument('--prefix-prompt', type=int, default=0)
+    group.add_argument('--fix-command-token', action='store_true')
+    group.add_argument('--avg-block-length', type=int, default=3)
     return parser
 
 def _add_chatglm_args(parser):

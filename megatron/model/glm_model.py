@@ -76,8 +76,12 @@ class GLMModel(MegatronModule):
         super(GLMModel, self).__init__(share_word_embeddings=not args.untie_embeddings_and_output_weights)
 
         # Rotary Embedding and SwiGLU are required for GLM model
-        if not args.use_rotary_position_embeddings:
-            raise RuntimeError("Rotary embedding is required for GLM model")
+        if args.model_type_custom == "glm-130b":
+            if not args.use_rotary_position_embeddings:
+                raise RuntimeError("Rotary embedding is required for GLM model")
+
+        if args.model_type_custom == "glm-10b":
+            args.positional_encoding_2d = args.block_lm and not args.masked_lm
 
         self.parallel_output = parallel_output
         self.pre_process = pre_process

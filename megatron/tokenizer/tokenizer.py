@@ -4,6 +4,7 @@
 
 import re
 import warnings
+import torch
 
 from abc import ABC
 from abc import abstractmethod
@@ -20,8 +21,8 @@ def build_tokenizer(args):
               flush=True)
 
     if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer',
-                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer', 
-                                   'IceTokenizer', 'ChatGLMTokenizer']:
+                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer',
+                                   'IceTokenizer', 'ChatGLMTokenizer', 'GLMChineseTokenizer']:
         assert args.vocab_file is not None
 
     # Select and instantiate the tokenizer.
@@ -64,6 +65,14 @@ def build_tokenizer(args):
             transformers.utils.logging.set_verbosity(logging.ERROR)
 
         tokenizer = ChatGLMTokenizer(vocab_file=args.tokenizer_model, num_image_tokens=0)
+    elif args.tokenizer_type == "GLMChineseTokenizer":
+        from .chinese_sp_tokenizer import GLMChineseTokenizer
+        assert args.tokenizer_model is not None
+        tokenizer = GLMChineseTokenizer(tokenizer_model=args.tokenizer_model,
+                                       add_block_symbols=args.block_lm,
+                                       add_task_mask=args.task_mask,
+                                       add_decoder_mask=args.block_mask_prob > 0.0 or args.context_mask_ratio > 0.0,
+                                       fix_command_token=args.fix_command_token)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
