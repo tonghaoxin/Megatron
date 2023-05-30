@@ -23,10 +23,8 @@ from megatron import get_timers
 from megatron import get_tokenizer
 from megatron.core import tensor_parallel
 from megatron.model import GLMModel
-#, GPTModelPipe
 from megatron.training import pretrain
 from megatron.core.enums import ModelType
-#from megatron.utils import get_ltor_masks_and_position_ids, get_prefix_indices
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.data.chatglm6b_data import build_train_valid_test_datasets
 
@@ -38,6 +36,7 @@ except ImportError:
     def record(fn):
         """record"""
         return fn
+
 
 def get_masks(input_ids, device):
     """Generate attention mask."""
@@ -53,6 +52,7 @@ def get_masks(input_ids, device):
     attention_mask = (attention_mask < 0.5).bool()
 
     return attention_mask
+
 
 def get_position_ids(input_ids, mask_positions, device):
     """Generate position ids."""
@@ -72,6 +72,7 @@ def get_position_ids(input_ids, mask_positions, device):
     block_position_ids = torch.stack(block_position_ids, dim=0)
 
     return torch.stack((position_ids, block_position_ids), dim=1)
+
 
 def model_provider(pre_process=True,
                    post_process=True):
@@ -126,23 +127,6 @@ def get_batch(data_iterator):
         data = None
 
     return process_data(data)
-
-
-def get_batch_pipe(data):
-    """Modification of `get_batch` to work on `next(data_iterator)` instead of `data_iterator`"""
-    args = get_args()
-    (tokens, labels, loss_mask), (attention_mask, position_ids) = process_data(data)
-
-    if args.curriculum_learning and args.curriculum_seqlen < tokens.size()[1]:
-        # seqlen-based curriculum learning
-        # tokens, position_ids, labels, loss_mask have size [batch size, seqlen]
-        tokens = tokens[:, :args.curriculum_seqlen].contiguous()
-        position_ids = position_ids[:, :args.curriculum_seqlen].contiguous()
-        labels = labels[:, :args.curriculum_seqlen].contiguous()
-        loss_mask = loss_mask[:, :args.curriculum_seqlen].contiguous()
-
-    return (tokens, position_ids, attention_mask), (labels, loss_mask)
-
 
 
 def loss_func(loss_mask, output_tensor):
