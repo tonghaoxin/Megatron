@@ -256,6 +256,7 @@ class Embedding(MegatronModule):
         # Embeddings dropout
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
 
+
     def zero_parameters(self):
         """Zero out all parameters in embedding."""
         self.word_embeddings.weight.data.fill_(0)
@@ -295,6 +296,7 @@ class Embedding(MegatronModule):
     def forward(self, input_ids, position_ids, tokentype_ids=None):
         # Embeddings.
         words_embeddings = self.word_embeddings(input_ids)
+
         if self.shrink_word_embedding:
             alpha = self.get_shrink_embedding_gradient_alpha()
             embeddings = words_embeddings if alpha == 1.0 \
@@ -430,31 +432,6 @@ class Embedding(MegatronModule):
                       'checkpoint but could not find it', flush=True)
 
 
-# class GLMEmbedding(Embedding):
-
-#     @nvtx.annotate("GLMEmbedding forward", color="goldenrod")
-#     def forward(self, *inputs, **kwargs):
-#         input_ids = inputs[0]
-#         position_ids = inputs[1]
-#         attention_mask = inputs[2]
-
-#         if len(inputs) == 4:
-#             tokentype_ids = inputs[3]
-#         else:
-#             tokentype_ids = None
-
-#         embeddings = super().forward(input_ids,
-#                                      position_ids,
-#                                      tokentype_ids=tokentype_ids)
-
-#         return embeddings, attention_mask, position_ids
-
-#     @property
-#     def word_embeddings_weight(self):
-#         """Easy accessory for the Megatron pipeline engine to tie embeddings across stages."""
-#         return self.word_embeddings.weight
-
-
 class TransformerLanguageModel(MegatronModule):
     """Transformer language model.
 
@@ -499,6 +476,8 @@ class TransformerLanguageModel(MegatronModule):
         self.encoder_hidden_state = None
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
         self.norm_type = norm_type
+        self.use_rotary_position_embeddings = \
+            args.use_rotary_position_embeddings
         self.use_rotary_position_embeddings_with_position_ids = \
                 args.use_rotary_position_embeddings_with_position_ids
 
@@ -514,8 +493,6 @@ class TransformerLanguageModel(MegatronModule):
             self._embedding_key = 'embedding'
 
         # Rotary positional embeddings
-        self.use_rotary_position_embeddings = \
-            args.use_rotary_position_embeddings
         if args.use_rotary_position_embeddings:
             self.seq_length = args.seq_length
             rotary_dim = args.hidden_size // args.num_attention_heads \

@@ -32,10 +32,10 @@ GLM_ARGS="--num-layers $NLAYERS \
           --ffn-hidden-size $FFN_HIDDEN_SIZE \
           --num-attention-heads $NHEADS \
           --make-vocab-size-divisible-by 768 \
-          --glm \
+          --positional-encoding-2d \
           --rotary-embedding-2d \
           --model-type-custom chatglm-6b \
-          --use-rotary-position-embeddings \
+          --use-rotary-position-embeddings-with-position-ids \
           --seq2seq-data-collator \
           --deepnorm"
 
@@ -84,7 +84,6 @@ TRAINING_ARGS="--train-iters 5000 \
                --distributed-backend nccl \
                --init-method-std 0.0052 \
                --no-async-tensor-model-parallel-allreduce \
-               --shrink-embedding-gradient-alpha 1 \
                --no-position-embedding \
                --tokenizer-model /workspace/THUDM/chatglm-6b/ice_text.model \
                --initial-loss-scale 16 \

@@ -499,7 +499,7 @@ class ParallelAttention(MegatronModule):
             args.num_attention_heads, world_size)
 
         # Rotary positional embedding with position_ids
-        if args.use_rotary_position_embeddings and args.use_rotary_position_embeddings_with_position_ids:
+        if args.use_rotary_position_embeddings_with_position_ids:
             rotary_dim = self.hidden_size_per_attention_head \
                 if args.kv_channels is None else args.kv_channels
 
@@ -1070,36 +1070,6 @@ class ParallelTransformerLayer(MegatronModule):
             output = residual + self.drop_path(out)
 
         return output
-
-
-# class GLMParallelTransformerLayer(ParallelTransformerLayer):
-#     """Extends ParallelTransformerLayer to forward attention_mask through the pipeline.
-
-#     Forward has two usages that affect attention mask communication:
-
-#     1) forward((input, attn_mask) , **kwargs) -> (output, mask)
-#        When the attention mask is provided as the second positional
-#        argument, typical pipeline behavior is used and both the output
-#        *and* mask are returned in a tuple. This tuple is then forwarded
-#        to the next stage in the pipeline.
-
-#        This version is useful if masks are dynamic.
-
-#     2) forward(input, **kwargs) -> output
-#        When the mask is static over all samples, it is advantageous to
-#        cache the mask and avoid communicating it.
-
-#        If no mask is provided, the module will query `self._args.attn_mask`
-#        for the mask and only return `super().forward(...)`
-#     """
-#     @nvtx.annotate("GLMParallelTransformerLayer forward", color="crimson")
-#     def forward(self, *inputs, **kwargs):
-#         # Attention mask is an activation.
-#         attention_mask = inputs[1]
-#         # Position ids is an activation
-#         position_ids = kwargs.get('position_ids', None)
-
-#         return super().forward(*inputs, **kwargs), attention_mask, position_ids
 
 
 class NoopTransformerLayer(MegatronModule):

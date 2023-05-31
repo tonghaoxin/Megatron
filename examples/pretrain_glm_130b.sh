@@ -69,7 +69,6 @@ GLM_ARGS="--num-layers $NLAYERS \
           --average-block-length 3 \
           --min-gmask-ratio 0.2 \
           --aggregated-samples-per-sequence 4 \
-          --use-rotary-position-embeddings \
           --use-rotary-position-embeddings-with-position-ids \
           --geglu \
           --no-bias-gelu-fusion"
