@@ -17,7 +17,7 @@ from megatron.model import LayerNorm, RMSNorm
 from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
-from megatron.model.rotary_pos_embedding import GLMRotaryEmbedding
+from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu, get_deepnorm_coefficients, init_method_normal
@@ -498,15 +498,15 @@ class ParallelAttention(MegatronModule):
         self.num_attention_heads_per_partition = core.utils.divide(
             args.num_attention_heads, world_size)
 
-        # Rotary positional embedding for GLM with position_ids
-        if args.use_rotary_position_embeddings and args.glm:
+        # Rotary positional embedding with position_ids
+        if args.use_rotary_position_embeddings and args.use_rotary_position_embeddings_with_position_ids:
             rotary_dim = self.hidden_size_per_attention_head \
                 if args.kv_channels is None else args.kv_channels
 
             if args.rotary_percent < 1.0:
                 rotary_dim = int(rotary_dim * args.rotary_percent)
 
-            self.rotary_emb = GLMRotaryEmbedding(
+            self.rotary_emb = RotaryEmbeddingWithPositionIds(
                     self.hidden_size_per_attention_head // (2 if self.rotary_embedding_2d else 1),
                     base=10000,
                     precision=args.params_dtype,
@@ -697,7 +697,8 @@ class ParallelAttention(MegatronModule):
         # Rotary embeddings
         # ==================================
 
-        # call GLMRotaryEmbedding forward to get rotary_pos_emb with given position_ids
+        # call RotaryEmbeddingWithPositionIds forward
+        # to get rotary_pos_emb with given position_ids
         # and set corresponding apply_rotary_fn
         if position_ids is not None:
             apply_rotary_fn = apply_rotary_pos_emb_index
@@ -1071,34 +1072,34 @@ class ParallelTransformerLayer(MegatronModule):
         return output
 
 
-class GLMParallelTransformerLayer(ParallelTransformerLayer):
-    """Extends ParallelTransformerLayer to forward attention_mask through the pipeline.
+# class GLMParallelTransformerLayer(ParallelTransformerLayer):
+#     """Extends ParallelTransformerLayer to forward attention_mask through the pipeline.
 
-    Forward has two usages that affect attention mask communication:
+#     Forward has two usages that affect attention mask communication:
 
-    1) forward((input, attn_mask) , **kwargs) -> (output, mask)
-       When the attention mask is provided as the second positional
-       argument, typical pipeline behavior is used and both the output
-       *and* mask are returned in a tuple. This tuple is then forwarded
-       to the next stage in the pipeline.
+#     1) forward((input, attn_mask) , **kwargs) -> (output, mask)
+#        When the attention mask is provided as the second positional
+#        argument, typical pipeline behavior is used and both the output
+#        *and* mask are returned in a tuple. This tuple is then forwarded
+#        to the next stage in the pipeline.
 
-       This version is useful if masks are dynamic.
+#        This version is useful if masks are dynamic.
 
-    2) forward(input, **kwargs) -> output
-       When the mask is static over all samples, it is advantageous to
-       cache the mask and avoid communicating it.
+#     2) forward(input, **kwargs) -> output
+#        When the mask is static over all samples, it is advantageous to
+#        cache the mask and avoid communicating it.
 
-       If no mask is provided, the module will query `self._args.attn_mask`
-       for the mask and only return `super().forward(...)`
-    """
-    @nvtx.annotate("GLMParallelTransformerLayer forward", color="crimson")
-    def forward(self, *inputs, **kwargs):
-        # Attention mask is an activation.
-        attention_mask = inputs[1]
-        # Position ids is an activation
-        position_ids = kwargs.get('position_ids', None)
+#        If no mask is provided, the module will query `self._args.attn_mask`
+#        for the mask and only return `super().forward(...)`
+#     """
+#     @nvtx.annotate("GLMParallelTransformerLayer forward", color="crimson")
+#     def forward(self, *inputs, **kwargs):
+#         # Attention mask is an activation.
+#         attention_mask = inputs[1]
+#         # Position ids is an activation
+#         position_ids = kwargs.get('position_ids', None)
 
-        return super().forward(*inputs, **kwargs), attention_mask, position_ids
+#         return super().forward(*inputs, **kwargs), attention_mask, position_ids
 
 
 class NoopTransformerLayer(MegatronModule):
@@ -1241,7 +1242,6 @@ class ParallelTransformer(MegatronModule):
         self.sequence_parallel = args.sequence_parallel
 
         self.norm_type = norm_type
-        self.glm = args.glm
 
         # Transformer Engine Init.
         if self.transformer_impl == 'transformer_engine':
@@ -1279,26 +1279,15 @@ class ParallelTransformer(MegatronModule):
         # Transformer layers.
         def build_layer(layer_number, layer_index):
             if args.transformer_impl == 'local':
-                if not self.glm:
-                    return ParallelTransformerLayer(
-                        init_method,
-                        output_layer_init_method,
-                        layer_number,
-                        layer_index,
-                        layer_type=layer_type,
-                        self_attn_mask_type=self_attn_mask_type,
-                        drop_path_rate=self.drop_path_rates[layer_number - 1],
-                        norm_type=self.norm_type)
-                else:
-                    return GLMParallelTransformerLayer(
-                        init_method,
-                        output_layer_init_method,
-                        layer_number,
-                        layer_index,
-                        layer_type=layer_type,
-                        self_attn_mask_type=self_attn_mask_type,
-                        drop_path_rate=self.drop_path_rates[layer_number - 1],
-                        norm_type=self.norm_type)
+                return ParallelTransformerLayer(
+                    init_method,
+                    output_layer_init_method,
+                    layer_number,
+                    layer_index,
+                    layer_type=layer_type,
+                    self_attn_mask_type=self_attn_mask_type,
+                    drop_path_rate=self.drop_path_rates[layer_number - 1],
+                    norm_type=self.norm_type)
             else:
                 return transformer_engine.pytorch.TransformerLayer(
                     args.hidden_size,
@@ -1414,23 +1403,11 @@ class ParallelTransformer(MegatronModule):
         """Forward method with activation checkpointing."""
         def custom(start, end, is_transformer_engine=False):
             def custom_forward(*args, **kwargs):
-                if not self.glm:
-                    x_, *args = args
-                    for index in range(start, end):
-                        layer = self._get_layer(index)
-                        x_ = layer(x_, *args, **kwargs)
-                    return x_
-                else:
-                    x_, attention_mask, encoder_output, enc_dec_attn_mask, \
-                            rotary_pos_emb, position_ids = args
-                    for index in range(start, end):
-                        layer = self._get_layer(index)
-                        x_, attention_mask, position_ids = layer(x_, attention_mask,
-                                                                 encoder_output, enc_dec_attn_mask,
-                                                                 rotary_pos_emb=rotary_pos_emb,
-                                                                 position_ids=position_ids,
-                                                                 **kwargs)
-                    return x_
+                x_, *args = args
+                for index in range(start, end):
+                    layer = self._get_layer(index)
+                    x_ = layer(x_, *args, **kwargs)
+                return x_
             def custom_forward_transformer_engine(*args, **kwargs):
                 return custom_forward(*args, is_first_microbatch=is_first_microbatch, **kwargs)
             if not is_transformer_engine:
@@ -1587,16 +1564,10 @@ class ParallelTransformer(MegatronModule):
                     for index in range(self.num_layers):
                         layer = self._get_layer(index)
 
-                        if not self.glm:
-                            hidden_states = layer(
-                                hidden_states,
-                                attention_mask,
-                                **forward_kwargs)
-                        else:
-                            hidden_states, attention_mask, position_ids \
-                                    = layer(hidden_states,
-                                            attention_mask,
-                                            **forward_kwargs)
+                        hidden_states = layer(
+                            hidden_states,
+                            attention_mask,
+                            **forward_kwargs)
 
                 # Skip counter update for eval and activation checkpointing
                 if torch.is_grad_enabled() and self.training:

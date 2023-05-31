@@ -62,7 +62,6 @@ GLM_ARGS="--num-layers $NLAYERS \
           --ffn-hidden-size $FFN_HIDDEN_SIZE \
           --num-attention-heads $NHEADS \
           --make-vocab-size-divisible-by 768 \
-          --glm \
           --gpt-prob 0.7 \
           --single-span-prob 0.02 \
           --short-seq-prob 0.02 \
@@ -71,6 +70,7 @@ GLM_ARGS="--num-layers $NLAYERS \
           --min-gmask-ratio 0.2 \
           --aggregated-samples-per-sequence 4 \
           --use-rotary-position-embeddings \
+          --use-rotary-position-embeddings-with-position-ids \
           --geglu \
           --no-bias-gelu-fusion"
           #--deepnorm \
@@ -137,6 +137,7 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --tokenizer-type IceTokenizer\
                --no-async-tensor-model-parallel-allreduce \
                --no-gradient-accumulation-fusion \
+               --shrink-word-embedding \
                --shrink-logit-embedding-gradient \
                --shrink-embedding-gradient-alpha 0.1 \
                --no-position-embedding \

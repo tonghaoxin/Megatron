@@ -266,7 +266,8 @@ def validate_args(args, defaults={}):
         if args.ffn_hidden_size is None:
             args.ffn_hidden_size = int((4 * args.hidden_size * 2 / 3) / 64) * 64
 
-    if not args.glm:
+    # FIXME: verify the correcteness
+    if not args.use_rotary_position_embeddings_with_position_ids:
         assert args.max_position_embeddings is not None
         if args.seq_length is not None:
             assert args.max_position_embeddings >= args.seq_length
@@ -535,8 +536,12 @@ def _add_network_size_args(parser):
                        'This is the size of position embedding.')
     group.add_argument('--use-rotary-position-embeddings', action='store_true',
                        help='Use rotary positional embeddings or not')
+    group.add_argument('--use-rotary-position-embeddings-with-position-ids', action='store_true',
+                       help='Use rotary positional embeddings with position ids or not')
     group.add_argument('--rotary-percent', type=float, default=1.0,
                        help='Percent of rotary dimension to use, default 100%')
+    group.add_argument('--rotary-embedding-2d', action='store_true',
+                       help='If set, use 2D rotary embedding.')
     group.add_argument('--use-learned-position-embeddings', action='store_true',
                        help='Use learned positional embeddings for opt/galactica '
                        'model training')
@@ -544,6 +549,8 @@ def _add_network_size_args(parser):
                        action='store_false',
                        help='Disable position embedding.',
                        dest='add_position_embedding')
+    group.add_argument('--positional-encoding-2d', action='store_true',
+                       help='Use positional encoding 2d or not')
     group.add_argument('--make-vocab-size-divisible-by', type=int, default=128,
                        help='Pad the vocab size to be divisible by this value.'
                        'This is added for computational efficieny reasons.')
@@ -685,6 +692,7 @@ def _add_regularization_args(parser):
                        help='Momentum factor for sgd')
     group.add_argument('--shrink-embedding-gradient-alpha', type=float, default=1.0,
                        help='Shrink embedding gradient for alpha')
+    group.add_argument('--shrink-word-embedding', action='store_true')
     group.add_argument('--shrink-logit-embedding-gradient', action='store_true')
     group.add_argument('--shrink-embedding-gradient-steps', nargs='*', default=None,
                        help='--shrink-embedding-gradient-steps <x1> <x2>'
@@ -1279,15 +1287,14 @@ def _add_vision_args(parser):
                        help='teacher temperature')
     group.add_argument('--dino-warmup-teacher-temp-epochs', type=int, default=30,
                        help='warmup teacher temperaure epochs')
-    group.add_argument('--model-type-custom', type=str, required=False, default=None, 
-                        choices=['chatglm-6b', 'glm-10', 'glm-130b'],
-                       help='custom model type such as chatglm-6b, glm-10, glm-130b')
+    group.add_argument('--model-type-custom', type=str, required=False, default=None,
+                        choices=['chatglm-6b', 'glm-10b', 'glm-130b'],
+                       help='custom model type such as chatglm-6b, glm-10b, glm-130b')
 
     return parser
 
 def _add_glm_args(parser):
     group = parser.add_argument_group("GLM", "GLM configurations")
-    group.add_argument('--glm', action='store_true', help="whether use the BlockLM pre-training")
     group.add_argument("--gpt-prob", type=float, default=0.0)
     # group.add_argument("--short-seq-prob", type=float, default=0.02)
     group.add_argument("--single-span-prob", type=float, default=0.02)
@@ -1316,18 +1323,16 @@ def _add_glm_args(parser):
     group.add_argument('--multitask-data-transform-steps', nargs='*', default=None,
                        help='--multitask-data-transform-steps <x1> <x2>'
                             'multitask ds1 -> ds2 in [x1, x2)')
-    group.add_argument('--rotary-embedding-2d', action='store_true',
-                       help='If set, use 2D rotary embedding for GLM.')
     group.add_argument('--fast-decode', action='store_true')
     return parser
 
 def _add_chatglm_args(parser):
     group = parser.add_argument_group("CHATGLM", "Chat-GLM configurations")
-    group.add_argument("--prompt-resource-name", type=str, default="content", 
+    group.add_argument("--prompt-resource-name", type=str, default="content",
                        help='dataset file question key in per line')
     group.add_argument("--prompt-target-name", type=str, default="summary",
                        help='dataset file answer in per line ')
-    group.add_argument("--prompt-history-name", type=str, default=None)    
+    group.add_argument("--prompt-history-name", type=str, default=None)
     group.add_argument('--preprocessing-num-workers', type=int, default=2,
                        help='preprocessing num workers token trans string to int')
     return parser

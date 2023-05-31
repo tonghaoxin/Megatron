@@ -11,7 +11,7 @@ from torch import einsum, nn
 import torch.nn.functional as F
 
 
-__all__ = ['RotaryEmbedding', 'GLMRotaryEmbedding', 'apply_rotary_pos_emb', 'apply_rotary_pos_emb_index']
+__all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds', 'apply_rotary_pos_emb', 'apply_rotary_pos_emb_index']
 
 
 class RotaryEmbedding(nn.Module):
@@ -45,9 +45,9 @@ class RotaryEmbedding(nn.Module):
         return 'inv_freq shape={}'.format(self.inv_freq.size())
 
 
-class GLMRotaryEmbedding(nn.Module):
+class RotaryEmbeddingWithPositionIds(nn.Module):
     """
-    GLM-style RotaryEmbedding
+    RotaryEmbedding with position ids
     """
 
     def __init__(self, dim, base=10000, precision=torch.half, learnable=False):

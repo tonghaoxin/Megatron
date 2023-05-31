@@ -88,7 +88,7 @@ class GLMModel(MegatronModule):
         self.language_model, self._language_model_key = get_language_model(
             num_tokentypes=num_tokentypes,
             add_pooler=False,
-            encoder_attn_mask_type=AttnMaskType.padding if args.glm else AttnMaskType.causal,
+            encoder_attn_mask_type=AttnMaskType.padding,
             init_method=init_method_normal(args.init_method_std),
             scaled_init_method=scaled_init_method_normal(args.init_method_std,
                                                          args.num_layers),
