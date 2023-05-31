@@ -77,6 +77,7 @@ TRAINING_ARGS="--train-iters 5000 \
                --seq-length $SEQ_LEN \
                --num-workers 1 \
                --load $CHECKPOINT_PATH \
+               --save $CHECKPOINT_PATH \
                --use-distributed-optimizer \
                --data-path $DATA_PATH \
                --abort-on-unmet-fused-kernel-constraints \
