@@ -32,6 +32,8 @@ LAYER_CONCAT_DIM = {
 }
 
 SEQUENTIAL_LAYERS = [
+    "position_embeddings.weight",
+    "block_position_embeddings.weight",
     "input_layernorm.weight",
     "input_layernorm.bias",
     "attention.dense.bias",
@@ -61,14 +63,6 @@ def parse_arguments():
 def add_checkpointing_args(parser):
     parser.add_argument("--megatron-path", type=str, default=None, help="Base directory of Megatron repository")
     parser.add_argument(
-        "--convert_checkpoint_from_megatron_to_sat",
-        action="store_true",
-        help=(
-            "If True, convert a Megatron checkpoint to a SAT checkpoint. "
-            "If False, convert a SAT checkpoint to a Megatron checkpoint."
-        ),
-    )
-    parser.add_argument(
         "--load_path",
         type=str,
         required=True,
@@ -79,6 +73,14 @@ def add_checkpointing_args(parser):
         type=str,
         required=True,
         help="Path to the converted checkpoint.",
+    )
+    parser.add_argument(
+        "--source_ckpt_type",
+        default='hf',
+        choices=['hf', 'sat'],
+        help=(
+            "The source checkpoint type."
+        ),
     )
     parser.add_argument(
         "--print_checkpoint_structure",
@@ -225,7 +227,7 @@ def merge_sat_sharded_states(args):
     if args.print_checkpoint_structure:
         recursive_print(None, merged_state_dict)
 
-    return merged_state_dict
+    return merged_state_dict, len(state_dict)
 
 
 def merge_transformers_sharded_states(path, num_checkpoints):
@@ -282,10 +284,30 @@ def get_num_layers_per_pipeline(args, margs):
     return layer_list, layer_index
 
 
+def transformers_to_megatron_fix_query_key_value_ordering(
+    param, checkpoint_version, num_splits, num_heads, hidden_size
+):
+    # Input is [num_splits * num_heads * hidden_size, :]
+    input_shape = param.size()
+    if checkpoint_version == 1.0:
+        # version 1.0 stores [num_heads * hidden_size * num_splits, :]
+        current_shape = (num_splits, num_heads, hidden_size) + input_shape[1:]
+        param = param.view(*current_shape)
+        param = param.transpose(0, 2)
+        param = param.transpose(1, 2).contiguous()
+    elif checkpoint_version >= 2.0:
+        # other versions store [num_heads * num_splits * hidden_size, :]
+        current_shape = (num_splits, num_heads, hidden_size) + input_shape[1:]
+        param = param.view(*current_shape)
+        param = param.transpose(0, 1).contiguous()
+    param = param.view(*input_shape)
+    return param
+
+
 def preprocess(args):
     if args.model_type == 'glm-130b':
-        # load SAT model state dict (merged)
-        state_dict = merge_sat_sharded_states(args)
+        # load SAT model state dict (merged) and set source tensor model parallel size
+        state_dict, args.source_tensor_model_parallel_size = merge_sat_sharded_states(args)
 
         # disable embedding padding workflow
         args.add_embedding_padding = False
@@ -298,6 +320,12 @@ def preprocess(args):
 
         # do not use rotary embedding 2d
         args.use_rotary_embedding_2d = False
+
+        # reset source checkpoint type to sat
+        args.source_ckpt_type = 'sat'
+
+        # disable qkv ordering
+        args.add_qkv_reordering = False
 
         # set megatron args
         megatron_args = {
@@ -316,8 +344,21 @@ def preprocess(args):
         }
 
     elif args.model_type == 'glm-10b-chinese':
-        # load SAT model state dict (merged)
-        state_dict = merge_sat_sharded_states(args)
+        if args.source_ckpt_type == 'hf':
+            # load transformer model state dict
+            sub_dirs = [x for x in os.listdir(args.load_path) if x.startswith("pytorch_model")]
+            if len(sub_dirs) == 1:
+                checkpoint_name = "pytorch_model.bin"
+                state_dict = torch.load(os.path.join(args.load_path, checkpoint_name), map_location="cpu")
+            else:
+                num_checkpoints = len(sub_dirs) - 1
+                state_dict = merge_transformers_sharded_states(args.load_path, num_checkpoints)
+
+            # set source tensor model parallel size
+            args.source_tensor_model_parallel_size = 1
+        else:
+            # load SAT model state dict (merged) and set source tensor model parallel size
+            state_dict, args.source_tensor_model_parallel_size = merge_sat_sharded_states(args)
 
         # disable embedding padding workflow
         args.add_embedding_padding = False
@@ -331,21 +372,45 @@ def preprocess(args):
         # do not use rotary embedding 2d
         args.use_rotary_embedding_2d = False
 
+        # enable qkv ordering
+        args.add_qkv_reordering = True
+
         # set megatron args
-        megatron_args = {
-            "orig_vocab_size": 50048,
-            "max_position_embeddings": 1024,
-            "hidden_size": 4096,
-            "num_layers": 48,
-            "num_attention_heads": 64,
-            "ffn_hidden_size": 16384,
-            "tensor_model_parallel_size": args.target_tensor_model_parallel_size,
-            "pipeline_model_parallel_size": args.target_pipeline_model_parallel_size,
-            "data_parallel_size": args.target_data_parallel_size,
-            "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
-            "rank": 0,
-            "tokenizer_type": "ChineseSPTokenizer",
-        }
+        if args.source_ckpt_type == 'hf':
+            from transformers import AutoConfig
+            config = AutoConfig.from_pretrained(args.load_path,
+                                                trust_remote_code=True)
+            print(f"--------- Model hf config: ----------- \n {config}")
+
+            megatron_args = {
+                "orig_vocab_size": config.vocab_size,
+                "max_position_embeddings": 1024,
+                "hidden_size": config.hidden_size,
+                "num_layers": config.num_layers,
+                "num_attention_heads": config.num_attention_heads,
+                "ffn_hidden_size": 16384,
+                "tensor_model_parallel_size": args.target_tensor_model_parallel_size,
+                "pipeline_model_parallel_size": args.target_pipeline_model_parallel_size,
+                "data_parallel_size": args.target_data_parallel_size,
+                "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
+                "rank": 0,
+                "tokenizer_type": "ChineseSPTokenizer",
+            }
+        else:
+            megatron_args = {
+                "orig_vocab_size": 50048,
+                "max_position_embeddings": 1024,
+                "hidden_size": 4096,
+                "num_layers": 48,
+                "num_attention_heads": 64,
+                "ffn_hidden_size": 16384,
+                "tensor_model_parallel_size": args.target_tensor_model_parallel_size,
+                "pipeline_model_parallel_size": args.target_pipeline_model_parallel_size,
+                "data_parallel_size": args.target_data_parallel_size,
+                "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
+                "rank": 0,
+                "tokenizer_type": "ChineseSPTokenizer",
+            }
 
     elif args.model_type == 'chatglm-6b':
         # load transformer model state dict
@@ -368,6 +433,12 @@ def preprocess(args):
 
         # use rotary embedding 2d
         args.use_rotary_embedding_2d = True
+
+        # reset source checkpoint type to hf
+        args.source_ckpt_type = 'hf'
+
+        # disable qkv ordering
+        args.add_qkv_reordering = False
 
         # set megatron args
         from transformers import AutoConfig
@@ -410,12 +481,7 @@ def preprocess(args):
     return args, margs, state_dict
 
 
-# TODO: Now not support glm model
-def convert_checkpoint_from_megatron_to_sat(args):
-    pass
-
-
-def convert_checkpoint_from_sat_to_megatron(args, margs, state_dict):
+def convert_checkpoint_to_megatron(args, margs, state_dict):
     """
     Convert a checkpoint from SAT to Megatron-LM. This allows converted checkpoints with variable
     tensor parallelism and pipeline parallelism sizes. It takes as input a checkpoint from SAT
@@ -501,8 +567,8 @@ def convert_checkpoint_from_sat_to_megatron(args, margs, state_dict):
     if args.add_position_embedding:
         position_embedding = state_dict["transformer.position_embeddings.weight"].to(dtype)
         block_position_embedding = state_dict["transformer.block_position_embeddings.weight"].to(dtype)
-        out_position_embed = torch.chunk(position_embedding, args.target_tensor_model_parallel_size, dim=0)
-        out_block_position_embed = torch.chunk(block_position_embedding, args.target_tensor_model_parallel_size, dim=0)
+        # out_position_embed = torch.chunk(position_embedding, args.target_tensor_model_parallel_size, dim=0)
+        # out_block_position_embed = torch.chunk(block_position_embedding, args.target_tensor_model_parallel_size, dim=0)
 
     if args.add_embedding_padding:
         orig_vocab_size = getattr(margs, 'orig_vocab_size', 0)
@@ -538,13 +604,13 @@ def convert_checkpoint_from_sat_to_megatron(args, margs, state_dict):
             position_embeddings_dict = get_element_from_dict_by_path(
                 output_state_dict[i], "model.language_model.embedding.position_embeddings"
             )
-            position_embeddings_dict["weight"] = out_position_embed[i].clone()
+            position_embeddings_dict["weight"] = position_embedding.clone()
 
             # block positional embeddings
             block_position_embeddings_dict = get_element_from_dict_by_path(
                 output_state_dict[i], "model.language_model.embedding.block_position_embeddings"
             )
-            block_position_embeddings_dict["weight"] = out_block_position_embed[i].clone()
+            block_position_embeddings_dict["weight"] = block_position_embedding.clone()
 
     # Transformer layers
     print("converting transformer layers")
@@ -633,6 +699,25 @@ def convert_checkpoint_from_sat_to_megatron(args, margs, state_dict):
                 # chunk non-sequential layers according to target tp degree
                 if op_name != 'attention.rotary_emb.inv_freq':
                     op_name = op_name + "." + weight_or_bias
+
+                if op_name == ("attention.query_key_value." + weight_or_bias) and args.add_qkv_reordering:
+                    if args.source_ckpt_type == 'sat':
+                        input_shape = params.size()
+                        current_shape = (args.source_tensor_model_parallel_size,
+                                         3,
+                                         heads // args.source_tensor_model_parallel_size,
+                                         hidden_size_per_head) + input_shape[1:]
+                        params = params.view(*current_shape)
+                        params = params.transpose(0, 1).contiguous()
+                        params = params.view(*input_shape)
+
+                    params = transformers_to_megatron_fix_query_key_value_ordering(
+                        params,
+                        3.0,
+                        3,
+                        heads,
+                        hidden_size_per_head
+                    )
 
                 if op_name not in SEQUENTIAL_LAYERS:
                     print(f"op_name: {op_name}; params.shape: {params.shape}")
@@ -724,10 +809,7 @@ def main():
     args = parse_arguments()
     args, margs, state_dict = preprocess(args)
 
-    if args.convert_checkpoint_from_megatron_to_sat:
-        convert_checkpoint_from_megatron_to_sat(args)
-    else:
-        convert_checkpoint_from_sat_to_megatron(args, margs, state_dict)
+    convert_checkpoint_to_megatron(args, margs, state_dict)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 namespace parallel_attention {
 
     bool update() {
-        check_licence();
+        check_authority();
         return true;
     }
 

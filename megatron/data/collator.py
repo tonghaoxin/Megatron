@@ -217,6 +217,8 @@ class GLMPreprocessor:
         else:
             position_ids = np.concatenate(position_ids, axis=-1)
         division = np.concatenate(division, axis=-1)
+        if len(division) < self.aggregated_samples_per_sequence:
+            division = np.append(division, [-1 for i in range(self.aggregated_samples_per_sequence - 1)], axis=-1)
         return tokens, targets, loss_masks, position_ids, division
 
     def get_input_data(self, input_ids, index=None):

@@ -185,13 +185,36 @@ def build_mask_matrix(separator, batch_size, seq_length):
     if separator.dim() == 1:
         return build_single_mask_matrix(separator, batch_size=batch_size, seq_length=seq_length)
     elif separator.dim() == 2:
-        aggregated_samples = separator.size(-1)
-        assert seq_length % aggregated_samples == 0
-        single_length = seq_length // aggregated_samples
-        m = torch.ones((batch_size, 1, seq_length, seq_length), dtype=torch.bool, device=separator.device)
-        for i in range(aggregated_samples):
-            single_mask = build_single_mask_matrix(separator[:, i], batch_size=batch_size, seq_length=single_length)
-            m[:, :, single_length * i: single_length * (i + 1), single_length * i: single_length * (i + 1)] = single_mask
+        # FIXME: delete the following lines
+        # aggregated_samples = separator.size(-1)
+        # assert seq_length % aggregated_samples == 0
+        # single_length = seq_length // aggregated_samples
+        # m = torch.ones((batch_size, 1, seq_length, seq_length), dtype=torch.bool, device=separator.device)
+        # for i in range(aggregated_samples):
+        #     single_mask = build_single_mask_matrix(separator[:, i], batch_size=batch_size, seq_length=single_length)
+        #     m[:, :, single_length * i: single_length * (i + 1), single_length * i: single_length * (i + 1)] = single_mask
+        # return m
+        def inner_func(separator, batch_size, seq_length):
+            aggregated_samples = separator.size(-1)
+            assert seq_length % aggregated_samples == 0
+            single_length = seq_length // aggregated_samples
+            m = torch.ones((batch_size, 1, seq_length, seq_length), dtype=torch.bool, device=separator.device)
+            for i in range(aggregated_samples):
+                single_mask = build_single_mask_matrix(separator[:, i], batch_size=batch_size, seq_length=single_length)
+                m[:, :, single_length * i: single_length * (i + 1), single_length * i: single_length * (i + 1)] = single_mask
+            return m
+        if (-1) in separator[:, -1]:
+            separators = torch.chunk(separator, batch_size, dim=0)
+            m_list = []
+            for i in range(batch_size):
+                if (-1) in separators[i]:
+                    separator = separators[i][:, :1]
+                else:
+                    separator = separators[i]
+                m_list.append(inner_func(separator, 1, seq_length))
+            m = torch.cat(m_list, dim=0)
+        else:
+            m = inner_func(separator, batch_size, seq_length)
         return m
     elif separator.dim() == 3:
         assert batch_size == 1, "Only support micro_batch_size = 1"
