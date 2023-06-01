@@ -5,7 +5,7 @@ TIMESTAMP=$(date +'%Y.%m.%d-%H:%M:%S')
 EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
-DATA_PATH=/datasets/cc_news/cc_news_train_text_document
+DATA_PATH=/datasets/glm-10b/cc_download_articles
 
 TOKENIZER_MODEL=$ROOT_DIR/../megatron/chinese_sentencepiece/cog-pretrain.model
 CHECKPOINT_PATH=$ROOT_DIR/../glm-10b-chinese/0531-tp1-pp1-dp8
@@ -36,16 +36,13 @@ GLM_ARGS="--num-layers $NLAYERS \
           --ffn-hidden-size $FFN_HIDDEN_SIZE \
           --num-attention-heads $NHEADS \
           --make-vocab-size-divisible-by 128 \
-          --gpt-prob 0.7 \
           --single-span-prob 0.02 \
           --short-seq-prob 0.02 \
           --average-block-length 3 \
-          --min-gmask-ratio 0.2 \
-          --aggregated-samples-per-sequence 4 \
           --block-lm \
           --task-mask \
           --bert-prob 0.5 \
-          --gap-sentence-prob 0.3 \
+          --gap-sentence-prob 0.2 \
           --gap-sentence-ratio 0.15 \
           --avg-block-length 3 \
           --gpt-min-ratio 0.25 \
@@ -58,7 +55,7 @@ GLOBAL_BATCH_SIZE=64
  #
 TP_SIZE=1
 PP_SIZE=1
-SEQ_LEN=512
+SEQ_LEN=1024
 
 OPTIMIZER_ARGS="--optimizer adam \
                 --adam-beta1 0.9 \
@@ -107,6 +104,9 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --model-type-custom glm-10b \
                --data-name cc-news \
                --dataloader-type cyclic \
+               --recompute-granularity full \
+               --recompute-method block \
+               --recompute-num-layers 8 \
                --initial-loss-scale 16 \
                --min-loss-scale 1 \
                --loss-scale-window 1000 \
