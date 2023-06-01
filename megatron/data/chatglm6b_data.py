@@ -28,9 +28,9 @@ def build_train_valid_test_datasets(
     # We need to tokenize inputs and targets.
     column_names_train = raw_datasets["train"].column_names
 
-    prompt_column = args.prompt_resource_name if args.prompt_resource_name else "content"
-    response_column = args.prompt_target_name if args.prompt_resource_name else "summary"
-    history_column = args.prompt_history_name if args.prompt_history_name else None
+    prompt_column = args.prompt_resource_name
+    response_column = args.prompt_target_name
+    history_column = args.prompt_history_name
     test_dataset = None
     valid_dataset = None
     train_dataset = raw_datasets["train"]
