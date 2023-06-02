@@ -576,6 +576,8 @@ def _add_network_size_args(parser):
                        'reasons.')
     group.add_argument('--squared-relu', action='store_true',
                        help='Use squared relu activation instead of default gelu')
+    group.add_argument('--relu', action='store_true',
+                       help='Use relu activation instead of default gelu')
     group.add_argument('--swiglu', action='store_true',
                        help='Use gated linear units and SiLU activation instead of default gelu')
     group.add_argument('--geglu', action='store_true',
@@ -1133,7 +1135,8 @@ def _add_data_args(parser):
                                 'GalacticaHFTokenizer',
                                 'IceTokenizer',
                                 'ChatGLMTokenizer',
-                                'GLMChineseTokenizer'],
+                                'GLMChineseTokenizer',
+                                'OptTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
