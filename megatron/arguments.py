@@ -258,7 +258,7 @@ def validate_args(args, defaults={}):
     if args.ffn_hidden_size is None:
         args.ffn_hidden_size = 4 * args.hidden_size
 
-    if args.swiglu:
+    if args.activation_func in ['swiglu', 'geglu']:
         # reduce the dimnesion for MLP since projections happens on
         # two linear layers. this keeps the number of paramters in
         # the same ballpark as the counterpart with 4*h size
@@ -570,21 +570,10 @@ def _add_network_size_args(parser):
                        help='Use fused rmsnorm instead of default rmsnorm')
     group.add_argument('--rmsnorm-epsilon', type=float, default=1e-6,
                        help='RMS norm epsilon.')
-    group.add_argument('--openai-gelu', action='store_true',
-                       help='Use OpenAIs GeLU implementation. This option'
-                       'should not be used unless for backward compatibility'
-                       'reasons.')
-    group.add_argument('--squared-relu', action='store_true',
-                       help='Use squared relu activation instead of default gelu')
-    group.add_argument('--relu', action='store_true',
-                       help='Use relu activation instead of default gelu')
-    group.add_argument('--swiglu', action='store_true',
-                       help='Use gated linear units and SiLU activation instead of default gelu')
-    group.add_argument('--geglu', action='store_true',
-                       help='Use GELU activation instead of default gelu')
-    group.add_argument('--onnx-safe', type=bool, required=False,
-                       help='Use workarounds for known problems with '
-                       'Torch ONNX exporter')
+    group.add_argument('--activation-func', type=str, required=False, default='gelu',
+                        choices=['relu', 'gelu', 'geglu', 'liglu', 'reglu', 'swiglu',
+                                 'openai_gelu', 'erf_gelu', 'squared_relu'],
+                       help='Activation function for MLP layer')
     group.add_argument('--bert-no-binary-head', action='store_false',
                        help='Disable BERT binary head.',
                        dest='bert_binary_head')

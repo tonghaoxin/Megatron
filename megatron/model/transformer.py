@@ -20,7 +20,8 @@ from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index
-from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu, get_deepnorm_coefficients, init_method_normal
+from megatron.model.utils import attention_mask_func, get_deepnorm_coefficients, init_method_normal
+from .activation_funcs import ACTIVATION_FUNCS
 
 try:
     from einops import rearrange
@@ -120,10 +121,10 @@ class ParallelMLP(MegatronModule):
 
         self.add_bias = args.add_bias_linear
 
-        # Project to 4h. If using swiglu double the output width, see https://arxiv.org/pdf/2002.05202.pdf
+        # Project to 4h. If using swiglu or geglu double the output width, see https://arxiv.org/pdf/2002.05202.pdf
         self.dense_h_to_4h = tensor_parallel.ColumnParallelLinear(
             args.hidden_size,
-            args.ffn_hidden_size * 2 if args.swiglu or args.geglu else args.ffn_hidden_size,
+            args.ffn_hidden_size * 2 if args.activation_func in ['swiglu', 'geglu'] else args.ffn_hidden_size,
             bias=self.add_bias,
             gather_output=False,
             init_method=init_method,
@@ -131,7 +132,7 @@ class ParallelMLP(MegatronModule):
             async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
             **_args_to_kwargs())
 
-        if args.deepnorm and args.geglu:
+        if args.deepnorm and args.activation_func == 'geglu':
             _get_cuda_rng_tracker = tensor_parallel.get_cuda_rng_tracker
 
             with _get_cuda_rng_tracker().fork():
@@ -144,32 +145,9 @@ class ParallelMLP(MegatronModule):
                 )
 
         self.bias_gelu_fusion = False
-        self.activation_func = None
-
-        if args.openai_gelu:
-            self.activation_func = openai_gelu
-        elif args.onnx_safe:
-            self.activation_func = erf_gelu
-        elif args.swiglu:
-            @torch.jit.script
-            def swiglu(x):
-                x = torch.chunk(x, 2, dim=-1)
-                return F.silu(x[0]) * x[1]
-            self.activation_func = swiglu
-        elif args.squared_relu:
-            def squared_relu(x):
-                return torch.pow(F.relu(x), 2)
-            self.activation_func = squared_relu
-        elif args.relu:
-            self.activation_func = F.relu
-        elif args.geglu:
-            def geglu(x):
-                x = x.chunk(2, dim=(x.ndim - 1))
-                return x[0] * F.gelu(x[1])
-            self.activation_func = geglu
-        else:
+        if args.activation_func == 'gelu':
             self.bias_gelu_fusion = args.bias_gelu_fusion
-            self.activation_func = F.gelu
+        self.activation_func = ACTIVATION_FUNCS[args.activation_func]
 
         # Project back to h.
         self.dense_4h_to_h = tensor_parallel.RowParallelLinear(
