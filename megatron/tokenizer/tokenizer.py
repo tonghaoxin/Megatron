@@ -698,7 +698,7 @@ class _OptTokenizer(AbstractTokenizer):
         return self.tokenizer.vocab()
 
     def tokenize(self, input_text):
-        return self.tokenizer.encode(input_text)
+        return self.tokenizer.encode(input_text).ids
 
     def detokenize(self, token_ids):
         return self.tokenizer.decode(token_ids)
