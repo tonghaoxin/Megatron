@@ -373,8 +373,14 @@ def convert_checkpoint_from_transformers_to_megatron(args):
     print("converting embedding layer")
     print("converting embed_tokens.weight")
     #print("state_dict:", state_dict.keys())
-    word_embedding = state_dict["decoder.embed_tokens.weight"].to(dtype)
-    embed_positions = state_dict["decoder.embed_positions.weight"].to(dtype)
+    model_key_prefix = "decoder"
+    if state_dict.get("decoder.embed_tokens.weight", None) is None:
+        if state_dict.get("model.decoder.embed_tokens.weight", None) is not None:
+            model_key_prefix = "model.decoder"
+        else:
+            raise Exception("Invalid model decoder key.")
+    word_embedding = state_dict[f"{model_key_prefix}.embed_tokens.weight"].to(dtype)
+    embed_positions = state_dict[f"{model_key_prefix}.embed_positions.weight"].to(dtype)
     print(f"embed_positions size: {embed_positions.shape}")
 
     orig_vocab_size = config.vocab_size
@@ -420,7 +426,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
     num_layers = config.num_hidden_layers // args.target_pipeline_model_parallel_size
     print("num_layers:", num_layers)
 
-    layer_re = re.compile("decoder.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)")
+    layer_re = re.compile(f"{model_key_prefix}.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)")
     # The number of heads.
     heads = config.num_attention_heads
 
@@ -440,7 +446,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
             layers_to_copy = [
                 layer_name
                 for layer_name in state_dict.keys()
-                if layer_name.startswith(f"decoder.layers.{pp_layer_id}.")
+                if layer_name.startswith(f"{model_key_prefix}.layers.{pp_layer_id}.")
             ]
 
             for layer_name in layers_to_copy:
@@ -474,8 +480,8 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                     # handle k_proj, v_proj
                     layer_name = f"layers.{layer}.self_attention.query_key_value.{weight_or_bias}"
 
-                    k_hf_layer = f"decoder.layers.{layer_index}.self_attn.k_proj.{weight_or_bias}"
-                    v_hf_layer = f"decoder.layers.{layer_index}.self_attn.v_proj.{weight_or_bias}"
+                    k_hf_layer = f"{model_key_prefix}.layers.{layer_index}.self_attn.k_proj.{weight_or_bias}"
+                    v_hf_layer = f"{model_key_prefix}.layers.{layer_index}.self_attn.v_proj.{weight_or_bias}"
 
                     k_params = state_dict[k_hf_layer].to(dtype)
                     v_params = state_dict[v_hf_layer].to(dtype)
@@ -528,7 +534,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
             # handle final layernorm
             # weight_or_bias = "weight"
             for weight_or_bias in ["weight", "bias"]:
-                params = state_dict[f"decoder.final_layer_norm.{weight_or_bias}"].to(dtype)
+                params = state_dict[f"{model_key_prefix}.final_layer_norm.{weight_or_bias}"].to(dtype)
                 layer_name = f"final_layernorm.{weight_or_bias}"
                 for i in range(args.target_tensor_model_parallel_size):
                     params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.encoder")
