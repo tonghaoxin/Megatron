@@ -70,10 +70,10 @@ GLM_ARGS="--num-layers $NLAYERS \
           --min-gmask-ratio 0.2 \
           --aggregated-samples-per-sequence 4 \
           --use-rotary-position-embeddings-with-position-ids \
+          --apply-rotary-positional-embedding-kernel \
           --activation-func geglu \
+          --deepnorm \
           --no-bias-gelu-fusion"
-          #--deepnorm \
-#--num-layers $NLAYERS \
 
 # Training args
 MICRO_BATCH_SIZE=1
@@ -131,17 +131,20 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --abort-on-unmet-fused-kernel-constraints \
                --split 949,50,1 \
                --distributed-backend nccl \
-               --recompute-activations \
                --init-method-std 0.0052 \
-               --tokenizer-type IceTokenizer\
-               --no-async-tensor-model-parallel-allreduce \
-               --no-gradient-accumulation-fusion \
                --shrink-word-embedding \
                --shrink-logit-embedding-gradient \
                --shrink-embedding-gradient-alpha 0.1 \
+               --tokenizer-type IceTokenizer\
                --no-position-embedding \
+               --no-gradient-accumulation-fusion \
+               --no-scatter-gather-tensors-in-pipeline \
+               --no-async-tensor-model-parallel-allreduce \
+               --use-distributed-optimizer \
+               --recompute-granularity full \
+               --recompute-method uniform \
+               --pipeline-model-parallel-partition-balanced \
                --fp16"
-               # --no-gradient-accumulation-fusion \
                # --pipeline_model_parallel_split_rank
                # --skip-train-iteration-range 40701-40900 42401-42600 \
                # --load $CHECKPOINT_PATH \

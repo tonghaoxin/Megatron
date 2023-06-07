@@ -10,8 +10,14 @@ import torch
 from torch import einsum, nn
 import torch.nn.functional as F
 
+try:
+    import nvtx
+except ImportError:
+    pass
 
-__all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds', 'apply_rotary_pos_emb', 'apply_rotary_pos_emb_index']
+
+__all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds', 'apply_rotary_pos_emb',
+           'apply_rotary_pos_emb_index', 'apply_rotary_pos_emb_index_fused']
 
 
 class RotaryEmbedding(nn.Module):
@@ -26,6 +32,7 @@ class RotaryEmbedding(nn.Module):
         if importlib.util.find_spec('einops') is None:
             raise RuntimeError("einops is required for Rotary Embedding")
 
+    @nvtx.annotate("RotaryEmbedding forward", color="indigo")
     def forward(self, max_seq_len, offset=0):
         seq = torch.arange(max_seq_len, device=self.inv_freq.device) + offset
         freqs = einsum('i , j -> i j', seq.type_as(self.inv_freq), self.inv_freq)
@@ -73,6 +80,7 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
             self.sin_cached = None
         self.precision = precision
 
+    @nvtx.annotate("RotaryEmbeddingWithPositionIds forward", color="indigo")
     def forward(self, x, seq_dim=1, seq_len=None):
         """
         forward function
@@ -102,6 +110,32 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
                 return cos_cached, sin_cached
             self.cos_cached, self.sin_cached = cos_cached, sin_cached
         return self.cos_cached[:seq_len, ...], self.sin_cached[:seq_len, ...]
+
+
+class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
+
+    @staticmethod
+    @nvtx.annotate("RotaryPositionalEmbeddingFunction forward", color="skyblue")
+    def forward(ctx, q, cos, sin):
+        import rotary_positional_embedding_cuda
+
+        q_ = q.contiguous()
+        cos_ = cos.contiguous()
+        sin_ = sin.contiguous()
+        output = rotary_positional_embedding_cuda.forward(*q.shape, q_, cos_, sin_)
+        ctx.save_for_backward(cos_, sin_)
+
+        return output
+
+    @staticmethod
+    @nvtx.annotate("RotaryPositionalEmbeddingFunction backward", color="violet")
+    def backward(ctx, grad_output):
+        import rotary_positional_embedding_cuda
+
+        cos_, sin_ = ctx.saved_tensors
+        grad_q = rotary_positional_embedding_cuda.backward(*grad_output.shape, grad_output, cos_, sin_)
+
+        return grad_q, None, None
 
 
 def _rotate_half(x):
@@ -148,4 +182,13 @@ def apply_rotary_pos_emb_index(q, k, cos, sin, position_id):
     cos, sin = F.embedding(position_id, cos.squeeze()).unsqueeze(2), \
                F.embedding(position_id, sin.squeeze()).unsqueeze(2)
     q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+    return q, k
+
+
+def apply_rotary_pos_emb_index_fused(q, k, cos, sin, position_id):
+    # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, hn] -> [sq, b, 1, hn]
+    cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(2), \
+               F.embedding(position_id, sin.squeeze(1)).unsqueeze(2)
+    q = RotaryPositionalEmbeddingFunction.apply(q, cos, sin)
+    k = RotaryPositionalEmbeddingFunction.apply(k, cos, sin)
     return q, k

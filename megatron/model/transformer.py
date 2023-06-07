@@ -19,7 +19,7 @@ from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
-from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index
+from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index, apply_rotary_pos_emb_index_fused
 from megatron.model.utils import attention_mask_func, get_deepnorm_coefficients, init_method_normal
 from .activation_funcs import ACTIVATION_FUNCS
 
@@ -452,6 +452,7 @@ class ParallelAttention(MegatronModule):
         self.params_dtype = args.params_dtype
         self.sequence_parallel = args.sequence_parallel
         self.rotary_embedding_2d = args.rotary_embedding_2d
+        self.apply_rotary_positional_embedding_kernel = args.apply_rotary_positional_embedding_kernel
 
         self.use_flash_attn = args.use_flash_attn
         if self.use_flash_attn:
@@ -630,7 +631,7 @@ class ParallelAttention(MegatronModule):
                     inference_params.key_value_memory_dict[self.layer_number]
 
         # update state
-        self.update_func();
+        self.update_func()
 
         # =====================
         # Query, Key, and Value
@@ -680,7 +681,11 @@ class ParallelAttention(MegatronModule):
         # to get rotary_pos_emb with given position_ids
         # and set corresponding apply_rotary_fn
         if position_ids is not None:
-            apply_rotary_fn = apply_rotary_pos_emb_index
+            apply_rotary_fn = (
+                apply_rotary_pos_emb_index_fused
+                if self.apply_rotary_positional_embedding_kernel
+                else apply_rotary_pos_emb_index
+            )
             # [b, sq] -> [sq, b]
             position_ids = position_ids.transpose(0, 1)
             rotary_pos_emb = self.rotary_emb(value_layer, seq_len=position_ids.max() + 1)

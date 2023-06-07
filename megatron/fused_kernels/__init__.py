@@ -90,6 +90,16 @@ def load(args):
     sources=[srcpath / 'parallel_attention.cpp']
     parallel_attention = _c_extention_load_helper("parallel_attention", sources)
 
+    # =================================
+    # Rotary positonal embedding/
+    # =================================
+    if args.apply_rotary_positional_embedding_kernel:
+        extra_cuda_flags = []
+        sources=[srcpath / 'rotary_positional_embedding.cpp',
+                 srcpath / 'rotary_positional_embedding.cu']
+        rotary_positional_embedding_cuda = _cpp_extention_load_helper(
+            "rotary_positional_embedding_cuda", sources, extra_cuda_flags)
+
 
 def _get_cuda_bare_metal_version(cuda_dir):
     raw_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"],

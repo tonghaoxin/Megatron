@@ -387,6 +387,9 @@ def validate_args(args, defaults={}):
     if args.deepnorm:
         args.apply_residual_connection_post_layernorm = True
 
+    if args.apply_rotary_positional_embedding_kernel:
+        assert not args.learnable_rotary_embedding, 'rope kernel only support unlearnable rope'
+
     # Print arguments.
     _print_args("arguments", args)
     retro_args = get_retro_args()
@@ -543,6 +546,10 @@ def _add_network_size_args(parser):
                        help='Percent of rotary dimension to use, default 100%')
     group.add_argument('--rotary-embedding-2d', action='store_true',
                        help='If set, use 2D rotary embedding.')
+    group.add_argument('--apply-rotary-positional-embedding-kernel', action='store_true',
+                       help='Use custom cuda kernel for rotary positional embedding.')
+    group.add_argument('--learnable-rotary-embedding', action='store_true',
+                       help='If set, make rotary embedding learnable.')
     group.add_argument('--use-learned-position-embeddings', action='store_true',
                        help='Use learned positional embeddings for opt/galactica '
                        'model training')
@@ -581,8 +588,6 @@ def _add_network_size_args(parser):
                        help='Number of Experts in Switch Transformer (None means no Switch)')
     group.add_argument('--untie-embeddings-and-output-weights', action='store_true',
                        help='Untie embeddings and output weights.')
-    group.add_argument('--learnable-rotary-embedding', action='store_true',
-                       help='If set, make rotary embedding learnable.')
     return parser
 
 

@@ -56,6 +56,7 @@ GLM_ARGS="--num-layers $NLAYERS \
           --min-gmask-ratio 0.2 \
           --aggregated-samples-per-sequence 4 \
           --use-rotary-position-embeddings-with-position-ids \
+          --apply-rotary-positional-embedding-kernel \
           --activation-func geglu \
           --deepnorm \
           --no-bias-gelu-fusion"
@@ -121,9 +122,9 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
                --shrink-embedding-gradient-alpha 0.1 \
                --tokenizer-type IceTokenizer \
                --no-position-embedding \
-               --no-async-tensor-model-parallel-allreduce \
-               --no-scatter-gather-tensors-in-pipeline \
                --no-gradient-accumulation-fusion \
+               --no-scatter-gather-tensors-in-pipeline \
+               --no-async-tensor-model-parallel-allreduce \
                --use-distributed-optimizer \
                --recompute-granularity full \
                --recompute-method uniform \
@@ -140,7 +141,11 @@ TRAINING_ARGS="--tensor-model-parallel-size $TP_SIZE \
 	             # --multitask-ratio 0.05 \
                # --rampup-batch-size 192 24 $BATCH_WARMUP_SAMPLES \
 
-OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8 NCCL_IB_DISABLE=0"
+OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 \
+              NCCL_SOCKET_IFNAME=eth0 \
+              NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8 \
+              NCCL_IB_DISABLE=0 \
+              CUDA_DEVICE_MAX_CONNECTIONS=1"
 
 run_cmd="PYTHONPATH='$ROOT_DIR/..':$PYTHONPATH \
          $OPTIONS_NCCL \
