@@ -49,7 +49,7 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
                --fp16
                --tokenizer-type LLaMASentencePieceTokenizer \
                --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
-               --swiglu \
+               --activation_func swiglu \
                --use-rotary-position-embeddings \
                --rmsnorm-epsilon 1e-6 \
                --fused-rmsnorm \
@@ -85,7 +85,7 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --fp16
                 --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
-                --swiglu \
+                --activation_func swiglu \
                 --use-rotary-position-embeddings \
                 --rmsnorm-epsilon 1e-6 \
                 --fused-rmsnorm \
@@ -119,7 +119,7 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --fp16
                 --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
-                --swiglu \
+                --activation_func swiglu \
                 --use-rotary-position-embeddings \
                 --rmsnorm-epsilon 1e-6 \
                 --fused-rmsnorm \

@@ -10,11 +10,11 @@ from megatron.model.enums import AttnMaskType
 from megatron.model.language_model import parallel_lm_logits
 from megatron.model.language_model import get_language_model
 from megatron.model import LayerNorm
-from megatron.model.utils import openai_gelu, erf_gelu
 from megatron.model.utils import get_linear_layer
 from megatron.model.utils import init_method_normal
 from megatron.model.utils import scaled_init_method_normal
 from .module import MegatronModule
+from .activation_funcs import ACTIVATION_FUNCS
 
 
 def bert_extended_attention_mask(attention_mask):
@@ -72,11 +72,8 @@ class BertLMHead(MegatronModule):
         self.layernorm = LayerNorm(hidden_size,
                                    eps=layernorm_epsilon,
                                    sequence_parallel=args.sequence_parallel)
-        self.gelu = torch.nn.functional.gelu
-        if args.openai_gelu:
-            self.gelu = openai_gelu
-        elif args.onnx_safe:
-            self.gelu = erf_gelu
+        assert args.activation_func in ['gelu', 'openai_gelu', 'erf_glu']
+        self.gelu = ACTIVATION_FUNCS[args.activation_func]
 
     def forward(self, hidden_states, word_embeddings_weight):
         hidden_states = self.dense(hidden_states)

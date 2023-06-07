@@ -77,7 +77,7 @@ class LLaMAModel(MegatronModule):
         # Rotary Embedding and SwiGLU are required for LLaMA model
         if not args.use_rotary_position_embeddings:
             raise RuntimeError("Rotary embedding is required for LLaMA model")
-        if not args.swiglu:
+        if args.activation_func != 'swiglu':
             raise RuntimeError("SwiGLU is required for LLaMA model")
 
 

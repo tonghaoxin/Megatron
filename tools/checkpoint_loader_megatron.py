@@ -73,7 +73,7 @@ def _load_checkpoint(queue, args):
         margs.seq_length = 2048
         margs.fp16=True
         margs.use_rotary_position_embeddings = True
-        margs.swiglu = True
+        margs.activation_func = 'swiglu'
         margs.add_position_embedding = False
         margs.add_bias_linear = False
         margs.norm_type = "rmsnorm"
@@ -90,7 +90,7 @@ def _load_checkpoint(queue, args):
         margs.seq_length = 2048
         margs.fp16=True
         margs.use_rotary_position_embeddings = True
-        margs.swiglu = True
+        margs.activation_func = 'swiglu'
         margs.add_position_embedding = False
         margs.add_bias_linear = False
         margs.norm_type = "rmsnorm"
@@ -222,7 +222,7 @@ def _load_checkpoint(queue, args):
         md.async_tensor_model_parallel_allreduce = margs.async_tensor_model_parallel_allreduce
         md.fp16 = margs.fp16
         md.use_rotary_position_embeddings = margs.use_rotary_position_embeddings
-        md.swiglu = margs.swiglu
+        md.activation_func = margs.activation_func
         md.add_position_embedding = margs.add_position_embedding
         md.add_bias_linear = margs.add_bias_linear
         md.norm_type = margs.norm_type
@@ -301,7 +301,7 @@ def _load_checkpoint(queue, args):
             message["qkv weight"] = torch.cat(qkv_weight, dim=0)
             message["dense weight"] = torch.cat(dense_weight, dim=1)
 
-            
+
             data = torch.cat(mlp_l0_weight, dim=0)
             orig_shape = data.shape
             data = data.view(tp_size, 2, orig_shape[0] // (2 * tp_size), orig_shape[1])

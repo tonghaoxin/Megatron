@@ -25,7 +25,7 @@ from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model import LayerNorm
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
-from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu, init_method_normal
+from megatron.model.utils import attention_mask_func, init_method_normal
 
 from .module import MegatronModule
 from .transformer import _get_num_layers, ParallelMLP, NoopTransformerLayer

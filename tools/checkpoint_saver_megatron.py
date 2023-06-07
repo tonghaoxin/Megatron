@@ -113,13 +113,13 @@ def save_checkpoint(queue, args):
                 '--save-interval', '1',
                 '--save', args.save_dir
                 ]
-    
+
     if md.async_tensor_model_parallel_allreduce == False:
         sys.argv.append('--no-async-tensor-model-parallel-allreduce')
     if md.use_rotary_position_embeddings:
         sys.argv.append('--use-rotary-position-embeddings')
-    if md.swiglu:
-        sys.argv.append('--swiglu')
+    if md.activation_func is not None:
+        sys.argv.extend(['--activation-func', str(md.activation_func)])
     if md.add_position_embedding == False:
         sys.argv.append('--no-position-embedding')
     if md.add_bias_linear == False:
@@ -174,7 +174,7 @@ def save_checkpoint(queue, args):
     # fake initializing distributed
     mpu.set_tensor_model_parallel_world_size(args.target_tensor_parallel_size)
     mpu.set_pipeline_model_parallel_world_size(args.target_pipeline_parallel_size)
-    
+
     # FIXME
     mpu.set_tensor_model_parallel_rank(0)
     mpu.set_pipeline_model_parallel_rank(0)
@@ -229,7 +229,7 @@ def save_checkpoint(queue, args):
         print(f"word embeddings shape {model.language_model.embedding.word_embeddings.weight.shape}")
         model.language_model.embedding.word_embeddings.weight.data.copy_(out_word_embed[tp_rank])
 
-        if margs.add_position_embedding: 
+        if margs.add_position_embedding:
             model.language_model.embedding.position_embeddings.weight.data.copy_(pos_embed)
 
     # Transformer layers
