@@ -38,33 +38,25 @@ def parallel_lm_logits(input_, word_embeddings_weight, parallel_output,
         input_parallel = tensor_parallel.copy_to_tensor_model_parallel_region(input_)
         async_grad_allreduce = False
 
-    alpha = 1.0
     if args.shrink_logit_embedding_gradient:
         if hasattr(args, 'iteration'):
             alpha = get_shrink_embedding_gradient_alpha(args.iteration + 1)
         else:
             alpha = args.shrink_embedding_gradient_alpha
-        word_embeddings_weight = word_embeddings_weight if alpha == 1.0 \
-            else (
-                word_embeddings_weight * alpha +
-                word_embeddings_weight.detach() * (1 - alpha)
-        )
+        if alpha != 1.0:
+            word_embeddings_weight.data = (
+                    word_embeddings_weight * alpha +
+                    word_embeddings_weight.detach() * (1 - alpha)
+            )
 
     # Matrix multiply.
-    # In this case, word_embeddings_weight partially requires gradient
-    if args.shrink_logit_embedding_gradient and alpha != 1.0:
-        if bias is None:
-            logits_parallel = F.linear(input_parallel, word_embeddings_weight)
-        else:
-            logits_parallel = F.linear(input_parallel, word_embeddings_weight, bias)
-    else:
-        logits_parallel = tensor_parallel.linear_with_grad_accumulation_and_async_allreduce(
-            input=input_parallel,
-            weight=word_embeddings_weight,
-            bias=bias,
-            gradient_accumulation_fusion=args.gradient_accumulation_fusion,
-            async_grad_allreduce=async_grad_allreduce,
-            sequence_parallel_enabled=args.sequence_parallel)
+    logits_parallel = tensor_parallel.linear_with_grad_accumulation_and_async_allreduce(
+        input=input_parallel,
+        weight=word_embeddings_weight,
+        bias=bias,
+        gradient_accumulation_fusion=args.gradient_accumulation_fusion,
+        async_grad_allreduce=async_grad_allreduce,
+        sequence_parallel_enabled=args.sequence_parallel)
 
     # Gather if needed.
     if parallel_output:

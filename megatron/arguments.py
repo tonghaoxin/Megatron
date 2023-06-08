@@ -258,6 +258,20 @@ def validate_args(args, defaults={}):
     if args.ffn_hidden_size is None:
         args.ffn_hidden_size = 4 * args.hidden_size
 
+    # Reset activation function for compatibility
+    if args.relu:
+        args.activation_func = 'relu'
+    elif args.swiglu:
+        args.activation_func = 'swiglu'
+    elif args.geglu:
+        args.activation_func = 'geglu'
+    elif args.openai_gelu:
+        args.activation_func = 'openai_gelu'
+    elif args.onnx_safe:
+        args.activation_func = 'erf_glu'
+    elif args.squared_relu:
+        args.activation_func = 'squared_relu'
+
     if args.activation_func in ['swiglu', 'geglu']:
         # reduce the dimnesion for MLP since projections happens on
         # two linear layers. this keeps the number of paramters in
@@ -323,9 +337,9 @@ def validate_args(args, defaults={}):
         assert args.tensor_model_parallel_size > 1, 'can distribute ' \
             'recomputed activations only across tensor model ' \
             'parallel groups'
-        assert args.recompute_granularity == 'full', \
+        assert args.recompute_granularity in ['full', 'hybrid'], \
             'distributed recompute activations is only '\
-            'application to full recompute granularity'
+            'application to full or hybrid recompute granularity'
         assert args.recompute_method is not None, \
             'for distributed recompute activations to work you '\
             'need to use a recompute method '
@@ -832,6 +846,21 @@ def _add_training_args(parser):
                        help='Iteration ranges to skip. The values are one or more dash-separated ranges. e.g., 101-200 251-300.')
     group.add_argument('--abort-on-unmet-fused-kernel-constraints', action='store_true',
                        help="If set to True, the program will abort if the constraints for loading a fused kernel aren't met")
+    group.add_argument('--openai-gelu', action='store_true',
+                       help='Use OpenAIs GeLU implementation. This option'
+                       'should not be used unless for backward compatibility'
+                       'reasons.')
+    group.add_argument('--squared-relu', action='store_true',
+                       help='Use squared relu activation instead of default gelu')
+    group.add_argument('--relu', action='store_true',
+                       help='Use relu activation instead of default gelu')
+    group.add_argument('--swiglu', action='store_true',
+                       help='Use gated linear units and SiLU activation instead of default gelu')
+    group.add_argument('--geglu', action='store_true',
+                       help='Use GELU activation instead of default gelu')
+    group.add_argument('--onnx-safe', type=bool, required=False,
+                       help='Use workarounds for known problems with '
+                       'Torch ONNX exporter')
     return parser
 
 
