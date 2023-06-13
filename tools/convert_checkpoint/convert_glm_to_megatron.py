@@ -623,12 +623,12 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
     # Rotary positional embedding
     if args.use_rotary_position_embeddings:
         try:
-            from megatron.model.rotary_pos_embedding import GLMRotaryEmbedding
+            from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
         except ModuleNotFoundError:
             print("Unable to import megatron.model.rotary_pos_embedding, please verify the Megatron version that you specified. Exiting.")
             exit(1)
 
-        rotary_emb = GLMRotaryEmbedding(
+        rotary_emb = RotaryEmbeddingWithPositionIds(
                 hidden_size_per_head // (2 if args.use_rotary_embedding_2d else 1),
                 base=10000,
                 precision=dtype)

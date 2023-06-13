@@ -13,6 +13,25 @@ from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizer
 from transformers.modeling_utils import WEIGHTS_INDEX_NAME, WEIGHTS_NAME, shard_checkpoint
 
 
+def _validate_args(args):
+    assert args.untie_embeddings_and_output_weights, 'Untie embeddings and output weights is required for LLaMA'
+    #TODO: implement the load/save support for rotary positional embedding
+    # assert args.use_rotary_position_embeddings, 'Rotary positional embedding is required for LLaMA'
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+
+    parser = add_checkpointing_args(parser)
+    parser = add_megatron_checkpoint_args(parser)
+    parser = add_transformers_checkpoint_args(parser)
+
+    args = parser.parse_args()
+    _validate_args(args)
+
+    return args
+
+
 def add_checkpointing_args(parser):
     parser.add_argument("--megatron-path", type=str, default=None, help="Base directory of Megatron repository")
     parser.add_argument(
@@ -35,7 +54,22 @@ def add_checkpointing_args(parser):
         required=True,
         help="Path to the converted checkpoint.",
     )
-    parser.add_argument("--print-checkpoint-structure", action="store_true")
+    parser.add_argument(
+        "--untie_embeddings_and_output_weights", # FIXME
+        action="store_true",
+        help="Untie embeddings and output weights. Required for LLaMA.",
+    )
+    #TODO: implement the load/save support for rotary positional embedding
+    # parser.add_argument(
+    #     "--use-rotary-position-embeddings",
+    #     action="store_true",
+    #     help="Use rotary positional embeddings. Required for LLaMA",
+    # )
+    parser.add_argument(
+        "--print-checkpoint-structure",
+        action="store_true",
+        help="Print checkpoint structure recursively.",
+    )
     return parser
 
 
@@ -109,6 +143,12 @@ def add_transformers_checkpoint_args(parser):
         ),
     )
     parser.add_argument(
+        "--tokenizer_path",
+        type=str,
+        required=True,
+        help="Path to LLaMA tokenizer.model.",
+    )
+    parser.add_argument(
         "--max_shard_size",
         type=str,
         default="10GB",
@@ -116,14 +156,6 @@ def add_transformers_checkpoint_args(parser):
             "The maximum size for a checkpoint before being sharded. Checkpoints shard will then be each of size "
             "lower than this size. If expressed as a string, needs to be digits followed by a unit (like `5MB`). "
             "Only used when converting a Megatron checkpoint to a Transformers checkpoint."
-        ),
-    )
-    parser.add_argument(
-        "--untie_embeddings_and_output_weights", # FIXME
-        type=bool,
-        default=False,
-        help=(
-            "Untie embeddings and output weights. llama need set to True"
         ),
     )
     return parser
@@ -246,6 +278,40 @@ def get_element_from_dict_by_path(d, path):
     return d
 
 
+def megatron_to_transformers_fix_query_key_value_ordering(
+    param, checkpoint_version, num_splits, num_heads, hidden_size
+):
+    """
+    Permutes layout of param tensor to [num_splits * num_heads * hidden_size, :] for compatibility with later versions
+    of NVIDIA Megatron-LM. The inverse operation is performed inside Megatron-LM to read checkpoints:
+    https://github.com/NVIDIA/Megatron-LM/blob/v2.4/megatron/checkpointing.py#L209 If param is the weight tensor of the
+    self-attention block, the returned tensor will have to be transposed one more time to be read by HuggingFace GPT2.
+    This function is taken from `convert_megatron_gpt2_checkpoint.py`
+
+    Args:
+        param (torch.Tensor): the tensor to permute
+        checkpoint_version (int): the version of the checkpoint.
+        num_splits (int): the number of projections, usually 3 for (Query, Key, Value)
+        num_heads (int): the number of attention heads
+        hidden_size (int): the hidden size per head
+    """
+
+    input_shape = param.size()
+    if checkpoint_version == 1.0:
+        # version 1.0 stores [num_heads * hidden_size * num_splits, :]
+        saved_shape = (num_heads, hidden_size, num_splits) + input_shape[1:]
+        param = param.view(*saved_shape)
+        param = param.transpose(0, 2)
+        param = param.transpose(1, 2).contiguous()
+    elif checkpoint_version >= 2.0:
+        # other versions store [num_heads * num_splits * hidden_size, :]
+        saved_shape = (num_heads, num_splits, hidden_size) + input_shape[1:]
+        param = param.view(*saved_shape)
+        param = param.transpose(0, 1).contiguous()
+    param = param.view(*input_shape)
+    return param
+
+
 def transformers_to_megatron_fix_query_key_value_ordering(
     param, checkpoint_version, num_splits, num_heads, hidden_size
 ):
@@ -266,8 +332,294 @@ def transformers_to_megatron_fix_query_key_value_ordering(
     return param
 
 
-# TODO: Now not support llama model
 def convert_checkpoint_from_megatron_to_transformers(args):
+    """
+    Convert a checkpoint from Megatron-LM to HuggingFace Transformers. This handles Megatron checkpoints
+    with different tensor parallelism and pipeline parallelism sizes. It saves the converted checkpoint into shards
+    using HuggingFace Transformers checkpoint sharding functionality.
+
+    Args:
+        args (argparse.Namespace): the arguments to the script
+    """
+    os.makedirs(args.save_path, exist_ok=True)
+    os.makedirs(args.save_path, exist_ok=True)
+    # Search in directory above this
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+    if args.megatron_path is not None:
+        sys.path.insert(0, args.megatron_path)
+    # Search in directory above this
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+    if args.megatron_path is not None:
+        sys.path.insert(0, args.megatron_path)
+
+    # Load Megatron-LM checkpoint arguments from the state dict
+    sub_dirs = os.listdir(args.load_path)
+    possible_sub_dirs = ["mp_rank_00", "mp_rank_00_000"]
+    rank0_checkpoint_name = None
+    rank0_checkpoint_path = None
+    for sub_dir in possible_sub_dirs:
+        if sub_dir in sub_dirs:
+            rank0_checkpoint_name = os.listdir(os.path.join(args.load_path, sub_dir))[0]
+            rank0_checkpoint_path = os.path.join(args.load_path, sub_dir, rank0_checkpoint_name)
+            break
+    print(f"Loading Megatron-LM checkpoint arguments from: {rank0_checkpoint_path}")
+    state_dict = torch.load(rank0_checkpoint_path, map_location="cpu")
+    megatron_args = state_dict.get("args", None)
+    if megatron_args is None:
+        raise ValueError(
+            "Megatron-LM checkpoint does not contain arguments. This utility only supports Megatron-LM checkpoints"
+            " containing all the megatron arguments. This is because it loads all config related to model"
+            " architecture, the tensor and pipeline model parallel size from the checkpoint insead of user having to"
+            " manually specify all the details. Please save Megatron-LM checkpoint along with all the megatron"
+            " arguments to use this utility."
+        )
+
+    # params dtype
+    if args.target_params_dtype == "fp16":
+        dtype = torch.float16
+        dtype_str = "float16"
+    elif args.target_params_dtype == "bf16":
+        dtype = torch.bfloat16
+        dtype_str = "bfloat16"
+    else:
+        dtype = torch.float32
+        dtype_str = "float32"
+
+    # Create Transformers LLaMA config from Megatron-LM arguments
+    vocab_size = (
+        megatron_args.padded_vocab_size
+        if getattr(megatron_args, "orig_vocab_size", None) is None
+        else megatron_args.orig_vocab_size
+    )
+    print(vocab_size)
+
+    config = LlamaConfig(
+        vocab_size=vocab_size,
+        hidden_size=megatron_args.hidden_size,
+        intermediate_size=megatron_args.ffn_hidden_size,
+        num_hidden_layers=megatron_args.num_layers,
+        num_attention_heads=megatron_args.num_attention_heads,
+        hidden_act="silu",
+        initializer_range=0.02,
+        max_sequence_length=2048,
+        rms_norm_eps=1e-6,
+        use_cache=True,
+        pad_token_id=-1,
+        bos_token_id=0,
+        eos_token_id=1,
+        torch_dtype=dtype_str,
+        model_type="llama",
+        architectures=["LLaMAForCausalLM"]
+    )
+
+    output_state_dict = {}
+
+    checkpoint_version = state_dict.get("checkpoint_version", 0.0)
+    tp_size = megatron_args.tensor_model_parallel_size
+    pp_size = megatron_args.pipeline_model_parallel_size
+
+    # The regex to extract layer names.
+    layer_re = re.compile("layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)")
+
+    # Convert.
+    print("Converting")
+    tp_state_dicts = get_megatron_sharded_states(args, tp_size, pp_size, 0)
+
+    # Embeddings
+    print("Converting embeddings")
+
+    # Convert and store the word embeddings.
+    word_embeddings = torch.cat(
+        [
+            get_element_from_dict_by_path(
+                tp_state_dicts[tp_rank], "model.language_model.embedding.word_embeddings.weight"
+            )
+            for tp_rank in range(tp_size)
+        ],
+        dim=0,
+    )
+    word_embeddings = word_embeddings[:vocab_size].to(dtype)
+    output_state_dict["model.embed_tokens.weight"] = word_embeddings
+
+    # Transformer Layers
+    print("Converting transformer layers")
+    # The number of heads.
+    heads = config.num_attention_heads
+    # The hidden_size per head.
+    hidden_size_per_head = config.hidden_size // config.num_attention_heads
+    num_layers = config.num_hidden_layers // pp_size
+
+    # Rotary positonal embedding
+    try:
+        from megatron.model.rotary_pos_embedding import RotaryEmbedding
+    except ModuleNotFoundError:
+        print("Unable to import megatron.model.rotary_pos_embedding, please verify the Megatron version that you specified. Exiting.")
+        exit(1)
+
+    rotary_emb = RotaryEmbedding(hidden_size_per_head)
+    rope_invfreq_layer_idx = 0
+
+    for pp_rank in range(pp_size):
+        if pp_size > 0:
+            print(f"Converting pipeline parallel rank {pp_rank}")
+            tp_state_dicts = get_megatron_sharded_states(args, tp_size, pp_size, pp_rank)
+
+        # The transformer.
+        path = (
+            "model.language_model.transformer"
+            if "transformer" in get_element_from_dict_by_path(tp_state_dicts[0], "model.language_model").keys()
+            else "model.language_model.encoder"
+        )
+        # Extract the layers.
+        for key, val in get_element_from_dict_by_path(tp_state_dicts[0], path).items():
+            # Match the name.
+            m = layer_re.match(key)
+            # Stop if that's not a layer
+            if m is None:
+                break
+
+            # The index of the layer.
+            layer_idx = int(m.group(1)) + pp_rank * num_layers
+            # The name of the operation.
+            op_name = m.group(2)
+            # Is it a weight or a bias?
+            weight_or_bias = m.group(3)
+
+            # The name of the layer.
+            layer_name = f"model.layers.{layer_idx}"
+
+            if op_name + "." + weight_or_bias not in tensor_parallel_params:
+                params = val.to(dtype)
+            else:
+                dim = 1 if op_name in ["self_attention.dense", "mlp.dense_4h_to_h"] else 0
+                params = torch.cat(
+                    [val]
+                    + [
+                        get_element_from_dict_by_path(tp_state_dicts[tp_rank], f"{path}")[key]
+                        for tp_rank in range(1, tp_size)
+                    ],
+                    dim=dim,
+                ).to(dtype)
+
+            # For layernorm(s), simply store the layer norm.
+            if op_name.endswith("layernorm"):
+                ln_name = "input_layernorm" if op_name.startswith("input") else "post_attention_layernorm"
+                output_state_dict[layer_name + "." + ln_name + "." + weight_or_bias] = params
+
+            # Transpose the QKV matrix.
+            elif op_name == "self_attention.query_key_value" \
+                    and weight_or_bias == "weight":
+                out_val = megatron_to_transformers_fix_query_key_value_ordering(
+                    params,
+                    checkpoint_version,
+                    3,
+                    heads,
+                    hidden_size_per_head,
+                )
+                out_val = torch.chunk(out_val, 3, dim=0)
+                # Store.
+                output_state_dict[layer_name + ".self_attn.q_proj.weight"] = out_val[0]
+                output_state_dict[layer_name + ".self_attn.k_proj.weight"] = out_val[1]
+                output_state_dict[layer_name + ".self_attn.v_proj.weight"] = out_val[2]
+
+            # Transpose the self_attention.dense matrix
+            elif op_name == "self_attention.dense" and weight_or_bias == "weight":
+                output_state_dict[layer_name + ".self_attn.o_proj.weight"] = params
+
+            # Transpose the mlp.dense_h_to_4h matrix
+            elif op_name == "mlp.dense_h_to_4h" and weight_or_bias == "weight":
+                _shape = params.shape
+                params = params.view(tp_size,
+                                     2,
+                                     _shape[0] // (2 * tp_size),
+                                     _shape[1])
+                params = params.transpose(0, 1).contiguous()
+                params = params.view(*_shape)
+                params = torch.chunk(params, 2, dim=0)
+                output_state_dict[layer_name + ".mlp.gate_proj.weight"] = params[0]
+                output_state_dict[layer_name + ".mlp.up_proj.weight"] = params[1]
+
+            # Transpose the mlp.dense_4h_to_h matrix
+            elif op_name == "mlp.dense_4h_to_h" and weight_or_bias == "weight":
+                output_state_dict[layer_name + ".mlp.down_proj.weight"] = params
+
+            # Manually add rotary positional embedding inv_freq
+            if rope_invfreq_layer_idx == layer_idx:
+                output_state_dict[layer_name + ".self_attn.rotary_emb.inv_freq"] = params
+                rope_invfreq_layer_idx += 1
+
+    if config.num_hidden_layers != (layer_idx + 1):
+        raise ValueError(f"Expected {config.num_hidden_layers} layers but found {layer_idx + 1}")
+
+    # The final layernorm.
+    print("Converting final layernorm")
+    params = get_element_from_dict_by_path(tp_state_dicts[0], str(path))
+    output_state_dict["model.norm.weight"] = params["final_layernorm.weight"].to(dtype)
+    if params.get("final_layernorm.bias") is not None:
+        output_state_dict["model.norm.bias"] = params["final_layernorm.bias"].to(dtype)
+
+    print("Converting LM head")
+    layer_name = "model.language_model.output_layer.weight" if args.untie_embeddings_and_output_weights \
+            else "model.word_embeddings_for_head.weight"
+    lm_head_embeddings = torch.cat(
+        [
+            get_element_from_dict_by_path(
+                tp_state_dicts[tp_rank], layer_name
+            )
+            for tp_rank in range(tp_size)
+        ],
+        dim=0,
+    )
+    output_state_dict["lm_head.weight"] = lm_head_embeddings
+
+    # It should be done!
+    print("Conversion from Megatron-LM to Transformers is done!")
+
+    # Print the structure of converted state dict.
+    if args.print_checkpoint_structure:
+        recursive_print(None, output_state_dict)
+
+    # Add tokenizer class info to config
+    # see https://github.com/huggingface/transformers/issues/13906)
+
+    if args.tokenizer_name is None:
+        tokenizer_name = "decapoda-research/llama-7b-hf"
+    else:
+        tokenizer_name = args.tokenizer_name
+
+    tokenizer = LlamaTokenizer(args.tokenizer_path)
+    config.tokenizer_class = "LLaMATokenizer"
+
+    # Store the config to file.
+    print("Saving config")
+    config.save_pretrained(args.save_path)
+
+    # Save tokenizer based on args
+    if args.tokenizer_name is not None:
+        print(f"Adding {config.tokenizer_class} tokenizer files")
+        tokenizer.save_pretrained(args.save_path)
+
+    # Store the state_dict to file.
+    max_shard_size = int(args.max_shard_size) if args.max_shard_size.isdigit() else args.max_shard_size
+    shards, index = shard_checkpoint(output_state_dict, max_shard_size=max_shard_size)
+
+    # Save the model
+    for shard_file, shard in shards.items():
+        torch.save(shard, os.path.join(args.save_path, shard_file))
+
+    if index is None:
+        print(f"Model weights saved in {os.path.join(args.save_path, WEIGHTS_NAME)}")
+    else:
+        save_index_file = os.path.join(args.save_path, WEIGHTS_INDEX_NAME)
+        # Save the index as well
+        with open(save_index_file, "w", encoding="utf-8") as f:
+            content = json.dumps(index, indent=2, sort_keys=True) + "\n"
+            f.write(content)
+        print(
+            f"The model is bigger than the maximum size per checkpoint ({args.max_shard_size}) and is going to be "
+            f"split in {len(shards)} checkpoint shards. You can find where each parameters has been saved in the "
+            f"index located at {save_index_file}."
+        )
     pass
 
 
@@ -594,11 +946,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser = add_checkpointing_args(parser)
-    parser = add_megatron_checkpoint_args(parser)
-    parser = add_transformers_checkpoint_args(parser)
-    args = parser.parse_args()
+    args = parse_arguments()
     if args.convert_checkpoint_from_megatron_to_transformers:
         convert_checkpoint_from_megatron_to_transformers(args)
     else:
