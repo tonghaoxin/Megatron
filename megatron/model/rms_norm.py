@@ -1,10 +1,12 @@
 """RMSNorm."""
-
 import torch
+
+from apex.normalization.fused_layer_norm import FusedRMSNorm as ApexFusedRMSNorm
+
 
 class RMSNorm(torch.nn.Module):
     """RMSNorm."""
-    def __init__(self, dim, eps=1e-6):
+    def __init__(self, dim, eps=1e-6, sequence_parallel=False):
         """
         Init method
         Args:
@@ -15,6 +17,7 @@ class RMSNorm(torch.nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = torch.nn.Parameter(torch.ones(dim))
+        setattr(self.weight, 'sequence_parallel', self.sequence_parallel) 
 
     def _norm(self, x):
         """
@@ -42,3 +45,19 @@ class RMSNorm(torch.nn.Module):
         Return: str
         """
         return 'weight shape={}, eps={}'.format(self.weight.size(), self.eps)
+
+
+class FusedRMSNorm(ApexFusedRMSNorm):
+    """Fused RMS Norm"""
+    def __init__(self, normalized_shape, eps=1e-5,
+                 elementwise_affine=True,
+                 sequence_parallel=False):
+
+        super().__init__(normalized_shape,
+                         eps=eps,
+                         elementwise_affine=elementwise_affine)
+        
+        self.sequence_parallel = sequence_parallel
+
+        # set sequence parallelism flag on weight parameters
+        setattr(self.weight, 'sequence_parallel', self.sequence_parallel)  

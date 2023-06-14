@@ -13,7 +13,7 @@ from .module import MegatronModule
 from megatron.core.pipeline_parallel import utils
 from megatron.core import mpu, tensor_parallel
 from megatron.core.enums import ModelType
-from megatron.model import LayerNorm, RMSNorm
+from megatron.model import LayerNorm, RMSNorm, FusedRMSNorm
 from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
@@ -32,11 +32,6 @@ try:
     from flash_attn.flash_attn_interface import flash_attn_unpadded_func
 except ImportError:
     flash_attn_unpadded_func = None
-
-try:
-    from apex.normalization import FusedRMSNorm
-except ImportError:
-    FusedRMSNorm = None
 
 try:
     import nvtx
@@ -873,10 +868,16 @@ class ParallelTransformerLayer(MegatronModule):
                 sequence_parallel=args.sequence_parallel,
                 apply_layernorm_1p=args.apply_layernorm_1p)
         elif self.norm_type == 'rmsnorm':
-            if args.fused_rmsnorm and FusedRMSNorm is not None:
-                self.input_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+            if args.fused_rmsnorm:
+                self.input_layernorm = FusedRMSNorm(
+                    args.hidden_size,
+                    eps=args.rmsnorm_epsilon,
+                    sequence_parallel=args.sequence_parallel)
             else:
-                self.input_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                self.input_layernorm = RMSNorm(
+                    args.hidden_size,
+                    eps=args.rmsnorm_epsilon,
+                    sequence_parallel=args.sequence_parallel)
 
         # Self attention.
         self.self_attention = ParallelAttention(
@@ -899,10 +900,16 @@ class ParallelTransformerLayer(MegatronModule):
                 sequence_parallel=args.sequence_parallel,
                 apply_layernorm_1p=args.apply_layernorm_1p)
         elif self.norm_type == 'rmsnorm':
-            if args.fused_rmsnorm and FusedRMSNorm is not None:
-                self.post_attention_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+            if args.fused_rmsnorm:
+                self.post_attention_layernorm = FusedRMSNorm(
+                    args.hidden_size,
+                    eps=args.rmsnorm_epsilon,
+                    sequence_parallel=args.sequence_parallel)
             else:
-                self.post_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                self.post_attention_layernorm = RMSNorm(
+                    args.hidden_size,
+                    eps=args.rmsnorm_epsilon,
+                    sequence_parallel=args.sequence_parallel)
 
         if self.layer_type == LayerType.decoder:
             self.inter_attention = ParallelAttention(
@@ -920,10 +927,16 @@ class ParallelTransformerLayer(MegatronModule):
                     sequence_parallel=args.sequence_parallel,
                     apply_layernorm_1p=args.apply_layernorm_1p)
             elif self.norm_type == 'rmsnorm':
-                if args.fused_rmsnorm and FusedRMSNorm is not None:
-                    self.post_inter_attention_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                if args.fused_rmsnorm:
+                    self.post_inter_attention_layernorm = FusedRMSNorm(
+                        args.hidden_size,
+                        eps=args.rmsnorm_epsilon,
+                        sequence_parallel=args.sequence_parallel)
                 else:
-                    self.post_inter_attention_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                    self.post_inter_attention_layernorm = RMSNorm(
+                        args.hidden_size,
+                        eps=args.rmsnorm_epsilon,
+                        sequence_parallel=args.sequence_parallel)
 
         # MLP
         if args.num_experts is not None:
@@ -1340,11 +1353,16 @@ class ParallelTransformer(MegatronModule):
                     sequence_parallel=args.sequence_parallel,
                     apply_layernorm_1p=args.apply_layernorm_1p)
             elif self.norm_type == 'rmsnorm':
-                if args.fused_rmsnorm and FusedRMSNorm is not None:
-                    self.final_layernorm = FusedRMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
+                if args.fused_rmsnorm:
+                    self.final_layernorm = FusedRMSNorm(
+                        args.hidden_size,
+                        eps=args.rmsnorm_epsilon,
+                        sequence_parallel=args.sequence_parallel)
                 else:
-                    self.final_layernorm = RMSNorm(args.hidden_size, eps=args.rmsnorm_epsilon)
-
+                    self.final_layernorm = RMSNorm(
+                        args.hidden_size,
+                        eps=args.rmsnorm_epsilon,
+                        sequence_parallel=args.sequence_parallel)
 
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
