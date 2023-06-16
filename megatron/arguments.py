@@ -153,6 +153,8 @@ def validate_args(args, defaults={}):
         assert args.num_layers % args.num_layers_per_virtual_pipeline_stage == 0, \
             'number of layers is not divisible by number of layers per virtual ' \
             'pipeline stage'
+        assert not args.pipeline_model_parallel_partition_balanced, \
+            'pipeline-model-parallel-partition-balanced method is not allowed for interleaved schedule'
         args.virtual_pipeline_model_parallel_size = \
             (args.num_layers // args.transformer_pipeline_model_parallel_size) // \
             args.num_layers_per_virtual_pipeline_stage
@@ -1022,6 +1024,10 @@ def _add_distributed_args(parser):
                        help='split pipeline model parallel use partition balanced.')
     group.add_argument('--num-layers-per-virtual-pipeline-stage', type=int, default=None,
                        help='Number of layers per virtual pipeline stage')
+    group.add_argument('--overlap-p2p-communication',
+                       action='store_true',
+                       help='overlap pipeline parallel communication with forward and backward chunks',
+                       dest='overlap_p2p_comm')
     group.add_argument('--distributed-backend', default='nccl',
                        choices=['nccl', 'gloo'],
                        help='Which backend to use for distributed training.')

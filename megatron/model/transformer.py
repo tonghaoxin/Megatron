@@ -1300,10 +1300,7 @@ class ParallelTransformer(MegatronModule):
             # layers to stages like (each list is a model chunk):
             # Stage 0: [0, 1]  [4, 5]
             # Stage 1: [2, 3]  [6, 7]
-            if not args.pipeline_model_parallel_partition_balanced:
-                offset_res = mpu.get_pipeline_model_parallel_rank() * self.num_layers
-            else:
-                offset_res = self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
+            offset_res = mpu.get_pipeline_model_parallel_rank() * self.num_layers
             offset = mpu.get_virtual_pipeline_model_parallel_rank() * (
                 args.num_layers // args.virtual_pipeline_model_parallel_size) + offset_res
         else:
