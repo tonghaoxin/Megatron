@@ -285,7 +285,7 @@ def backward_step(grad_scaler, input_tensor, output_tensor,
 
     # Backward pass.
     if output_tensor_grad[0] is None and grad_scaler is not None:
-        output_tensor = grad_scaler(output_tensor[0])
+        output_tensor[0] = grad_scaler(output_tensor[0])
 
     if deallocate_pipeline_outputs:
         custom_backward(output_tensor[0], output_tensor_grad[0])
@@ -347,6 +347,7 @@ def forward_backward_no_pipelining(*,
 
     See get_forward_backward_func() for argument details
     """
+
     if isinstance(model, list):
         assert len(model) == 1, \
             "non-pipeline-parallel schedule does not support model chunking"
@@ -419,6 +420,9 @@ def forward_backward_pipelining_with_interleaving(*,
     assert isinstance(data_iterator, list), \
         "interleaved pipeline parallelism expected each model chunk to have a data iterator"
 
+    if overlap_p2p_comm and batch_p2p_comm:
+        raise ValueError("Can not use both overlap_p2p_comm and batch_p2p_comm")
+
     # Disable async grad reductions
     if no_sync_func is None and all(isinstance(chunk, torchDDP) for chunk in model):
         def multi_no_sync():
@@ -446,9 +450,6 @@ def forward_backward_pipelining_with_interleaving(*,
 
     # Model chunk IDs with synchronized grads
     synchronized_model_chunks = set()
-
-    if overlap_p2p_comm and batch_p2p_comm:
-        raise ValueError("Can not use both overlap_p2p_comm and batch_p2p_comm")
 
     input_tensors = [[] for _ in range(len(model))]
     output_tensors = [[] for _ in range(len(model))]
@@ -522,7 +523,7 @@ def forward_backward_pipelining_with_interleaving(*,
     def is_first_microbatch_for_model_chunk(microbatch_id: int) -> bool:
         """Check if an iteration is the first for a model chunk."""
         microbatch_group_size = pipeline_parallel_size * num_model_chunks
-        num_microbatch_groups = num_microbatches // microbatch_group_size
+        num_microbatch_groups = total_num_microbatches // microbatch_group_size
         microbatch_group_id = microbatch_id // microbatch_group_size
         microbatch_id_in_group = microbatch_id % microbatch_group_size
         if microbatch_group_id == 0:
@@ -533,7 +534,7 @@ def forward_backward_pipelining_with_interleaving(*,
     def is_last_microbatch_for_model_chunk(microbatch_id: int) -> bool:
         """Check if an iteration is the last for a model chunk."""
         microbatch_group_size = pipeline_parallel_size * num_model_chunks
-        num_microbatch_groups = num_microbatches // microbatch_group_size
+        num_microbatch_groups = total_num_microbatches // microbatch_group_size
         microbatch_group_id = microbatch_id // microbatch_group_size
         microbatch_id_in_group = microbatch_id % microbatch_group_size
         if microbatch_group_id == num_microbatch_groups - 1:
@@ -721,6 +722,7 @@ def forward_backward_pipelining_with_interleaving(*,
     for k in range(num_microbatches_remaining):
         # Forward pass.
         forward_k = k + num_warmup_microbatches
+
         if overlap_p2p_comm:
             if fwd_wait_handles is not None:
                 for req in fwd_wait_handles:
@@ -752,6 +754,7 @@ def forward_backward_pipelining_with_interleaving(*,
             else:
                 next_forward_model_chunk_id = get_model_chunk_id(forward_k + 1,
                                                                 forward=True)
+
             # If last iteration, don't receive; we already received one extra
             # before the start of the for loop.
             if k == (num_microbatches_remaining - 1):
@@ -1066,6 +1069,12 @@ def forward_backward_pipelining_without_interleaving(*,
             "non-pipeline-parallel schedule does not support model chunking"
         data_iterator = data_iterator[0]
 
+    if overlap_p2p_comm:
+        raise ValueError("Non-interleaved pipeline parallelism does not support overlapping p2p communication")
+
+    if not batch_p2p_comm:
+        raise ValueError("Non-interleaved pipeline parallelism only supports using batched p2p communication")
+
     # Disable async grad reductions
     if no_sync_func is None and isinstance(model, torchDDP):
         no_sync_func = model.no_sync
@@ -1085,12 +1094,6 @@ def forward_backward_pipelining_without_interleaving(*,
             no_sync_context.__exit__(None, None, None)
             no_sync_context = None
     disable_grad_sync()
-
-    if overlap_p2p_comm:
-        raise ValueError("Non-interleaved pipeline parallelism does not support overlapping p2p communication")
-
-    if not batch_p2p_comm:
-        raise ValueError("Non-interleaved pipeline parallelism only supports using batched p2p communication")
 
     # Compute number of warmup microbatches.
     num_warmup_microbatches = \
