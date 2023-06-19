@@ -592,8 +592,8 @@ def _add_network_size_args(parser):
     group.add_argument('--rmsnorm-epsilon', type=float, default=1e-6,
                        help='RMS norm epsilon.')
     group.add_argument('--activation-func', type=str, required=False, default='gelu',
-                        choices=['relu', 'gelu', 'geglu', 'liglu', 'reglu', 'swiglu',
-                                 'openai_gelu', 'erf_gelu', 'squared_relu'],
+                       choices=['relu', 'gelu', 'geglu', 'liglu', 'reglu', 'swiglu',
+                                'openai_gelu', 'erf_gelu', 'squared_relu'],
                        help='Activation function for MLP layer')
     group.add_argument('--bert-no-binary-head', action='store_false',
                        help='Disable BERT binary head.',
@@ -774,6 +774,11 @@ def _add_training_args(parser):
                        'uniformly divided recompute unit, '
                        '2) block: the number of individual Transformer layers '
                        'to recompute within each pipeline stage.')
+    group.add_argument('--recompute-view-for-virtual-pipeline-stage', type=str, required=False, default='local',
+                       choices=['local', 'global'],
+                       help='1) local: apply recompute strategy to each virtual pipeline stage, '
+                       '2) global: apply recomptue strategy to a set of virtual pipeline stages '
+                       '(model chunks) which compose a pipeline stage.')
 
     # deprecated
     group.add_argument('--checkpoint-activations', action='store_true',

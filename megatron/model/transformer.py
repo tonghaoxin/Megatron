@@ -1241,6 +1241,7 @@ class ParallelTransformer(MegatronModule):
             args,
             args.model_type == ModelType.encoder_and_decoder,
             layer_type == LayerType.decoder)
+        self.virtual_layer_index_offset = None
 
         self.drop_path_rates = [rate.item() for rate in torch.linspace(0, self.drop_path_rate, args.num_layers)]
 
@@ -1304,6 +1305,10 @@ class ParallelTransformer(MegatronModule):
             offset_res = mpu.get_pipeline_model_parallel_rank() * self.num_layers
             offset = mpu.get_virtual_pipeline_model_parallel_rank() * (
                 args.num_layers // args.virtual_pipeline_model_parallel_size) + offset_res
+
+            # registered for recomputation with interleaved pipeline
+            if args.recompute_view_for_virtual_pipeline_stage == 'global':
+                self.virtual_layer_index_offset = mpu.get_virtual_pipeline_model_parallel_rank() * self.num_layers
         else:
             # Each stage gets a contiguous set of layers.
             if args.model_type == ModelType.encoder_and_decoder and \
@@ -1339,7 +1344,8 @@ class ParallelTransformer(MegatronModule):
             self.layers = torch.nn.ModuleList([ NoopTransformerLayer(1) ])
         else:
             self.layers = torch.nn.ModuleList(
-                [build_layer(i + 1 + offset, i) for i in range(self.num_layers)])
+                [build_layer(i + 1 + offset, i if self.virtual_layer_index_offset is None \
+                        else i + self.virtual_layer_index_offset) for i in range(self.num_layers)])
 
         if self.post_process and self.post_layer_norm:
             if self.norm_type == 'layernorm':
@@ -1413,7 +1419,10 @@ class ParallelTransformer(MegatronModule):
             # Transformer layers and skip the rest.
             # A method fully use the device memory removing redundant re-computation.
             for l in range(self.num_layers):
-                if l < self.recompute_num_layers:
+                layer_index = l
+                if self.virtual_layer_index_offset is not None:
+                    layer_index += self.virtual_layer_index_offset
+                if layer_index < self.recompute_num_layers:
                     if self.transformer_impl == 'transformer_engine':
                         hidden_states = transformer_engine.pytorch.distributed.checkpoint(
                             custom(l, l + 1, is_transformer_engine=True),
