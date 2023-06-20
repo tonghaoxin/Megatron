@@ -1,6 +1,5 @@
 # !/usr/bin/env python3
 
-from megatron import print_rank_0
 from collections import namedtuple
 from . import sp_tokenizer
 import itertools
@@ -477,7 +476,6 @@ class GLMChineseTokenizer(Tokenizer):
         self.command_name_map = {tok.name: tok for tok in self._command_tokens}
         self.command_token_map = {tok.token: tok for tok in self._command_tokens}
         self.command_id_map = {tok.Id: tok for tok in self._command_tokens}
-        print_rank_0({tok.name: tok.Id for tok in self._command_tokens})
         self.type_tokens = [
             TypeToken('str0', '<str0>', 0),
             TypeToken('str1', '<str1>', 1),

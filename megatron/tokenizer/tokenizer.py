@@ -9,10 +9,11 @@ import torch
 from abc import ABC
 from abc import abstractmethod
 
-from transformers import AutoTokenizer
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
 from .tokenization_chatglm import ChatGLMTokenizer
+from .chinese_sp_tokenizer import GLMChineseTokenizer
+
 
 def build_tokenizer(args):
     """Initialize tokenizer."""
@@ -20,21 +21,19 @@ def build_tokenizer(args):
         print('> building {} tokenizer ...'.format(args.tokenizer_type),
               flush=True)
 
-    if args.tokenizer_type not in ['SentencePieceTokenizer', 'GPTSentencePieceTokenizer',
-                                   'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer',
-                                   'IceTokenizer', 'ChatGLMTokenizer', 'GLMChineseTokenizer']:
-        assert args.vocab_file is not None
-
     # Select and instantiate the tokenizer.
     if args.tokenizer_type == 'BertWordPieceLowerCase':
+        assert args.vocab_file is not None
         tokenizer = _BertWordPieceTokenizer(vocab_file=args.vocab_file,
                                             lower_case=True,
                                             vocab_extra_ids=args.vocab_extra_ids)
     elif args.tokenizer_type == 'BertWordPieceCase':
+        assert args.vocab_file is not None
         tokenizer = _BertWordPieceTokenizer(vocab_file=args.vocab_file,
                                             lower_case=False,
                                             vocab_extra_ids=args.vocab_extra_ids)
     elif args.tokenizer_type == 'GPT2BPETokenizer':
+        assert args.vocab_file is not None
         assert args.merge_file is not None
         tokenizer = _GPT2BPETokenizer(args.vocab_file, args.merge_file)
     elif args.tokenizer_type == 'SentencePieceTokenizer':
@@ -66,7 +65,6 @@ def build_tokenizer(args):
 
         tokenizer = ChatGLMTokenizer(vocab_file=args.tokenizer_model, num_image_tokens=0)
     elif args.tokenizer_type == "GLMChineseTokenizer":
-        from .chinese_sp_tokenizer import GLMChineseTokenizer
         assert args.tokenizer_model is not None
         tokenizer = GLMChineseTokenizer(tokenizer_model=args.tokenizer_model,
                                        add_block_symbols=args.block_lm,
@@ -76,6 +74,9 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'OptTokenizer':
         assert args.hf_tokenizer_path is not None or (args.vocab_file is not None and args.merge_file is not None)
         tokenizer = _OptTokenizer(args.hf_tokenizer_path, args.vocab_file, args.merge_file)
+    elif args.tokenizer_type == 'NullTokenizer':
+        assert args.vocab_size is not None
+        tokenizer = _NullTokenizer(args.vocab_size)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -540,6 +541,40 @@ class _GPTSentencePieceTokenizer(_SentencePieceTokenizer):
     def additional_special_tokens_ids(self):
         return None
 
+
+class _NullTokenizer:
+    def __init__(self, vocab_size):
+        vocab_size = int(vocab_size)
+        self._eos_id = vocab_size
+        self.vocab_size = vocab_size+1
+
+    def tokenize(self, text):
+        return [int(x) for x in text.split(' ')]
+
+    def detokenize(self, ids):
+        text = [str(x) for x in ids]
+        return ' '.join(text)
+
+    @property
+    def cls(self):
+        return -1
+
+    @property
+    def sep(self):
+        return -1
+
+    @property
+    def mask(self):
+        return -1
+
+    @property
+    def eod(self):
+        return self._eos_id
+
+    @property
+    def additional_special_tokens_ids(self):
+        return None
+   
 
 class _LLaMASentencePieceTokenizer(_SentencePieceTokenizer):
     """SentencePieceTokenizer-Megatron wrapper"""
