@@ -341,7 +341,6 @@ def _load_checkpoint(queue, args):
 
     # Send BERT lm head and binary head if it exists
     if md.model_type == 'BERT':
-        print("Sending LM Pooler")
         message = {
             "weight": models[0].language_model.pooler.dense.weight.data,
             "bias": models[0].language_model.pooler.dense.bias.data
@@ -357,8 +356,6 @@ def _load_checkpoint(queue, args):
         queue_put("lm head", message)
 
         if md.bert_binary_head:
-            print("Sending BERT Binary head")
-            queue.put("binary head")
             message = {
                 "weight": models[0].binary_head.weight.data,
                 "bias": models[0].binary_head.bias.data
