@@ -4,6 +4,33 @@ pipeline partition
 from bisect import bisect_left
 from math import floor
 
+def partition_imbalanced(num_layers, num_parts, eps=1e-3):
+      """
+      partition imbalanced.
+      first and last stages contain less layers,
+      other stages contain more layers
+      """
+      # First check for the trivial edge case
+      if num_layers <= num_parts:
+          parts = partition_uniform(num_layers, num_parts)
+      else:
+          parts = [0] * (num_parts + 1)
+          if num_layers % num_parts == 0:
+              parts_count = [num_layers // num_parts] * num_parts
+          else:
+              parts_count = [num_layers // num_parts + 1] * num_parts
+              res = num_layers - parts_count[0] * (num_parts - 2)
+              parts_count[0] = res // 2
+              if res % 2 == 0:
+                  parts_count[num_parts - 1] = parts_count[0]
+              else:
+                  parts_count[num_parts - 1] = parts_count[0] + 1
+          for i in range(1, len(parts_count) + 1):
+              parts[i] = parts[i - 1] + parts_count[i - 1]
+
+      return parts_count, parts
+
+
 def partition_balanced(num_layers, num_parts, eps=1e-3):
     """
     partition balanced.

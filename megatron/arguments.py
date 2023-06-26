@@ -105,6 +105,14 @@ def validate_args(args, defaults={}):
         'longer valid, use --tensor-model-parallel-size instead'
     del args.model_parallel_size
 
+    if args.pipeline_model_parallel_partition_balanced:
+        args.pipeline_model_parallel_partition_method = 'balanced'
+        if args.rank == 0:
+            print('--pipeline-model-parallel-partition-balanced is no longer valid, '
+                  'use --pipeline-model-parallel-partition-method instead. '
+                  'Defaulting to pipeline-model-parallel-partition-method=balanced.')
+    del args.pipeline_model_parallel_partition_balanced
+
     if args.checkpoint_activations:
         if args.rank == 0:
             print('--checkpoint-activations is no longer valid, use --recompute-activations, '
@@ -151,8 +159,8 @@ def validate_args(args, defaults={}):
         assert args.num_layers % args.num_layers_per_virtual_pipeline_stage == 0, \
             'number of layers is not divisible by number of layers per virtual ' \
             'pipeline stage'
-        assert not args.pipeline_model_parallel_partition_balanced, \
-            'pipeline-model-parallel-partition-balanced method is not allowed for interleaved schedule'
+        assert args.pipeline_model_parallel_partition_method is None, \
+            'pipeline-model-parallel-partition-method is not allowed for interleaved schedule'
         args.virtual_pipeline_model_parallel_size = \
             (args.num_layers // args.transformer_pipeline_model_parallel_size) // \
             args.num_layers_per_virtual_pipeline_stage
@@ -866,6 +874,8 @@ def _add_training_args(parser):
     group.add_argument('--onnx-safe', type=bool, required=False,
                        help='Use workarounds for known problems with '
                        'Torch ONNX exporter')
+    group.add_argument('--pipeline-model-parallel-partition-balanced', action='store_true',
+                       help='split pipeline model parallel use partition balanced.')
     return parser
 
 
@@ -1023,8 +1033,9 @@ def _add_distributed_args(parser):
     group.add_argument('--model-parallel-size', type=int, default=None,
                        help='Old model parallel argument, do not use. Use '
                        '--tensor-model-parallel-size instead.')
-    group.add_argument('--pipeline-model-parallel-partition-balanced', action='store_true',
-                       help='split pipeline model parallel use partition balanced.')
+    group.add_argument('--pipeline-model-parallel-partition-method', default=None,
+                       choices=['balanced', 'imbalanced'],
+                       help='split pipeline model parallel use partition method.')
     group.add_argument('--num-layers-per-virtual-pipeline-stage', type=int, default=None,
                        help='Number of layers per virtual pipeline stage')
     group.add_argument('--overlap-p2p-communication',

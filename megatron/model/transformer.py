@@ -1097,6 +1097,9 @@ class NoopTransformerLayer(MegatronModule):
 
 def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
     """Compute the number of transformer layers resident on the current rank."""
+    if args.pipeline_model_parallel_partition_method is not None:
+        partition_func = utils.partition_balanced if args.pipeline_model_parallel_partition_method == 'balanced' \
+                else utils.partition_imbalanced
     if mpu.get_pipeline_model_parallel_world_size() > 1:
         if is_encoder_and_decoder_model:
             assert args.pipeline_model_parallel_split_rank is not None
@@ -1111,13 +1114,13 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
                 args.pipeline_model_parallel_split_rank
             )
             num_ranks_in_decoder = args.transformer_pipeline_model_parallel_size - num_ranks_in_encoder
-            if not args.pipeline_model_parallel_partition_balanced:
+            if args.pipeline_model_parallel_partition_method is None:
                 assert args.encoder_num_layers % num_ranks_in_encoder == 0, \
                     'encoder_num_layers (%d) must be divisible by number of ranks given to encoder (%d)' % (args.encoder_num_layers, num_ranks_in_encoder)
                 assert args.decoder_num_layers % num_ranks_in_decoder == 0, \
                     'decoder_num_layers (%d) must be divisible by number of ranks given to decoder (%d)' % (args.decoder_num_layers, num_ranks_in_decoder)
             if mpu.is_pipeline_stage_before_split():
-                if not args.pipeline_model_parallel_partition_balanced:
+                if args.pipeline_model_parallel_partition_method is None:
                     num_layers = (
                         0
                         if args.standalone_embedding_stage
@@ -1125,7 +1128,7 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
                         args.encoder_num_layers // num_ranks_in_encoder
                     )
                 else:
-                    layer_list, layer_index = utils.partition_balanced(args.encoder_num_layers, num_ranks_in_encoder)
+                    layer_list, layer_index = partition_func(args.encoder_num_layers, num_ranks_in_encoder)
                     num_layers = (
                         0
                         if args.standalone_embedding_stage
@@ -1133,10 +1136,10 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
                         layer_list[mpu.get_pipeline_model_parallel_rank()]
                     )
             else:
-                if not args.pipeline_model_parallel_partition_balanced:
+                if args.pipeline_model_parallel_partition_method is None:
                     num_layers = args.decoder_num_layers // num_ranks_in_decoder
                 else:
-                    layer_list, layer_index = utils.partition_balanced(args.decoder_num_layers, num_ranks_in_decoder)
+                    layer_list, layer_index = partition_func(args.decoder_num_layers, num_ranks_in_decoder)
                     num_layers = layer_list[mpu.get_pipeline_model_parallel_rank()]
         else:
             assert args.num_layers == args.encoder_num_layers
@@ -1145,7 +1148,7 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
             # are divided among pipeline rank >= 1, while on pipeline rank 0,
             # ranks either contain the input embedding layer (virtual pp rank 0),
             # or no layers at all (virtual pp rank >= 1).
-            if not args.pipeline_model_parallel_partition_balanced:
+            if args.pipeline_model_parallel_partition_method is None:
                 assert args.num_layers % args.transformer_pipeline_model_parallel_size == 0, \
                 'num_layers must be divisible by transformer_pipeline_model_parallel_size'
 
@@ -1156,7 +1159,7 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
                     args.num_layers // args.transformer_pipeline_model_parallel_size
                 )
             else:
-                layer_list, layer_index = utils.partition_balanced(args.num_layers, args.transformer_pipeline_model_parallel_size)
+                layer_list, layer_index = partition_func(args.num_layers, args.transformer_pipeline_model_parallel_size)
                 num_layers = (
                     0
                     if args.standalone_embedding_stage
@@ -1164,13 +1167,13 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
                     layer_list[mpu.get_pipeline_model_parallel_rank()]
                 )
     else:
-        if args.pipeline_model_parallel_partition_balanced:
+        if args.pipeline_model_parallel_partition_method is not None:
             layer_index = [0]
         if not is_decoder:
             num_layers = args.encoder_num_layers
         else:
             num_layers = args.decoder_num_layers
-    if not args.pipeline_model_parallel_partition_balanced:
+    if args.pipeline_model_parallel_partition_method is None:
         return num_layers, None
     return num_layers, layer_index
 
@@ -1315,18 +1318,18 @@ class ParallelTransformer(MegatronModule):
                     mpu.get_pipeline_model_parallel_world_size() > 1:
                 pipeline_rank = mpu.get_pipeline_model_parallel_rank()
                 if layer_type == LayerType.encoder:
-                    if not args.pipeline_model_parallel_partition_balanced:
+                    if args.pipeline_model_parallel_partition_method is None:
                         offset = pipeline_rank * self.num_layers
                     else:
                         offset = self.prefix_sum_inc[pipeline_rank]
                 else:
                     num_ranks_in_enc = args.pipeline_model_parallel_split_rank
-                    if not args.pipeline_model_parallel_partition_balanced:
+                    if args.pipeline_model_parallel_partition_method is None:
                         offset = (pipeline_rank - num_ranks_in_enc) * self.num_layers
                     else:
                         offset = self.prefix_sum_inc[pipeline_rank - num_ranks_in_enc]
             else:
-                if not args.pipeline_model_parallel_partition_balanced:
+                if args.pipeline_model_parallel_partition_method is None:
                     offset = mpu.get_pipeline_model_parallel_rank() * self.num_layers
                 else:
                     offset = self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
@@ -1518,7 +1521,6 @@ class ParallelTransformer(MegatronModule):
                 is_first_microbatch = self.microbatch_count % get_num_microbatches() == 0
 
                 # Forward pass.
-                # if self.recompute_granularity == 'full':
                 if self.recompute_granularity in ['full', 'hybrid']:
                     hidden_states = self._checkpointed_forward(hidden_states,
                                                                attention_mask,

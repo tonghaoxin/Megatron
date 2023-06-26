@@ -545,7 +545,7 @@ def convert_checkpoint_from_megatron_to_transformers(args):
 
             # Manually add rotary positional embedding inv_freq
             if rope_invfreq_layer_idx == layer_idx:
-                output_state_dict[layer_name + ".self_attn.rotary_emb.inv_freq"] = params
+                output_state_dict[layer_name + ".self_attn.rotary_emb.inv_freq"] = rotary_emb.inv_freq
                 rope_invfreq_layer_idx += 1
 
     if config.num_hidden_layers != (layer_idx + 1):
