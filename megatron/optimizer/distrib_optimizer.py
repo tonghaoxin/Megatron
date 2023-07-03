@@ -134,8 +134,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         reduce-scatter and all-gather.
         """
 
-        data_parallel_rank = mpu.get_data_parallel_rank()
-        data_parallel_world_size = mpu.get_data_parallel_world_size()
+        data_parallel_rank = mpu.get_zero_secondary_parallel_intra_rank() \
+                if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_rank()
+        data_parallel_world_size = mpu.get_zero_secondary_parallel_intra_world_size() \
+                if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_world_size()
 
         # Grad buffer range.
         grad_buffer = model._grad_buffers[dtype]
@@ -393,7 +395,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for model_index, model in enumerate(self.models):
             current_param_buffers = {}
             for dtype, grad_buffer in model._grad_buffers.items():
-                param_buffer = torch.tensor(grad_buffer.data.storage().untyped(), 
+                param_buffer = torch.tensor(grad_buffer.data.storage().untyped(),
                                             dtype = params_dtype,
                                             device = grad_buffer.data.device)
                 param_buffer = param_buffer[:grad_buffer.numel_padded]
@@ -511,7 +513,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         in _reduce_scatter_base and _all_gather_base.
         """
 
-        data_parallel_world_size = mpu.get_data_parallel_world_size()
+        data_parallel_world_size = mpu.get_zero_secondary_parallel_intra_world_size() \
+                if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_world_size()
 
         # Buffer views.
         view_items = []
@@ -569,6 +572,12 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         data_parallel_world_size = mpu.get_data_parallel_world_size()
         data_parallel_group = mpu.get_data_parallel_group()
 
+        # ZeRO secondary parallel setup.
+        if mpu.zero_secondary_parallel_is_initialized():
+            zero_secondary_parallel_inter_group = mpu.get_zero_secondary_parallel_inter_group()
+            zero_secondary_parallel_intra_group = mpu.get_zero_secondary_parallel_intra_group()
+            zero_secondary_parallel_intra_rank = mpu.get_zero_secondary_parallel_intra_rank()
+
         # Scale grad buffers by '1 / data_parallel_world_size'.
         for model in self.models:
             for dtype, gbuf in model._grad_buffers.items():
@@ -579,11 +588,20 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for index, (model_index, dtype, gbuf, gbuf_views) \
             in enumerate(gbuf_view_items):
 
-            torch.distributed._reduce_scatter_base(
-                gbuf_views[data_parallel_rank],
-                gbuf,
-                group = data_parallel_group,
-            )
+            if mpu.zero_secondary_parallel_is_initialized():
+                torch.distributed._reduce_scatter_base(
+                    gbuf_views[zero_secondary_parallel_intra_rank],
+                    gbuf,
+                    group = zero_secondary_parallel_intra_group,
+                )
+                # Inter-allreduce for ZeRO secondary parallel
+                torch.distributed.all_reduce(gbuf_views[zero_secondary_parallel_intra_rank], group=zero_secondary_parallel_inter_group)
+            else:
+                torch.distributed._reduce_scatter_base(
+                    gbuf_views[data_parallel_rank],
+                    gbuf,
+                    group = data_parallel_group,
+                )
 
         timers('grads-reduce-scatter').stop()
 
@@ -600,8 +618,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         timers('params-all-gather', log_level=1).start(
             barrier=args.barrier_with_L1_time)
 
-        data_parallel_rank = mpu.get_data_parallel_rank()
-        data_parallel_group = mpu.get_data_parallel_group()
+        data_parallel_rank = mpu.get_zero_secondary_parallel_intra_rank() \
+                if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_rank()
+        data_parallel_group = mpu.get_zero_secondary_parallel_intra_group() \
+                if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_group()
 
         # All-gather updated main params.
         # - All param buffer views are guaranteed to have the same num elements
@@ -739,11 +759,11 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     param_range_map = self.get_model_param_range_map(model_param)
                     # param_range = param_range_map["param"]
                     # assert param_range.size == shard_main_param.nelement()
-                    
+
                     # FIXME
                     world_range = param_range_map["gbuf_world"]
                     assert world_range.size == shard_main_param.nelement()
-                    
+
                     model_id, dtype = self.model_param_gbuf_map[model_param]
                     model_param_buffer = self.param_buffers[model_id][dtype]
 

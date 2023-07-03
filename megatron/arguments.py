@@ -1030,6 +1030,8 @@ def _add_distributed_args(parser):
     group.add_argument('--pipeline-model-parallel-split-rank',
                        type=int, default=None,
                        help='Rank where encoder and decoder should be split.')
+    group.add_argument('--zero-secondary-parallel-size', type=int, default=None,
+                       help='Degree of ZeRO secondary parallelism.')
     group.add_argument('--model-parallel-size', type=int, default=None,
                        help='Old model parallel argument, do not use. Use '
                        '--tensor-model-parallel-size instead.')

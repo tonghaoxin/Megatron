@@ -47,6 +47,14 @@ _DATA_PARALLEL_GLOBAL_RANKS = None
 # Memory buffers to avoid dynamic memory allocation
 _GLOBAL_MEMORY_BUFFER = None
 
+# ZERO(DistributedOptimizer) Secondary parallel group/world size/rank
+_ZERO_SECONDARY_PARALLEL_INTRA_GROUP = None
+_ZERO_SECONDARY_PARALLEL_INTER_GROUP = None
+_ZERO_SECONDARY_PARALLEL_INTRA_WORLD_SIZE = None
+_ZERO_SECONDARY_PARALLEL_INTER_WORLD_SIZE = None
+_ZERO_SECONDARY_PARALLEL_INTRA_RANK = None
+_ZERO_SECONDARY_PARALLEL_INTER_RANK = None
+
 
 def initialize_model_parallel(
     tensor_model_parallel_size: int = 1,
@@ -233,6 +241,55 @@ def initialize_model_parallel(
     _set_global_memory_buffer()
 
 
+def initialize_zero_secondary_parallel(group_size):
+    """Create ZeRO secondary partitioning group."""
+    # Ensure some consistencies.
+    assert torch.distributed.is_initialized()
+    global _DATA_PARALLEL_GROUP
+    global _ZERO_SECONDARY_PARALLEL_INTRA_GROUP
+    global _ZERO_SECONDARY_PARALLEL_INTER_GROUP
+    assert _DATA_PARALLEL_GROUP is not None, \
+        'data parallel group is required to be initialized'
+    assert _ZERO_SECONDARY_PARALLEL_INTRA_GROUP is None, \
+        'ZeRO secondary parallel group (intra) is already initialized'
+    assert _ZERO_SECONDARY_PARALLEL_INTER_GROUP is None, \
+        'ZeRO secondary parallel group (inter) is already initialized'
+
+    group = get_data_parallel_group()
+    world_size = get_data_parallel_world_size()
+    rank = get_data_parallel_rank()
+
+    zero_secondary_parallel_size_ = min(group_size, world_size)
+    if world_size % zero_secondary_parallel_size_ != 0:
+        raise RuntimeError(
+            f"data parallel world_size ({world_size}) is not divisible by "
+            f"ZeRO secondary parallel size ({zero_secondary_parallel_size_})"
+        )
+
+    #FIXME: verify if this condition is required
+    # if world_size % zero_secondary_parallel_size_ > 2:
+    #     raise RuntimeError(
+    #         "The number of ranks within each ZeRO secondary parallel inter group "
+    #         "is required to be greater than 2 to avoid inter-allreduce runtime error"
+    #     )
+
+    # Build the ZeRO secondary parallel intra groups.
+    for i in range(world_size // zero_secondary_parallel_size_):
+        intra_ranks = range(i * zero_secondary_parallel_size_, (i + 1) * zero_secondary_parallel_size_)
+        intra_ranks = [torch.distributed.get_global_rank(group, i) for i in intra_ranks]
+        intra_group = torch.distributed.new_group(intra_ranks)
+        if i == (rank // zero_secondary_parallel_size_):
+            _ZERO_SECONDARY_PARALLEL_INTRA_GROUP = intra_group
+
+    # Build the ZeRO secondary parallel inter groups.
+    for i in range(zero_secondary_parallel_size_):
+        inter_ranks = range(i, world_size, zero_secondary_parallel_size_)
+        inter_ranks = [torch.distributed.get_global_rank(group, i) for i in inter_ranks]
+        inter_group = torch.distributed.new_group(inter_ranks)
+        if i == (rank % zero_secondary_parallel_size_):
+            _ZERO_SECONDARY_PARALLEL_INTER_GROUP = inter_group
+
+
 def is_unitialized():
     """Useful for code segments that may be accessed with or without mpu initialization"""
     return _DATA_PARALLEL_GROUP is None
@@ -245,6 +302,12 @@ def model_parallel_is_initialized():
         _DATA_PARALLEL_GROUP is None:
         return False
     return True
+
+
+def zero_secondary_parallel_is_initialized():
+    """Check if ZeRO secondary parallel groups are initialized."""
+    return (_ZERO_SECONDARY_PARALLEL_INTRA_GROUP is not None and \
+            _ZERO_SECONDARY_PARALLEL_INTER_GROUP is not None)
 
 
 def get_model_parallel_group():
@@ -289,6 +352,20 @@ def get_position_embedding_group():
     return _POSITION_EMBEDDING_GROUP
 
 
+def get_zero_secondary_parallel_intra_group():
+    """Get the ZeRO secondary parallel intra group the caller rank belongs to."""
+    assert _ZERO_SECONDARY_PARALLEL_INTRA_GROUP is not None, \
+        'ZeRO secondary parallel intra group is not initialized'
+    return _ZERO_SECONDARY_PARALLEL_INTRA_GROUP
+
+
+def get_zero_secondary_parallel_inter_group():
+    """Get the ZeRO secondary parallel inter group the caller rank belongs to."""
+    assert _ZERO_SECONDARY_PARALLEL_INTER_GROUP is not None, \
+        'ZeRO secondary parallel inter group is not initialized'
+    return _ZERO_SECONDARY_PARALLEL_INTER_GROUP
+
+
 def set_tensor_model_parallel_world_size(world_size):
     """Set the tensor model parallel size"""
     global _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE
@@ -299,6 +376,18 @@ def set_pipeline_model_parallel_world_size(world_size):
     """Set the pipeline model parallel size"""
     global _MPU_PIPELINE_MODEL_PARALLEL_WORLD_SIZE
     _MPU_PIPELINE_MODEL_PARALLEL_WORLD_SIZE = world_size
+
+
+def set_zero_secondary_parallel_intra_world_size(world_size):
+    """Set the ZeRO secondary parallel size (intra)"""
+    global _ZERO_SECONDARY_PARALLEL_INTRA_WORLD_SIZE
+    _ZERO_SECONDARY_PARALLEL_INTRA_WORLD_SIZE = world_size
+
+
+def set_zero_secondary_parallel_inter_world_size(world_size):
+    """Set the ZeRO secondary parallel size (inter)"""
+    global _ZERO_SECONDARY_PARALLEL_INTER_WORLD_SIZE
+    _ZERO_SECONDARY_PARALLEL_INTER_WORLD_SIZE = world_size
 
 
 def get_tensor_model_parallel_world_size():
@@ -317,6 +406,22 @@ def get_pipeline_model_parallel_world_size():
     return torch.distributed.get_world_size(group=get_pipeline_model_parallel_group())
 
 
+def get_zero_secondary_parallel_intra_world_size():
+    """Return world size for the ZeRO secondary parallel intra group."""
+    global _ZERO_SECONDARY_PARALLEL_INTRA_WORLD_SIZE
+    if _ZERO_SECONDARY_PARALLEL_INTRA_WORLD_SIZE is not None:
+        return _ZERO_SECONDARY_PARALLEL_INTRA_WORLD_SIZE
+    return torch.distributed.get_world_size(group=get_zero_secondary_parallel_intra_group())
+
+
+def get_zero_secondary_parallel_inter_world_size():
+    """Return world size for the ZeRO secondary parallel inter group."""
+    global _ZERO_SECONDARY_PARALLEL_INTER_WORLD_SIZE
+    if _ZERO_SECONDARY_PARALLEL_INTER_WORLD_SIZE is not None:
+        return _ZERO_SECONDARY_PARALLEL_INTER_WORLD_SIZE
+    return torch.distributed.get_world_size(group=get_zero_secondary_parallel_inter_group())
+
+
 def set_tensor_model_parallel_rank(rank):
     """Set tensor model parallel rank."""
     global _MPU_TENSOR_MODEL_PARALLEL_RANK
@@ -333,6 +438,18 @@ def set_pipeline_model_parallel_split_rank(rank):
     """Set pipeline model parallel split rank."""
     global _PIPELINE_MODEL_PARALLEL_SPLIT_RANK
     _PIPELINE_MODEL_PARALLEL_SPLIT_RANK = rank
+
+
+def set_zero_secondary_parallel_intra_rank(rank):
+    """Set ZeRO secondary parallel intra rank."""
+    global _ZERO_SECONDARY_PARALLEL_INTRA_RANK
+    _ZERO_SECONDARY_PARALLEL_INTRA_RANK = rank
+
+
+def set_zero_secondary_parallel_inter_rank(rank):
+    """Set ZeRO secondary parallel inter rank."""
+    global _ZERO_SECONDARY_PARALLEL_INTER_RANK
+    _ZERO_SECONDARY_PARALLEL_INTER_RANK = rank
 
 
 def get_tensor_model_parallel_rank():
@@ -355,6 +472,22 @@ def get_pipeline_model_parallel_split_rank():
     """Return pipeline model parallel split rank."""
     global _PIPELINE_MODEL_PARALLEL_SPLIT_RANK
     return _PIPELINE_MODEL_PARALLEL_SPLIT_RANK
+
+
+def get_zero_secondary_parallel_intra_rank():
+    """Set ZeRO secondary parallel intra rank."""
+    global _ZERO_SECONDARY_PARALLEL_INTRA_RANK
+    if _ZERO_SECONDARY_PARALLEL_INTRA_RANK is not None:
+        return _ZERO_SECONDARY_PARALLEL_INTRA_RANK
+    return torch.distributed.get_rank(group=get_zero_secondary_parallel_intra_group())
+
+
+def get_zero_secondary_parallel_inter_rank():
+    """Set ZeRO secondary parallel inter rank."""
+    global _ZERO_SECONDARY_PARALLEL_INTER_RANK
+    if _ZERO_SECONDARY_PARALLEL_INTER_RANK is not None:
+        return _ZERO_SECONDARY_PARALLEL_INTER_RANK
+    return torch.distributed.get_rank(group=get_zero_secondary_parallel_inter_group())
 
 
 def is_pipeline_first_stage(ignore_virtual=False):

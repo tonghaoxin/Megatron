@@ -195,6 +195,13 @@ def _initialize_distributed():
                 print(f'> initialized pipeline model parallel with size '
                       f'{mpu.get_pipeline_model_parallel_world_size()}')
 
+        if args.zero_secondary_parallel_size is not None:
+            mpu.initialize_zero_secondary_parallel(args.zero_secondary_parallel_size)
+
+            if args.rank == 0:
+                print(f'> initialized ZeRO secondary parallel with size '
+                      f'{args.zero_secondary_parallel_size}')
+
 
 def _init_autoresume():
     """Set autoresume start time."""
