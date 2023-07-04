@@ -17,7 +17,8 @@ class RMSNorm(torch.nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = torch.nn.Parameter(torch.ones(dim))
-        setattr(self.weight, 'sequence_parallel', self.sequence_parallel) 
+        # FIXME: RMSNorm do not support sequence_parallel
+        #setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
 
     def _norm(self, x):
         """
@@ -56,8 +57,8 @@ class FusedRMSNorm(ApexFusedRMSNorm):
         super().__init__(normalized_shape,
                          eps=eps,
                          elementwise_affine=elementwise_affine)
-        
+
         self.sequence_parallel = sequence_parallel
 
         # set sequence parallelism flag on weight parameters
-        setattr(self.weight, 'sequence_parallel', self.sequence_parallel)  
+        setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
