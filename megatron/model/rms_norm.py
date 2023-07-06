@@ -17,8 +17,9 @@ class RMSNorm(torch.nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = torch.nn.Parameter(torch.ones(dim))
-        # FIXME: RMSNorm do not support sequence_parallel
-        #setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
+        self.sequence_parallel = sequence_parallel
+
+        setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
 
     def _norm(self, x):
         """
