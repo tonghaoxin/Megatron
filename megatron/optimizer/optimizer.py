@@ -15,8 +15,7 @@ from megatron import print_rank_0
 from megatron.core import mpu, tensor_parallel
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
-from megatron.model.module import param_is_not_shared
-from megatron.utils import unwrap_model
+from megatron.utils import unwrap_model, param_is_not_shared
 
 from .clip_grads import clip_grad_norm_fp32, count_zeros_fp32
 

@@ -957,6 +957,12 @@ def _add_training_args(parser):
                        dest='gradient_accumulation_fusion')
     group.add_argument('--dump-model', action='store_true',
                        help='Dump model to ./model.txt. Useful for debugging.')
+    group.add_argument('--enable-debug', action='store_true', help='enable debug')
+    group.add_argument('--debug-layer-list', type=int, default=[], nargs='+', help='index of debugging layers, e.g., 1 2 3')
+    group.add_argument('--debug-tp-list', type=int, default=[], nargs='+', help='debugging tp rank, e.g., 0 1 2')
+    group.add_argument('--debug-pp-list', type=int, default=[], nargs='+', help='debugging pp rank, e.g., 0 1 2')
+    group.add_argument('--debug-dp-list', type=int, default=[], nargs='+', help='debugging dp rank, e.g., 0 1 2')
+    group.add_argument('--debug-save-path', type=str, help='path to save debug info')
     group.add_argument('--skip-train-iteration-range', type=str, nargs='+', default=None,
                        help='Iteration ranges to skip. The values are one or more dash-separated ranges. e.g., 101-200 251-300.')
     group.add_argument('--skipped-samples-path', type=str, default=None, help='Path to save the skipped samples.')

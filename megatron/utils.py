@@ -2,7 +2,8 @@
 
 """General utilities."""
 
-import sys
+import os, sys
+from random import random
 
 import torch
 from torch.nn.parallel import DistributedDataParallel as torchDDP
@@ -16,8 +17,9 @@ from megatron import (
 )
 from megatron.core import mpu
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
-from megatron.model.module import param_is_not_shared
 
+def param_is_not_shared(param):
+    return not hasattr(param, 'shared') or not param.shared
 
 def unwrap_model(model, module_instances=(torchDDP)):
     return_list = True
@@ -211,3 +213,110 @@ def print_rank_last(message):
             print(message, flush=True)
     else:
         print(message, flush=True)
+
+def print_rank(message):
+    """ print only on debug rank."""
+    args = get_args()
+    tp = mpu.get_tensor_model_parallel_rank()
+    pp = mpu.get_pipeline_model_parallel_rank()
+    dp = mpu.get_data_parallel_rank()
+    if tp in args.debug_tp_list \
+            and pp in args.debug_pp_list \
+            and dp in args.debug_dp_list:
+        print(message, flush=True)
+
+def debug(module, stage, **kwargs):
+    """
+        output:
+
+        ........ 【layer_number】 module_name, shape, value, save_path
+    """
+    args = get_args()
+    title = "........ "
+    if hasattr(module, 'layer_number'):
+        if module.layer_number in args.debug_layer_list:
+            title += f"【{module.layer_number}】"
+        else:
+            return
+    title += f"{module.__class__.__name__}, {stage}, "
+
+    for k, v in kwargs.items():
+        if not isinstance(v, torch.Tensor):
+            msg = f"{k} {v}"
+        else:
+            t = torch.flatten(v)
+            msg = f"{k} {v.shape}, [{t[0]}, ..., {t[-1]}]"
+            if args.debug_save_path is not None:
+                filename = os.path.join(args.debug_save_path, f"{k}_{random()}.pt")
+                torch.save(v.cpu(), filename)
+                msg += ", save to: " + filename
+        print_rank(title + msg)
+
+def get_hook_fn(hook_name, save_path=None):
+    name_map = {
+        "TransformerLanguageModel": ["enc_input_ids", "enc_position_ids", "enc_attn_mask"],
+        "Embedding": ["input_ids", "position_ids"],
+        "ParallelTransformer": ["hidden_states", "attention_mask"],
+        "ParallelTransformerLayer": ["hidden_states", "attention_mask"],
+        "ParallelAttention":  ["hidden_states", "attention_mask"],
+        "CoreAttention": ["q", "k", 'v', "attention_mask"]
+    }
+    def hook_fn(module, inputs, outputs):
+        """ output:
+
+            >【layer_number】module_name  <hook_name>
+                param_name  shape  value
+                ...
+        """
+        layer_number = module.layer_number if hasattr(module, 'layer_number') else None
+        module_name = module.__class__.__name__
+        flag = ">" if hook_name == "forward" else "<"
+        if layer_number is not None:
+            print_rank(f"{flag}【{layer_number}】{module_name}  <{hook_name}>")
+        else:
+            print_rank(f"{flag}【{module_name}】 <{hook_name}>")
+
+        # inputs
+        if not isinstance(inputs, tuple):
+            inputs = [inputs]
+        for idx, _in in enumerate(inputs):
+            param_name = name_map[module_name][idx]
+            if not isinstance(_in, torch.Tensor):
+                print_rank("\t{:20}\t{:40}".format(
+                    param_name,
+                    str(_in)))
+                continue
+            t = torch.flatten(_in)
+            print_rank("\t{:20}\t{:40}\t{:30}".format(
+                    param_name,
+                    str(_in.shape),
+                    f"[{t[0]}, ... , {t[-1]}]"))
+            if save_path is not None:
+                if layer_number is not None:
+                    filename = f'{hook_name}_layer{layer_number}_{module_name}_{param_name}.pt'
+                else:
+                    filename = f'{hook_name}_{module_name}_{param_name}.pt'
+                torch.save(_in.cpu(), os.path.join(save_path, filename))
+
+        # outputs
+        if not isinstance(outputs, tuple):
+            outputs = [outputs]
+        for idx, _out in enumerate(outputs):
+            if not isinstance(_out, torch.Tensor):
+                print_rank("\t{:20}\t{:40}".format(
+                    f"output{idx}",
+                    str(_out)))
+                continue
+            t = torch.flatten(_out)
+            print_rank("\t{:20}\t{:40}\t{:30}".format(
+                    f"output{idx}",
+                    str(_out.shape),
+                    f"[{t[0]}, ... , {t[-1]}]"))
+            if save_path is not None:
+                if layer_number is not None:
+                    filename = f'{hook_name}_layer{layer_number}_{module_name}_output{idx}.pt'
+                else:
+                    filename = f'{hook_name}_{module_name}_output{idx}.pt'
+                torch.save(_out.cpu(), os.path.join(save_path, filename))
+
+    return hook_fn

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from megatron import get_args
 from megatron.core import mpu, tensor_parallel
+from megatron.utils import get_hook_fn
 from megatron.model import LayerNorm
 
 from .enums import LayerType, AttnMaskType
@@ -100,6 +101,12 @@ def get_language_model(num_tokentypes, add_pooler,
     )
     # key used for checkpoints.
     language_model_key = 'language_model'
+
+    if args.enable_debug:
+        hook_forward_fn = get_hook_fn("forward", save_path=args.debug_save_path)
+        hook_backward_fn = get_hook_fn("backward", save_path=args.debug_save_path)
+        language_model.register_forward_hook(hook_forward_fn)
+        language_model.register_full_backward_hook(hook_backward_fn)
 
     return language_model, language_model_key
 
@@ -523,6 +530,12 @@ class TransformerLanguageModel(MegatronModule):
                                        padding_idx)
             self._embedding_key = 'embedding'
 
+            if args.enable_debug:
+                hook_forward_fn = get_hook_fn("forward", save_path=args.debug_save_path)
+                hook_backward_fn = get_hook_fn("backward", save_path=args.debug_save_path)
+                self.embedding.register_forward_hook(hook_forward_fn)
+                self.embedding.register_full_backward_hook(hook_backward_fn)
+
         # Rotary positional embeddings
         if args.use_rotary_position_embeddings:
             self.seq_length = args.seq_length
@@ -572,6 +585,11 @@ class TransformerLanguageModel(MegatronModule):
                     norm_type=self.norm_type
                 )
             self._encoder_key = 'encoder'
+            if args.enable_debug:
+                hook_forward_fn = get_hook_fn("forward", save_path=args.debug_save_path)
+                hook_backward_fn = get_hook_fn("backward", save_path=args.debug_save_path)
+                self.encoder.register_forward_hook(hook_forward_fn)
+                self.encoder.register_full_backward_hook(hook_backward_fn)
         else:
             self.encoder = None
 

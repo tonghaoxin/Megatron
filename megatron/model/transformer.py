@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """Transformer."""
@@ -21,6 +23,7 @@ from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index, apply_rotary_pos_emb_index_fused
 from megatron.model.utils import attention_mask_func, get_deepnorm_coefficients, init_method_normal
+from megatron.utils import print_rank, get_hook_fn, debug
 from .activation_funcs import ACTIVATION_FUNCS
 
 try:
@@ -40,7 +43,6 @@ try:
     import nvtx
 except ImportError:
     pass
-
 
 """ We use the following notation throughout this file:
      h: hidden size
@@ -273,6 +275,8 @@ class CoreAttention(MegatronModule):
         # on average it should not be partition dependent.
         self.attention_dropout = torch.nn.Dropout(args.attention_dropout)
 
+        self.enable_debug = args.enable_debug
+
     @nvtx.annotate("CoreAttention forward", color="cyan")
     def forward(self, query_layer, key_layer,
                 value_layer, attention_mask, alibi=None):
@@ -317,6 +321,9 @@ class CoreAttention(MegatronModule):
 
         # change view to [b, np, sq, sk]
         attention_scores = matmul_result.view(*output_size)
+
+        if self.enable_debug:
+            debug(self, "before probs", attention_scores=attention_scores)
 
         # ===========================
         # Attention probs and dropout
@@ -368,6 +375,10 @@ class CoreAttention(MegatronModule):
         new_context_layer_shape = context_layer.size()[:-2] + \
             (self.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
+
+        if self.enable_debug:
+            debug(self, "final output", attention_probs=attention_probs)
+            debug(self, "final output", context_layer=context_layer)
 
         return context_layer
 
@@ -608,6 +619,8 @@ class ParallelAttention(MegatronModule):
             skip_bias_add=True,
             **_args_to_kwargs())
 
+        self.enable_debug = args.enable_debug
+
     @nvtx.annotate("ParallelAttention _checkpointed_attention_forward", color="lightskyblue")
     def _checkpointed_attention_forward(self, query_layer, key_layer,
                                         value_layer, attention_mask,
@@ -760,6 +773,9 @@ class ParallelAttention(MegatronModule):
                  self.hidden_size_per_attention_head)
             query_layer = query_layer.view(*new_tensor_shape)
 
+        if self.enable_debug:
+            debug(self, "before rotary", query_layer=query_layer, key_layer=key_layer, value_layer=value_layer)
+
         # ==================================
         # Rotary embeddings
         # ==================================
@@ -778,6 +794,9 @@ class ParallelAttention(MegatronModule):
             rotary_pos_emb = self.rotary_emb(value_layer, seq_len=position_ids.max() + 1)
         else:
             apply_rotary_fn = apply_rotary_pos_emb
+
+        if self.enable_debug:
+            debug(self, "after rotary", position_ids=position_ids)
 
         # ==================================
         # Adjust key and value for inference
@@ -1060,15 +1079,21 @@ class ParallelTransformerLayer(MegatronModule):
         else:
             self.alibi = None
 
+        self.enable_debug = args.enable_debug
+
     @nvtx.annotate("ParallelTransformerLayer forward", color="mediumorchid")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
                 rotary_pos_emb=None, position_ids=None,
                 inference_params=None):
+
         # hidden_states: [s, b, h]
 
         # Layer norm at the beginning of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
+        if self.enable_debug:
+            debug(self, "after norm", layernorm_output=layernorm_output)
+
         # Self attention.
         attention_output, attention_bias = \
             self.self_attention(
@@ -1078,6 +1103,9 @@ class ParallelTransformerLayer(MegatronModule):
                 rotary_pos_emb=rotary_pos_emb,
                 position_ids=position_ids,
                 alibi=self.alibi)
+
+        if self.enable_debug:
+            debug(self, "after attention", attention_output=attention_output, attention_bias=attention_bias)
 
         # Residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -1114,6 +1142,8 @@ class ParallelTransformerLayer(MegatronModule):
 
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
+        if self.enable_debug:
+            debug(self, "after norm post", layernorm_output=layernorm_output)
 
         if self.layer_type == LayerType.decoder:
             attention_output, attention_bias = \
@@ -1141,6 +1171,8 @@ class ParallelTransformerLayer(MegatronModule):
 
         # MLP.
         mlp_output, mlp_bias = self.mlp(layernorm_output)
+        if self.enable_debug:
+            debug(self, "after mlp", mlp_output=mlp_output, mlp_bias=mlp_bias)
 
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -1487,6 +1519,19 @@ class ParallelTransformer(MegatronModule):
             self.layers = torch.nn.ModuleList(
                 [build_layer(i + 1 + offset, i if self.virtual_layer_index_offset is None \
                         else i + self.virtual_layer_index_offset) for i in range(self.num_layers)])
+            if args.enable_debug:
+                hook_forward_fn = get_hook_fn("forward", save_path=args.debug_save_path)
+                hook_backward_fn = get_hook_fn("backward", save_path=args.debug_save_path)
+                for layer in self.layers:
+                    if layer.layer_number in args.debug_layer_list:
+                        # debug forward
+                        layer.register_forward_hook(hook_forward_fn)
+                        layer.self_attention.register_forward_hook(hook_forward_fn)
+                        layer.self_attention.core_attention.register_forward_hook(hook_forward_fn)
+                        # debug backward
+                        layer.register_full_backward_hook(hook_backward_fn)
+                        layer.self_attention.register_full_backward_hook(hook_backward_fn)
+                        layer.self_attention.core_attention.register_full_backward_hook(hook_backward_fn)
 
         if self.post_process and self.post_layer_norm:
             if self.norm_type == 'layernorm':
@@ -1508,6 +1553,8 @@ class ParallelTransformer(MegatronModule):
                         args.hidden_size,
                         eps=args.rmsnorm_epsilon,
                         sequence_parallel=args.sequence_parallel)
+
+        self.enable_debug = args.enable_debug
 
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
@@ -1617,6 +1664,9 @@ class ParallelTransformer(MegatronModule):
         if not self.pre_process:
             # See set_input_tensor()
             hidden_states = self.input_tensor
+
+        if self.enable_debug:
+            debug(self, "initial", input_hidden_states=hidden_states)
 
         # Viewless tensor.
         # - We only need to create a viewless tensor in the case of micro batch
