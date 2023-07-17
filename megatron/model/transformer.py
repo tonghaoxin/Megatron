@@ -272,7 +272,7 @@ class CoreAttention(MegatronModule):
 
     @nvtx.annotate("CoreAttention forward", color="cyan")
     def forward(self, query_layer, key_layer,
-                value_layer, attention_mask):
+                value_layer, attention_mask, alibi=None):
 
         # ===================================
         # Raw attention scores. [b, np, s, s]
@@ -291,10 +291,19 @@ class CoreAttention(MegatronModule):
         key_layer = key_layer.view(output_size[3],
                                    output_size[0] * output_size[1], -1)
 
-        # preallocting input tensor: [b * np, sq, sk]
-        matmul_input_buffer = mpu.get_global_memory_buffer().get_tensor(
-            (output_size[0]*output_size[1], output_size[2], output_size[3]),
-            query_layer.dtype, "mpu")
+        if alibi is None:
+            # preallocting input tensor: [b * np, sq, sk]
+            matmul_input_buffer = mpu.get_global_memory_buffer().get_tensor(
+                (output_size[0]*output_size[1], output_size[2], output_size[3]),
+                query_layer.dtype, "mpu")
+        else:
+            # use alibi tensor as matmul_input_buffer
+            matmul_input_buffer = alibi[:output_size[0]*output_size[1], :, :output_size[3]]
+
+            if self.apply_query_key_layer_scaling:
+                beta = 1.0 / self.layer_number
+            else:
+                beta = 1.0
 
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.baddbmm(
@@ -479,7 +488,7 @@ class ParallelAttention(MegatronModule):
                     ('Number of attention heads per partition is required to be divisible by '
                      'the number of multi-query groups per partition')
             # TODO: support MQA+DeepNorm, remove this assertation
-            assert not args.deepnorm, ('Deepnorm currently is not compatible with Multi-query Attention')
+            assert not args.deepnorm, ('Deepnorm currently is not compatible with Multi-Query Attention')
 
         # Rotary positional embedding with position_ids
         if args.use_rotary_position_embeddings_with_position_ids:
@@ -586,15 +595,17 @@ class ParallelAttention(MegatronModule):
     @nvtx.annotate("ParallelAttention _checkpointed_attention_forward", color="lightskyblue")
     def _checkpointed_attention_forward(self, query_layer, key_layer,
                                         value_layer, attention_mask,
-                                        rotary_pos_emb=None):
+                                        rotary_pos_emb=None, alibi=None):
         """Forward method with activation checkpointing."""
         def custom_forward(*inputs):
             query_layer = inputs[0]
             key_layer = inputs[1]
             value_layer = inputs[2]
             attention_mask = inputs[3]
+            alibi = inputs[4]
             output_ = self.core_attention(query_layer, key_layer,
-                                          value_layer, attention_mask)
+                                          value_layer, attention_mask,
+                                          alibi=alibi)
             return output_
 
         q_pos_emb, k_pos_emb = (None, None) if rotary_pos_emb is None \
@@ -602,7 +613,7 @@ class ParallelAttention(MegatronModule):
 
         hidden_states = tensor_parallel.checkpoint(
             custom_forward,
-            False, query_layer, key_layer, value_layer, attention_mask,
+            False, query_layer, key_layer, value_layer, attention_mask, alibi,
             q_pos_emb, k_pos_emb)
 
         return hidden_states
@@ -623,7 +634,7 @@ class ParallelAttention(MegatronModule):
     @nvtx.annotate("ParallelAttention forward", color="greenyellow")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None,
-                rotary_pos_emb=None, position_ids=None):
+                rotary_pos_emb=None, position_ids=None, alibi=None):
         # hidden_states: [sq, b, h]
 
         # =================================================
@@ -830,10 +841,10 @@ class ParallelAttention(MegatronModule):
         if not self.use_flash_attn:
             if self.checkpoint_core_attention:
                 context_layer = self._checkpointed_attention_forward(
-                    query_layer, key_layer, value_layer, attention_mask)
+                    query_layer, key_layer, value_layer, attention_mask, alibi=alibi)
             else:
                 context_layer = self.core_attention(
-                    query_layer, key_layer, value_layer, attention_mask)
+                    query_layer, key_layer, value_layer, attention_mask, alibi=alibi)
         else:
             q, k, v = [rearrange(x, 's b ... -> b s ...').contiguous()
                        for x in (query_layer, key_layer, value_layer)]
@@ -1008,6 +1019,18 @@ class ParallelTransformerLayer(MegatronModule):
         self.bias_dropout_add_exec_handler = \
                 nullcontext if use_nvfuser else torch.enable_grad
 
+        # Alibi
+        if args.use_alibi_position_embeddings:
+            # FIXME: take MQA into consideration
+            self.alibi = \
+                    self._build_alibi_tensor(args.seq_length,
+                                             args.num_attention_heads,
+                                             args.micro_batch_size).\
+                                                     to(torch.cuda.current_device()).\
+                                                     to(args.params_dtype)
+        else:
+            self.alibi = None
+
     @nvtx.annotate("ParallelTransformerLayer forward", color="mediumorchid")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
@@ -1024,7 +1047,8 @@ class ParallelTransformerLayer(MegatronModule):
                 attention_mask,
                 inference_params=inference_params,
                 rotary_pos_emb=rotary_pos_emb,
-                position_ids=position_ids)
+                position_ids=position_ids,
+                alibi=self.alibi)
 
         # Residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -1125,6 +1149,34 @@ class ParallelTransformerLayer(MegatronModule):
 
         return output
 
+    @staticmethod
+    def _build_alibi_tensor(max_seq_len, num_attention_heads, batch_size):
+        """Returns tensor shaped (batch_size * num_attention_heads, 1, max_seq_len)"""
+
+        def get_slopes(n):
+            def get_slopes_power_of_2(n):
+                start = (2 ** (-2 ** -(math.log2(n) - 3)))
+                ratio = start
+                return [start * ratio ** i for i in range(n)]
+
+            if math.log2(n).is_integer():
+                return get_slopes_power_of_2(n)
+            else:
+                closest_power_of_2 = 2 ** math.floor(math.log2(n))
+                return get_slopes_power_of_2(closest_power_of_2) + get_slopes(2 * closest_power_of_2)[0::2][
+                                                                   :n - closest_power_of_2]
+
+        slopes = torch.Tensor(get_slopes(num_attention_heads))
+        alibi = slopes.unsqueeze(1).unsqueeze(1) * torch.arange(max_seq_len).unsqueeze(0).unsqueeze(0).expand(
+            num_attention_heads, -1, -1)
+
+        #Select the part of the tensor that corresponds to our tensor parallel index.
+        tp_world_size = mpu.get_tensor_model_parallel_world_size()
+        tp_index = mpu.get_tensor_model_parallel_rank()
+        alibi = alibi.reshape((tp_world_size, -1, *alibi.shape[1:]))[tp_index]
+
+        alibi = alibi.repeat(batch_size, 1, 1)
+        return alibi
 
 class NoopTransformerLayer(MegatronModule):
     """A single 'no-op' transformer layer.

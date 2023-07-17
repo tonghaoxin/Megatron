@@ -4,5 +4,3 @@ build
 .coverage_*
 *.egg-info
 *~
-download
-checkpoints

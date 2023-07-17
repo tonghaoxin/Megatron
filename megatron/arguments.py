@@ -299,6 +299,13 @@ def validate_args(args, defaults={}):
     else:
         assert args.max_position_embeddings is None
 
+    # FIXME: verify the correctness
+    # if args.use_alibi_position_embeddings:
+    #     assert not args.use_rotary_position_embeddings \
+    #             and args.use_rotary_position_embeddings_with_position_ids
+    if args.use_alibi_position_embeddings:
+        assert not args.use_flash_attn, 'Alibi is not supported by FlashAttention for now.'
+
     if args.kv_channels is None:
         assert args.hidden_size % args.num_attention_heads == 0
         args.kv_channels = args.hidden_size // args.num_attention_heads
@@ -575,6 +582,8 @@ def _add_network_size_args(parser):
     group.add_argument('--use-learned-position-embeddings', action='store_true',
                        help='Use learned positional embeddings for opt/galactica '
                        'model training')
+    group.add_argument('--use-alibi-position-embeddings', action='store_true',
+                       help='Use alibi positional embeddings or not')
     group.add_argument('--no-position-embedding',
                        action='store_false',
                        help='Disable position embedding.',
@@ -613,7 +622,8 @@ def _add_network_size_args(parser):
     group.add_argument('--multi-query-attention', action='store_true',
                        help='If set, use multi-query attention.')
     group.add_argument('--multi-query-group-num', type=int, default=1,
-                       help='Number of multi-query groups per partition.')
+                       help='Number of multi-query groups (heads) per tensor parallel partition. '
+                       '(min, max) = (1, num-attention-heads // tp-degree)')
     return parser
 
 

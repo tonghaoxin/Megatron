@@ -2,7 +2,7 @@
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 DATA_PATH=${ROOT_DIR}/../data/llama_00_text_document
-CHECKPOINT_PATH=${ROOT_DIR}/../checkpoints/llama_65b
+CHECKPOINT_PATH=${ROOT_DIR}/../checkpoints/
 # VOCAB_FILE=${ROOT_DIR}/../data/gpt2-vocab.json
 # MERGE_FILE=${ROOT_DIR}/../data/gpt2-merges.txt
 
@@ -46,7 +46,6 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --lr-warmup-fraction .01 \
                --recompute-method uniform \
                --no-async-tensor-model-parallel-allreduce \
-               --fp16
                --tokenizer-type LLaMASentencePieceTokenizer \
                --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                --activation-func swiglu \
@@ -59,9 +58,11 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --hidden-dropout 0 \
                --use-distributed-optimizer \
                --untie-embeddings-and-output-weights \
-               --use-flash-attn"
+               --use-flash-attn \
+               --fp16"
                # --multi-query-attention \
                # --multi-query-group-num 1 \
+               # --use-alibi-position-embeddings \
                # --sequence-parallel
                # --vocab-file $VOCAB_FILE \
                # --merge-file $MERGE_FILE \
@@ -178,11 +179,11 @@ OUTPUT_ARGS="--log-interval 1 \
              --eval-iters 10"
 
 OTHER_ARGS="--save $CHECKPOINT_PATH \
-            --load $CHECKPOINT_PATH \
             --data-path $DATA_PATH \
             --data-impl mmap \
             --split 949,50,1 \
             --distributed-backend nccl"
+            # --load $CHECKPOINT_PATH \
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \
