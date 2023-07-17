@@ -610,6 +610,10 @@ def _add_network_size_args(parser):
                        help='Number of Experts in Switch Transformer (None means no Switch)')
     group.add_argument('--untie-embeddings-and-output-weights', action='store_true',
                        help='Untie embeddings and output weights.')
+    group.add_argument('--multi-query-attention', action='store_true',
+                       help='If set, use multi-query attention.')
+    group.add_argument('--multi-query-group-num', type=int, default=1,
+                       help='Number of multi-query groups per partition.')
     return parser
 
 
@@ -787,6 +791,8 @@ def _add_training_args(parser):
                        help='1) local: apply recompute strategy to each virtual pipeline stage, '
                        '2) global: apply recomptue strategy to a set of virtual pipeline stages '
                        '(model chunks) which compose a pipeline stage.')
+    group.add_argument('--pipeline-model-parallel-partition-balanced', action='store_true',
+                       help='split pipeline model parallel use partition balanced.')
 
     # deprecated
     group.add_argument('--checkpoint-activations', action='store_true',
@@ -874,8 +880,6 @@ def _add_training_args(parser):
     group.add_argument('--onnx-safe', type=bool, required=False,
                        help='Use workarounds for known problems with '
                        'Torch ONNX exporter')
-    group.add_argument('--pipeline-model-parallel-partition-balanced', action='store_true',
-                       help='split pipeline model parallel use partition balanced.')
     return parser
 
 

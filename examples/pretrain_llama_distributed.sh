@@ -26,15 +26,15 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --master_addr $MASTER_ADDR
                   --master_port $MASTER_PORT"
 
-LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
-               --pipeline-model-parallel-size 2 \
+LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
+               --pipeline-model-parallel-size 1 \
                --num-layers 32 \
                --hidden-size 4096 \
                --ffn-hidden-size 11008 \
                --num-attention-heads 32 \
                --micro-batch-size 1 \
-               --global-batch-size 512 \
-               --seq-length 2048 \
+               --global-batch-size 128 \
+               --seq-length 1024 \
                --max-position-embeddings 2048 \
                --lr 0.0003 \
                --min-lr 1.0e-5 \
@@ -57,7 +57,10 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 2 \
                --disable-bias-linear \
                --attention-dropout 0 \
                --hidden-dropout 0 \
+               --use-distributed-optimizer \
                --use-flash-attn"
+               # --multi-query-attention \
+               # --multi-query-group-num 1 \
                # --sequence-parallel
                # --vocab-file $VOCAB_FILE \
                # --merge-file $MERGE_FILE \
@@ -165,7 +168,7 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 # --sequence-parallel
                 # --bf16
 
-OUTPUT_ARGS="--log-interval 10 \
+OUTPUT_ARGS="--log-interval 1 \
              --save-interval 10000 \
              --eval-interval 1000 \
              --eval-iters 10"
