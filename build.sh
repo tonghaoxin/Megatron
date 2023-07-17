@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -euo pipefail
+
+echo "========= build enter ========="
+
+echo "$PATH"
+WORK_DIR=$(cd $(dirname $0) && pwd) && cd $WORK_DIR
+
+echo_cmd() {
+    echo $1
+    $1
+}
+
+echo "========= build Megatron ========="
+
+echo_cmd "rm -rf output"
+echo_cmd "mkdir -p output"
+
+rm -rf output/.scm/
+tar -zcvf ../Megatron.tar.gz ../Megatron/
+mv ../Megatron.tar.gz ./output/
+
+echo "========= build exit ========="
