@@ -36,6 +36,7 @@ MEGATRON_REQUIRED_ARGS="\
        --top_p 0.9  \
        --swiglu \
        --use-rotary-position-embeddings \
+       --untie-embeddings-and-output-weights \
        --seed 42
 "
 

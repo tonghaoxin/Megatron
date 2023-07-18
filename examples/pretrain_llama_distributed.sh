@@ -58,6 +58,7 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --attention-dropout 0 \
                --hidden-dropout 0 \
                --use-distributed-optimizer \
+               --untie-embeddings-and-output-weights \
                --use-flash-attn"
                # --multi-query-attention \
                # --multi-query-group-num 1 \
@@ -96,6 +97,7 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --disable-bias-linear \
                 --attention-dropout 0 \
                 --hidden-dropout 0 \
+                --untie-embeddings-and-output-weights \
                 --use-flash-attn"
                 # --sequence-parallel
 
@@ -130,6 +132,7 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --disable-bias-linear \
                 --attention-dropout 0 \
                 --hidden-dropout 0 \
+                --untie-embeddings-and-output-weights \
                 --use-flash-attn"
                 # --sequence-parallel
 
@@ -164,6 +167,7 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --disable-bias-linear \
                 --attention-dropout 0 \
                 --hidden-dropout 0 \
+                --untie-embeddings-and-output-weights \
                 --use-flash-attn"
                 # --sequence-parallel
                 # --bf16
