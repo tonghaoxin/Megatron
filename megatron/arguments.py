@@ -608,6 +608,8 @@ def _add_network_size_args(parser):
                        help='Use fused rmsnorm instead of default rmsnorm')
     group.add_argument('--rmsnorm-epsilon', type=float, default=1e-6,
                        help='RMS norm epsilon.')
+    group.add_argument('--add-embed-layernorm', action='store_true',
+                       help='Enable embedding layernorm')
     group.add_argument('--activation-func', type=str, required=False, default='gelu',
                        choices=['relu', 'gelu', 'geglu', 'liglu', 'reglu', 'swiglu',
                                 'openai_gelu', 'erf_gelu', 'squared_relu'],

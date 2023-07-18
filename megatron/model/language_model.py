@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from megatron import get_args
 from megatron.core import mpu, tensor_parallel
+from megatron.model import LayerNorm
 
 from .enums import LayerType, AttnMaskType
 from .module import MegatronModule
@@ -198,6 +199,18 @@ class Embedding(MegatronModule):
         )
         self._word_embeddings_key = 'word_embeddings'
 
+        # Embedding layernorm
+        self.add_embed_layernorm = args.add_embed_layernorm
+        if self.add_embed_layernorm:
+            self.embed_layernorm = LayerNorm(
+                args.hidden_size,
+                eps=args.layernorm_epsilon,
+                no_persist_layer_norm=args.no_persist_layer_norm,
+                sequence_parallel=False,
+                apply_layernorm_1p=args.apply_layernorm_1p)
+        else:
+            self.embed_layernorm = None
+
         # Position embedding (serial).
         self.add_position_embedding = args.add_position_embedding
         self.use_learned_position_embeddings = args.use_learned_position_embeddings
@@ -246,6 +259,7 @@ class Embedding(MegatronModule):
 
         self.fp32_residual_connection = args.fp32_residual_connection
         self.sequence_parallel = args.sequence_parallel
+
         # Embeddings dropout
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
 
@@ -289,6 +303,11 @@ class Embedding(MegatronModule):
     def forward(self, input_ids, position_ids, tokentype_ids=None):
         # Embeddings.
         words_embeddings = self.word_embeddings(input_ids)
+
+        # Layer norm.
+        # FIXME: verify the order of embed layernorm and position embedding
+        if self.embed_layernorm is not None:
+            words_embeddings = self.embed_layernorm(words_embeddings)
 
         if self.shrink_word_embedding:
             alpha = self.get_shrink_embedding_gradient_alpha()
