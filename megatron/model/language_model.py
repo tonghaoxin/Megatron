@@ -208,6 +208,7 @@ class Embedding(MegatronModule):
                 no_persist_layer_norm=args.no_persist_layer_norm,
                 sequence_parallel=False,
                 apply_layernorm_1p=args.apply_layernorm_1p)
+            self._embed_layernorm_key = 'word_embeddings_layernorm'
         else:
             self.embed_layernorm = None
 
@@ -367,6 +368,12 @@ class Embedding(MegatronModule):
         state_dict_[self._word_embeddings_key] \
             = self.word_embeddings.state_dict(prefix=prefix,
                                               keep_vars=keep_vars)
+
+        if self.add_embed_layernorm:
+            state_dict_[self._embed_layernorm_key] \
+                = self.embed_layernorm.state_dict(prefix=prefix,
+                                                  keep_vars=keep_vars)
+
         if self.add_position_embedding:
             state_dict_[self._position_embeddings_key] \
                 = self.position_embeddings.state_dict(prefix=prefix,
@@ -398,6 +405,18 @@ class Embedding(MegatronModule):
                         = state_dict[key]
         self.word_embeddings.load_state_dict(state_dict_, strict=strict)
 
+        # Embedding layernorm
+        if self.add_embed_layernorm:
+            if self._embed_layernorm_key in state_dict:
+                state_dict_ = state_dict[self._embed_layernorm_key]
+            else:
+                # for backward compatibility.
+                state_dict_ = {}
+                for key in state_dict.keys():
+                    if 'word_embeddings_layernorm' in key:
+                        state_dict_[key.split('word_embeddings_layernorm.')[1]] \
+                                = state_dict[key]
+            self.embed_layernorm.load_state_dict(state_dict_, strict=strict)
 
         # Position embedding.
         if self.add_position_embedding:

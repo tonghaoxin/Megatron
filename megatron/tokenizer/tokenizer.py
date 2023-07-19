@@ -74,6 +74,9 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'OptTokenizer':
         assert args.hf_tokenizer_path is not None or (args.vocab_file is not None and args.merge_file is not None)
         tokenizer = _OptTokenizer(args.hf_tokenizer_path, args.vocab_file, args.merge_file)
+    elif args.tokenizer_type == "BloomHFTokenizer":
+        assert args.hf_tokenizer_path is not None
+        tokenizer = _BloomHFTokenizer(args.hf_tokenizer_path)
     elif args.tokenizer_type == 'NullTokenizer':
         assert args.vocab_size is not None
         tokenizer = _NullTokenizer(args.vocab_size)
@@ -89,14 +92,25 @@ def build_tokenizer(args):
 
 
 def _vocab_size_with_padding(orig_vocab_size, args):
-    """Pad vocab size so it is divisible by model parallel size and
-    still having GPU friendly size."""
+    if hasattr(args, "pad_vocab_size_to") and args.pad_vocab_size_to is not None:
+        """Apply the requested rules to change the size of the vocabulary"""
+        if args.pad_vocab_size_to  < orig_vocab_size:
+            raise ValueError(
+                f"You asked to pad the vocabulary to {args.pad_vocab_size_to} when the initial vocabulary size is "
+                f"{orig_vocab_size}. You can only pad to a higher value."
+            )
 
-    after = orig_vocab_size
-    multiple = args.make_vocab_size_divisible_by * \
-        args.tensor_model_parallel_size
-    while (after % multiple) != 0:
-        after += 1
+        if args.make_vocab_size_divisible_by is not None and (args.pad_vocab_size_to % args.make_vocab_size_divisible_by) != 0:
+            raise ValueError(f"{args.pad_vocab_size_to} is not divisible by {args.make_vocab_size_divisible_by}")
+
+        after = args.pad_vocab_size_to
+    else:
+        """Pad vocab size so it is divisible by model parallel size and still having GPU friendly size."""
+        after = orig_vocab_size
+        multiple = args.make_vocab_size_divisible_by * \
+            args.tensor_model_parallel_size
+        while (after % multiple) != 0:
+            after += 1
     if args.rank == 0:
         print(' > padded vocab (size: {}) with {} dummy tokens '
               '(new size: {})'.format(
@@ -574,7 +588,7 @@ class _NullTokenizer:
     @property
     def additional_special_tokens_ids(self):
         return None
-   
+
 
 class _LLaMASentencePieceTokenizer(_SentencePieceTokenizer):
     """SentencePieceTokenizer-Megatron wrapper"""
@@ -703,6 +717,7 @@ class _GalacticaHFTokenizer(AbstractTokenizer):
     def inv_vocab(self):
         pass
 
+
 class _OptTokenizer(AbstractTokenizer):
     """_OptTokenizer tokenizer."""
 
@@ -748,3 +763,44 @@ class _OptTokenizer(AbstractTokenizer):
 
     def inv_vocab(self):
         pass
+
+
+class _AutoTokenizer(AbstractTokenizer):
+    """AutoTokenizer for Hf Pretrained model loading."""
+
+    def __init__(self, name, tokenizer_path):
+        super().__init__(name)
+
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        self.encoder = self.tokenizer.get_vocab()
+        self.decoder = {v: k for k, v in self.encoder.items()}
+
+    @property
+    def vocab_size(self):
+        return self.tokenizer.vocab_size
+
+    @property
+    def vocab(self):
+        return self.tokenizer.encoder
+
+    @property
+    def inv_vocab(self):
+        return self.tokenizer.decoder
+
+    def tokenize(self, text):
+        return self.tokenizer.encode(text)
+
+    def detokenize(self, token_ids):
+        return self.tokenizer.decode(token_ids)
+
+    @property
+    def eod(self):
+        return self.tokenizer.eos_token_id
+
+
+class _BloomHFTokenizer(_AutoTokenizer):
+    """_BloomHFTokenizer tokenizer."""
+
+    def __init__(self, tokenizer_path):
+        super().__init__('BloomHFTokenizer', tokenizer_path)

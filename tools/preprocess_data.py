@@ -97,7 +97,8 @@ def get_args():
                                 'GPT2BPETokenizer', 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer', 'NullTokenizer',
                                 'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer',
-                                'ChatGLMTokenizer', 'IceTokenizer', 'OptTokenizer'],
+                                'ChatGLMTokenizer', 'IceTokenizer', 'OptTokenizer',
+                                'BloomHFTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--vocab-file', type=str, default=None,
                        help='Path to the vocab file')
@@ -143,6 +144,7 @@ def get_args():
     args.make_vocab_size_divisible_by = 128
     args.tensor_model_parallel_size = 1
     args.vocab_extra_ids = 0
+    args.pad_vocab_size_to = None
 
     return args
 

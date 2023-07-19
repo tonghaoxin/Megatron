@@ -296,10 +296,10 @@ class CoreAttention(MegatronModule):
             matmul_input_buffer = mpu.get_global_memory_buffer().get_tensor(
                 (output_size[0]*output_size[1], output_size[2], output_size[3]),
                 query_layer.dtype, "mpu")
+            beta = 0.0
         else:
             # use alibi tensor as matmul_input_buffer
             matmul_input_buffer = alibi[:output_size[0]*output_size[1], :, :output_size[3]]
-
             if self.apply_query_key_layer_scaling:
                 beta = 1.0 / self.layer_number
             else:
@@ -310,7 +310,7 @@ class CoreAttention(MegatronModule):
             matmul_input_buffer,
             query_layer.transpose(0, 1),   # [b * np, sq, hn]
             key_layer.transpose(0, 1).transpose(1, 2),  # [b * np, hn, sk]
-            beta=0.0, alpha=(1.0/self.norm_factor))
+            beta=beta, alpha=(1.0/self.norm_factor))
 
         # change view to [b, np, sq, sk]
         attention_scores = matmul_result.view(*output_size)
