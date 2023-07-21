@@ -140,7 +140,7 @@ inline void authority_help(std::string ip, uint16_t port, std::string env_resour
     }
 }
 
-inline void check_authority() {
+inline void check_authority(int64_t sleep_milliseconds = 10) {
     std::lock_guard<std::mutex> lock(http_request_lock);
 
     if (g_authority.load() == -2) {
@@ -193,7 +193,7 @@ inline void check_authority() {
     if (g_authority.load() == 0) {
         return;
     } else if (g_authority.load() == -1) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_milliseconds));
         return;
     }
 
