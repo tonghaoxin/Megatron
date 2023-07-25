@@ -458,7 +458,7 @@ class ParallelAttention(MegatronModule):
         self.rotary_embedding_2d = args.rotary_embedding_2d
         self.apply_rotary_positional_embedding_kernel = args.apply_rotary_positional_embedding_kernel
         self.multi_query_attention = args.multi_query_attention
-        self.num_multi_query_groups_per_partition = args.multi_query_group_num
+        self.num_multi_query_groups = args.multi_query_group_num
 
         self.use_flash_attn = args.use_flash_attn
         if self.use_flash_attn:
@@ -484,11 +484,13 @@ class ParallelAttention(MegatronModule):
         self.num_attention_heads_per_partition = core.utils.divide(
             args.num_attention_heads, world_size)
         if self.multi_query_attention:
+            self.num_multi_query_groups_per_partition = core.utils.divide(
+                args.multi_query_group_num, world_size)
             assert self.num_attention_heads_per_partition % self.num_multi_query_groups_per_partition == 0, \
                     ('Number of attention heads per partition is required to be divisible by '
                      'the number of multi-query groups per partition')
-            # TODO: support MQA+DeepNorm, remove this assertation
-            assert not args.deepnorm, ('Deepnorm currently is not compatible with Multi-Query Attention')
+            self.num_repeats = core.utils.divide(
+                self.num_attention_heads_per_partition, self.num_multi_query_groups_per_partition)
 
         # Rotary positional embedding with position_ids
         if args.use_rotary_position_embeddings_with_position_ids:
@@ -510,7 +512,7 @@ class ParallelAttention(MegatronModule):
             qkv_hidden_size = 3 * projection_size
             if self.multi_query_attention:
                 qkv_hidden_size = (
-                        projection_size + 2 * self.hidden_size_per_attention_head * self.num_multi_query_groups_per_partition
+                        projection_size + 2 * self.hidden_size_per_attention_head * self.num_multi_query_groups
                 )
 
             self.query_key_value = tensor_parallel.ColumnParallelLinear(
@@ -527,7 +529,19 @@ class ParallelAttention(MegatronModule):
 
                 deepnorm_coeff = get_deepnorm_coefficients()
                 with _get_cuda_rng_tracker().fork():
-                    wq, wk, wv = self.query_key_value.weight.chunk(3, dim=0)
+                    if self.multi_query_attention:
+                        wq, wk, wv = self.query_key_value.weight.split(
+                            [
+                                self.num_attention_heads_per_partition * self.hidden_size_per_attention_head,
+                                self.num_multi_query_groups_per_partition * self.hidden_size_per_attention_head,
+                                self.num_multi_query_groups_per_partition * self.hidden_size_per_attention_head,
+                            ],
+                            dim=0,
+                        )
+                    else:
+                        #FIXME: verify the correctness of the following line
+                        # (np * 3 * hn) -> 3 * (np/3 * 3 * hn)
+                        wq, wk, wv = self.query_key_value.weight.chunk(3, dim=0)
                     tensor_parallel.xavier_normal_tensor_parallel_(
                         wq, 1.0, tp_degree=world_size, partition_dim=0
                     )
@@ -537,7 +551,6 @@ class ParallelAttention(MegatronModule):
                     tensor_parallel.xavier_normal_tensor_parallel_(
                         wv, deepnorm_coeff.beta, tp_degree=world_size, partition_dim=0
                     )
-                    #TODO: support multi-query attention
         else:
             assert attention_type == AttnType.cross_attn
             assert not args.deepnorm
@@ -630,6 +643,31 @@ class ParallelAttention(MegatronModule):
             self.hidden_size_per_attention_head,
             dtype=self.params_dtype,
             device=torch.cuda.current_device())
+
+    def _repeat_kv(self, x):
+        """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
+        if self.num_repeats == 1:
+            return x
+        seq_len, bs, n_kv_heads, head_dim = x.shape
+        return (
+            x[:, :, :, None, :]
+            .expand(seq_len, bs, n_kv_heads, self.num_repeats, head_dim)
+            .reshape(seq_len, bs, n_kv_heads * self.num_repeats, head_dim)
+        )
+        # key_layer = key_layer.unsqueeze(-2)
+        # key_layer = key_layer.expand(
+        #     -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
+        # )
+        # key_layer = key_layer.contiguous().view(
+        #     key_layer.size()[:2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
+        # )
+        # value_layer = value_layer.unsqueeze(-2)
+        # value_layer = value_layer.expand(
+        #     -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
+        # )
+        # value_layer = value_layer.contiguous().view(
+        #     value_layer.size()[:2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
+        # )
 
     @nvtx.annotate("ParallelAttention forward", color="greenyellow")
     def forward(self, hidden_states, attention_mask,
@@ -821,22 +859,10 @@ class ParallelAttention(MegatronModule):
             # otherwise, only relative positional embedding takes effect
             # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
 
-        #TODO: verify whether the following port should be executed before RoPE or not for GLM
+        #TODO: verify whether the following port should be executed before RoPE or not for different models
         if self.multi_query_attention:
-            key_layer = key_layer.unsqueeze(-2)
-            key_layer = key_layer.expand(
-                -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
-            )
-            key_layer = key_layer.contiguous().view(
-                key_layer.size()[:2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
-            )
-            value_layer = value_layer.unsqueeze(-2)
-            value_layer = value_layer.expand(
-                -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
-            )
-            value_layer = value_layer.contiguous().view(
-                value_layer.size()[:2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head)
-            )
+            key_layer = self._repeat_kv(key_layer)
+            value_layer = self._repeat_kv(value_layer)
 
         if not self.use_flash_attn:
             if self.checkpoint_core_attention:

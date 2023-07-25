@@ -416,8 +416,17 @@ def validate_args(args, defaults={}):
     if args.deepnorm:
         args.apply_residual_connection_post_layernorm = True
 
+    # RoPE embedding kernel is not compatible with learnable RoPE
     if args.apply_rotary_positional_embedding_kernel:
-        assert not args.learnable_rotary_embedding, 'rope kernel only support unlearnable rope'
+        assert not args.learnable_rotary_embedding, \
+                'RoPE embedding kernel is not compatible with learnable RoPE'
+
+    # Multi-query qttention asssertation
+    # FIXME: this assertation is based on the implementation of LLaMA2, according to
+    # https://github.com/facebookresearch/llama/blob/main/llama/model.py#L77
+    if args.multi_query_attention:
+        assert args.multi_query_group_num % args.tensor_model_parallel_size == 0, \
+                'The number of multi-query groups is required to be divisible by tensor parallel size'
 
     # Print arguments.
     _print_args("arguments", args)
@@ -628,8 +637,9 @@ def _add_network_size_args(parser):
     group.add_argument('--multi-query-attention', action='store_true',
                        help='If set, use multi-query attention.')
     group.add_argument('--multi-query-group-num', type=int, default=1,
-                       help='Number of multi-query groups (heads) per tensor parallel partition. '
-                       '(min, max) = (1, num-attention-heads // tp-degree)')
+                       help='Number of multi-query groups (or kv_heads). '
+                       'min = tensor_model_parallel_size, '
+                       'max = num-attention-heads // tensor_model_parallel_size)')
     return parser
 
 

@@ -59,9 +59,9 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --use-distributed-optimizer \
                --untie-embeddings-and-output-weights \
                --use-flash-attn \
+               --multi-query-attention \
+               --multi-query-group-num 1 \
                --fp16"
-               # --multi-query-attention \
-               # --multi-query-group-num 1 \
                # --use-alibi-position-embeddings \
                # --sequence-parallel
                # --vocab-file $VOCAB_FILE \
