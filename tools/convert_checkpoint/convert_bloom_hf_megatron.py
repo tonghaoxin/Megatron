@@ -679,10 +679,10 @@ def convert_checkpoint_from_transformers_to_megatron(args):
 
     # Transformer layers
     print("converting transformer layers")
-    if config.n_layer % args.target_tensor_model_parallel_size != 0:
+    if config.n_layer % args.target_pipeline_model_parallel_size != 0:
         raise ValueError(
-            f"Number of layers ({config.n_layer}) must be divisible by number of tensor parallelism"
-            f" ({args.target_tensor_model_parallel_size})"
+            f"Number of layers ({config.n_layer}) must be divisible by number of pipeline parallelism"
+            f" ({args.target_pipeline_model_parallel_size})"
         )
 
     # The number of layers per pipeline

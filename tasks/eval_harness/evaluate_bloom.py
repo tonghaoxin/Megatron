@@ -1,3 +1,4 @@
+# !/usr/bin/env python3
 # This code is originally from https://github.com/bigscience-workshop/Megatron-DeepSpeed
 # under the license https://huggingface.co/spaces/bigscience/license
 
@@ -24,7 +25,7 @@ import torch
 from megatron import get_args
 from megatron import print_rank_0
 from megatron import get_tokenizer
-from megatron.model import LLaMAModel
+from megatron.model import BLOOMModel
 from megatron.core import mpu, tensor_parallel
 from megatron.checkpointing import load_checkpoint
 from megatron.training import setup_model_and_optimizer, get_model
@@ -47,8 +48,8 @@ class EvalHarnessAdaptor(GPT2LM):
         self.model = model
         self.tokenizer = tokenizer
         self.VOCAB_SIZE = tokenizer.vocab_size
-        self.EOT_TOKEN_ID = tokenizer.eod
-        self.BOS_TOKEN_ID = tokenizer.bos
+        self.EOT_TOKEN_ID = tokenizer.tokenizer.eos_token_id
+        self.BOS_TOKEN_ID = tokenizer.tokenizer.bos_token_id
 
         self._max_length = args.seq_length
 
@@ -214,12 +215,12 @@ class EvalHarnessAdaptor(GPT2LM):
             # dummy data iterator for pipelining.
             data_iterator = list((torch.stack(inp) for inp in utils.chunks(padded, args.micro_batch_size)))
             self.model.micro_batches = len(data_iterator)
-            
+
             if self.adaptive_seq_len:
                 # Allow different shapes than the default seq_len to be communicated across pipes
                 # Without this Deepspeed will hang when trying to receive activations
                 self.model.reset_activation_shape()
-            
+
             output = self.model.eval_batch(iter(data_iterator), compute_loss = False, reduce_output = None)
 
 
@@ -282,8 +283,8 @@ def override_args(args, override_args, skip_keys, skip_if_specified_keys):
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
 
-    print_rank_0('building LLaMA model ...')
-    model = LLaMAModel(
+    print_rank_0('building BLOOM model ...')
+    model = BLOOMModel(
         num_tokentypes=0,
         parallel_output=True,
         pre_process=pre_process,
@@ -345,7 +346,7 @@ def main():
     #    # and it also reshapes the attenion scores in attention_mask_func
     #    args.curriculum_learning = 1
     initialize_megatron(extra_args_provider=add_text_generate_args,
-                        args_defaults={'tokenizer_type': 'LLaMASentencePieceTokenizer',
+                        args_defaults={'tokenizer_type': 'BloomHFTokenizer',
                                        'no_load_rng': True,
                                        'no_load_optim': True})
 
@@ -372,7 +373,7 @@ def main():
 
     tokenizer = get_tokenizer()
     adaptor = EvalHarnessAdaptor(model, tokenizer)
-    
+
     if args.intermed_results:
         global_results = {"results": {}, "versions": {}}
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
