@@ -313,6 +313,11 @@ def validate_args(args, defaults={}):
     # Checks.
     if args.ffn_hidden_size is None:
         args.ffn_hidden_size = 4 * args.hidden_size
+        # Custom dim factor multiplier
+        if args.ffn_dim_multiplier is not None:
+            args.ffn_hidden_size = int(args.ffn_dim_multiplier * args.ffn_hidden_size)
+        args.ffn_hidden_size = args.multiple_of * \
+                ((args.ffn_hidden_size + args.multiple_of - 1) // args.multiple_of)
 
     # Reset activation function for compatibility
     if args.relu:
@@ -688,6 +693,10 @@ def _add_network_size_args(parser):
                        help='Number of multi-query groups (or kv_heads). '
                        'min = tensor_model_parallel_size, '
                        'max = num-attention-heads // tensor_model_parallel_size)')
+    group.add_argument('--ffn-dim-multiplier', type=float, default=None,
+                       help='Dimension multiplier for Transformer Feed-Forward Network')
+    group.add_argument('--multiple-of', type=int, default=256,
+                       help='Make SwiGLU hidden layer size multiple of large power of 2')
     return parser
 
 
