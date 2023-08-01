@@ -3,6 +3,7 @@
 """Megatron arguments."""
 
 import argparse
+import collections
 import json
 import os
 import torch
@@ -48,6 +49,53 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
         args, _ = parser.parse_known_args()
     else:
         args = parser.parse_args()
+
+    # Skip train iterations
+    if args.skip_train_iteration_range is not None:
+        args.skip_train_iteration_range = [
+            list(map(int, range_.split("-"))) for range_ in args.skip_train_iteration_range
+        ]
+        args.skip_train_iteration_range.sort()
+        skip_train_iteration_range = collections.deque()
+        for range_ in args.skip_train_iteration_range:
+            if len(range_) == 2:
+                start, end = range_
+                assert end >= start, \
+                "end of skip range cannot be smaller than start of skip range"
+                # merge overlapping intervals (e.g. 1-5 2-6 -> 1-6)
+                if not skip_train_iteration_range:
+                    skip_train_iteration_range.append([start, end])
+                elif skip_train_iteration_range[-1][1] >= start:
+                    skip_train_iteration_range[-1][1] = max(end, skip_train_iteration_range[-1][1])
+                else:
+                    skip_train_iteration_range.append([start, end])
+            else:
+                raise ValueError(
+                    "skip train iterations should be specified as two numbers, i.e. start-end"
+                )
+        if len(skip_train_iteration_range) > 0 and args.rampup_batch_size is not None:
+            def get_rampup_end_iteration(start_batch_size, batch_size_increment, ramup_samples, global_batch_size):
+                num_increments = (global_batch_size - start_batch_size) // batch_size_increment
+                rampup_samples_per_increment = ramup_samples / num_increments
+                consumed_samples = 0
+                iteration = 0
+                current_global_batch_size = 0
+                while consumed_samples <= ramup_samples:
+                    steps = int(consumed_samples / rampup_samples_per_increment)
+                    current_global_batch_size = start_batch_size + steps * batch_size_increment
+                    consumed_samples += current_global_batch_size
+                    iteration += 1
+                return iteration
+
+            start_batch_size = int(args.rampup_batch_size[0])
+            batch_size_increment = int(args.rampup_batch_size[1])
+            ramup_samples = int(args.rampup_batch_size[2])
+            global_batch_size = args.global_batch_size
+            assert skip_train_iteration_range[0][0] \
+                > get_rampup_end_iteration(start_batch_size, batch_size_increment, ramup_samples, global_batch_size), \
+                "train iterations can only be skipped after the rampup has been performed"
+
+        args.skip_train_iteration_range = skip_train_iteration_range
 
     # Args from environment
     args.rank = int(os.getenv('RANK', '0'))
@@ -889,6 +937,7 @@ def _add_training_args(parser):
                        help='Dump model to ./model.txt. Useful for debugging.')
     group.add_argument('--skip-train-iteration-range', type=str, nargs='+', default=None,
                        help='Iteration ranges to skip. The values are one or more dash-separated ranges. e.g., 101-200 251-300.')
+    group.add_argument('--skipped-samples-path', type=str, default=None, help='Path to save the skipped samples.')
     group.add_argument('--abort-on-unmet-fused-kernel-constraints', action='store_true',
                        help="If set to True, the program will abort if the constraints for loading a fused kernel aren't met")
     group.add_argument('--openai-gelu', action='store_true',

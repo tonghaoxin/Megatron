@@ -3,8 +3,9 @@
 """Pretrain utilities."""
 
 from datetime import datetime
+import bisect
 import math
-import sys
+import os, sys
 import time
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
@@ -710,7 +711,54 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     timers('interval-time', log_level=0).start(barrier=True)
     print_datetime('before the start of training step')
     report_memory_flag = True
+
+    # flush intervals prior to current iteration
+    if args.skip_train_iteration_range is not None:
+        ends = [end for start, end in args.skip_train_iteration_range]
+        index = bisect.bisect_left(ends, iteration)
+        for _ in range(index):
+            args.skip_train_iteration_range.popleft()
+
     while iteration < args.train_iters:
+        if (
+            # train_data_iterator is not None
+            args.skip_train_iteration_range is not None
+            and len(args.skip_train_iteration_range) > 0
+            and args.skip_train_iteration_range[0][0] <= iteration + 1 <= args.skip_train_iteration_range[0][1]
+        ):
+            start, end = args.skip_train_iteration_range.popleft()
+            print_rank_0(f"Skipping iterations {start} to {end} due to --skip-train-iteration-range flag.")
+            iteration_for_skipping = iteration
+            skipped_samples = []
+            while iteration_for_skipping + 1 <= end:
+                update_num_microbatches(args.consumed_train_samples)
+                try:
+                    if mpu.get_pipeline_model_parallel_world_size() == 1 or \
+                            mpu.is_pipeline_first_stage() or mpu.is_pipeline_last_stage():
+                        for i in range(get_num_microbatches()):
+                            data = next(train_data_iterator)
+                            skipped_samples.append(data)
+                except TypeError:
+                    pass
+                new_samples = mpu.get_data_parallel_world_size() * \
+                              args.micro_batch_size * \
+                              get_num_microbatches()
+                args.consumed_train_samples += new_samples
+                iteration_for_skipping += 1
+                if iteration_for_skipping % args.log_interval == 0:
+                    print_rank_0(f"Skipped iter {iteration_for_skipping}, num_samples = {new_samples}")
+
+            if args.skipped_samples_path is not None:
+                pp = mpu.get_pipeline_model_parallel_rank()
+                tp = mpu.get_tensor_model_parallel_rank()
+                dp = mpu.get_data_parallel_rank()
+                if pp == 0 and tp == 0:
+                    filename = f"skip_range_{start}_{end}_after_iter{args.iteration}_dp{dp}.pt"
+                    skipped_samples_path = os.path.join(args.skipped_samples_path, filename)
+                    print(f"Save {len(skipped_samples)} skipped samples to {skipped_samples_path}")
+                    torch.save(skipped_samples, skipped_samples_path)
+            continue
+
         update_num_microbatches(args.consumed_train_samples)
         args.curr_iteration = iteration
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
