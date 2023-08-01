@@ -8,6 +8,7 @@ from megatron import get_args
 from .distrib_optimizer import DistributedOptimizer
 from .grad_scaler import ConstantGradScaler, DynamicGradScaler
 from .optimizer import Float16OptimizerWithFloat16Params, FP32Optimizer
+from .lion import Lion
 
 
 def get_param_groups(modules,
@@ -83,6 +84,11 @@ def get_megatron_optimizer(model,
                         lr=args.lr,
                         weight_decay=args.weight_decay,
                         momentum=args.sgd_momentum)
+    elif args.optimizer == 'lion':
+        optimizer = Lion(param_groups,
+                         lr=args.lr,
+                         weight_decay=args.weight_decay,
+                         betas=(args.adam_beta1, args.adam_beta2))
     else:
         raise Exception('{} optimizer is not supported.'.format(
             args.optimizer))
