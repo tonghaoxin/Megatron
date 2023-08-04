@@ -63,10 +63,10 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 1 \
                 --embedding-dropout 0 \
                 --use-distributed-optimizer \
                 --untie-embeddings-and-output-weights \
+                --initial-loss-scale 16 \
                 --use-flash-attn \
                 --fp16"
                 # --sequence-parallel
-                # --initial-loss-scale 16 \
                 # --multi-query-attention \
                 # --multi-query-group-num 32 \
 

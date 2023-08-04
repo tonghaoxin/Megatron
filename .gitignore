@@ -1,11 +1,11 @@
+__pycache__
 # Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-build/bin
-build/output
+build/
 testbin/*
 
 # Test binary, build with `go test -c`

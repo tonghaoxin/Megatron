@@ -178,6 +178,12 @@ def validate_args(args, defaults={}):
         if args.rank == 0:
             print('set recompute-method=block since recompute-granularity=hybrid')
 
+    if args.multi_query_attention and not args.group_query_attention:
+        args.group_query_attention = True
+        args.num_query_groups = args.multi_query_group_num
+    del args.multi_query_attention
+    del args.multi_query_group_num
+
     # Set input defaults.
     for key in defaults:
         # For default to be valid, it should not be provided in the
@@ -475,13 +481,6 @@ def validate_args(args, defaults={}):
         assert not args.learnable_rotary_embedding, \
                 'RoPE embedding kernel is not compatible with learnable RoPE'
 
-    # Multi-query qttention asssertation
-    # FIXME: this assertation is based on the implementation of LLaMA2, according to
-    # https://github.com/facebookresearch/llama/blob/main/llama/model.py#L77
-    if args.multi_query_attention:
-        assert args.multi_query_group_num % args.tensor_model_parallel_size == 0, \
-                'The number of multi-query groups is required to be divisible by tensor parallel size'
-
     # Print arguments.
     _print_args("arguments", args)
     retro_args = get_retro_args()
@@ -627,6 +626,9 @@ def _add_network_size_args(parser):
                        'attention. This is set to '
                        '   args.hidden_size // args.num_attention_heads '
                        'if not provided.')
+    group.add_argument('--group-query-attention', action='store_true',
+                          help='Use group-query attention.')
+    group.add_argument('--num-query-groups', type=int, default=1)
     group.add_argument('--max-position-embeddings', type=int, default=None,
                        help='Maximum number of position embeddings to use. '
                        'This is the size of position embedding.')
