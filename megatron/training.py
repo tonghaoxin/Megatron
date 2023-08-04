@@ -724,8 +724,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
            iteration == args.profile_step_start and \
            torch.distributed.get_rank() in args.profile_ranks:
             torch.cuda.cudart().cudaProfilerStart()
-            torch.autograd.profiler.emit_nvtx(record_shapes=True).__enter__()
-
+            backward_nvtx_ctx = torch.autograd.profiler.emit_nvtx(record_shapes=True)
+            backward_nvtx_ctx.__enter__()
         if (
             # train_data_iterator is not None
             args.skip_train_iteration_range is not None
@@ -847,6 +847,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         if args.profile and \
            iteration == args.profile_step_end and \
            torch.distributed.get_rank() in args.profile_ranks:
+            backward_nvtx_ctx.__exit__(None, None, None)
             torch.cuda.cudart().cudaProfilerStop()
 
     return iteration
