@@ -13,6 +13,7 @@ from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
 from .tokenization_chatglm import ChatGLMTokenizer
 from .chinese_sp_tokenizer import GLMChineseTokenizer
+from .tokenization_llama import LlamaTokenizer
 
 
 def build_tokenizer(args):
@@ -67,10 +68,10 @@ def build_tokenizer(args):
     elif args.tokenizer_type == "GLMChineseTokenizer":
         assert args.tokenizer_model is not None
         tokenizer = GLMChineseTokenizer(tokenizer_model=args.tokenizer_model,
-                                       add_block_symbols=args.block_lm,
-                                       add_task_mask=args.task_mask,
-                                       add_decoder_mask=args.block_mask_prob > 0.0 or args.context_mask_ratio > 0.0,
-                                       fix_command_token=args.fix_command_token)
+                                        add_block_symbols=args.block_lm,
+                                        add_task_mask=args.task_mask,
+                                        add_decoder_mask=args.block_mask_prob > 0.0 or args.context_mask_ratio > 0.0,
+                                        fix_command_token=args.fix_command_token)
     elif args.tokenizer_type == 'OptTokenizer':
         assert args.hf_tokenizer_path is not None or (args.vocab_file is not None and args.merge_file is not None)
         tokenizer = _OptTokenizer(args.hf_tokenizer_path, args.vocab_file, args.merge_file)
@@ -80,6 +81,12 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'NullTokenizer':
         assert args.vocab_size is not None
         tokenizer = _NullTokenizer(args.vocab_size)
+    elif args.tokenizer_type == "LLaMASFTTokenizerHF":
+        assert args.tokenizer_model is not None
+        assert args.seq_length is not None
+        seq_length = args.seq_length
+        tokenizer = LlamaTokenizer(vocab_file=args.tokenizer_model, model_max_length=seq_length,
+                                   padding_side="right", pad_token="[PAD]")
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -114,7 +121,7 @@ def _vocab_size_with_padding(orig_vocab_size, args):
     if args.rank == 0:
         print(' > padded vocab (size: {}) with {} dummy tokens '
               '(new size: {})'.format(
-                  orig_vocab_size, after - orig_vocab_size, after), flush=True)
+            orig_vocab_size, after - orig_vocab_size, after), flush=True)
     return after
 
 
@@ -519,7 +526,7 @@ class _SentencePieceTokenizer(AbstractTokenizer):
 class _GPTSentencePieceTokenizer(_SentencePieceTokenizer):
     """SentencePieceTokenizer-Megatron wrapper"""
 
-    def __init__(self, model_file,):
+    def __init__(self, model_file, ):
         super().__init__(model_file, vocab_extra_ids=0)
 
     def _initalize(self, vocab_extra_ids):
@@ -560,7 +567,7 @@ class _NullTokenizer:
     def __init__(self, vocab_size):
         vocab_size = int(vocab_size)
         self._eos_id = vocab_size
-        self.vocab_size = vocab_size+1
+        self.vocab_size = vocab_size + 1
 
     def tokenize(self, text):
         return [int(x) for x in text.split(' ')]
@@ -680,6 +687,7 @@ class _GalacticaHFTokenizer(AbstractTokenizer):
 
     def _escape_custom_split_sequence(self, text):
         """ Applies custom splitting to the text for GALILEO's tokenization"""
+
         # from https://github.com/paperswithcode/galai/blob/main/galai/utils.py#L43
         def _insert_split_marker(m: re.Match):
             """
@@ -698,8 +706,8 @@ class _GalacticaHFTokenizer(AbstractTokenizer):
         text = self._escape_custom_split_sequence(input_text)
         if not text:
             warnings.warn("Found an empty input text. Changing to end-of-document token instead.",
-                    UserWarning
-                )
+                          UserWarning
+                          )
             text = self.tokenizer.eos_token
         return self.tokenizer.encode(text)
 

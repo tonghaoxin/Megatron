@@ -126,6 +126,12 @@ def _build_tokenizer(args):
     return _GLOBAL_TOKENIZER
 
 
+def set_tokenizer(tokenizer):
+    """set global tokenizer"""
+    global _GLOBAL_TOKENIZER
+    _GLOBAL_TOKENIZER = tokenizer
+
+
 def rebuild_tokenizer(args):
     global _GLOBAL_TOKENIZER
     _GLOBAL_TOKENIZER = None

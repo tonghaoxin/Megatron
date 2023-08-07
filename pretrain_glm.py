@@ -140,7 +140,7 @@ def forward_step(data_iterator, model):
     output_tensor = model(tokens, position_ids, attention_mask,
                           labels=labels)
 
-    return output_tensor, partial(loss_func, loss_mask)
+    return output_tensor[0], partial(loss_func, loss_mask)
 
 
 #

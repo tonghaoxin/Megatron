@@ -39,6 +39,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_glm_args(parser)
     parser = _add_chatglm_args(parser)
     parser = _add_blocklm_args(parser)
+    parser = _add_finetune_config_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -902,6 +903,7 @@ def _add_training_args(parser):
                        help='Total number of samples to train over all '
                        'training runs. Note that either train-iters or '
                        'train-samples should be provided.')
+    group.add_argument('--label-smoothing', type=float, default=0.0)
     group.add_argument('--log-interval', type=int, default=100,
                        help='Report loss and timing interval.')
     group.add_argument('--exit-interval', type=int, default=None,
@@ -1291,6 +1293,7 @@ def _add_data_args(parser):
                                 'ChatGLMTokenizer',
                                 'GLMChineseTokenizer',
                                 'OptTokenizer',
+                                'LLaMASFTTokenizerHF',
                                 'NullTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
@@ -1314,6 +1317,9 @@ def _add_data_args(parser):
 
     group.add_argument('--seq2seq-data-collator', action='store_true',
                        help='Use Data Collator For Seq2Seq')
+
+    group.add_argument('--sft-collator', action='store_true', help='Use data collector for sft')
+    group.add_argument('--custom-collator', action='store_true', help='Use data collector for sft')
 
     return parser
 
@@ -1526,4 +1532,36 @@ def _add_chatglm_args(parser):
     group.add_argument("--prompt-history-name", type=str, default=None)
     group.add_argument('--preprocessing-num-workers', type=int, default=2,
                        help='preprocessing num workers token trans string to int')
+    return parser
+
+def _add_finetune_config_args(parser):
+    group = parser.add_argument_group('finetune', 'finetune configurations')
+    group.add_argument('--task', type=str, help='Task name.')
+    group.add_argument('--load-pretrained', type=str, help="Load pretrained model", default=None)
+    group.add_argument('--pool-token', type=str, choices=['start', 'pad', 'cls'],
+                       help='The token to pool the sequence representation', default='cls')
+    group.add_argument('--cloze-eval', action='store_true', help='Evaluation dataset with cloze task')
+    group.add_argument('--multi-token', action='store_true', help='Use multi token for cloze evaluation')
+    group.add_argument('--segment-length', type=int, default=0, help="The maximum segment length for cloze evaluation")
+    group.add_argument('--loss-func', type=str, choices=["cross_entropy", "hinge", "generative", "mix"],
+                       default="cross_entropy")
+    group.add_argument('--block-lm-ratio', type=float, default=0.0)
+    group.add_argument('--adapet', action='store_true', help="Use the decoupled cross entropy loss in AdaPET")
+    group.add_argument('--pattern-id', type=int, default=0)
+    group.add_argument('--few-superglue', action='store_true')
+    group.add_argument('--eval-valid', action='store_true', help="Whether evaluate on the valid set")
+    group.add_argument('--validation-metric', type=str, default=None)
+    group.add_argument('--unidirectional', action='store_true', help="Use the left to right language model")
+    group.add_argument('--src-seq-length', type=int, default=None)
+    group.add_argument('--tgt-seq-length', type=int, default=None)
+    group.add_argument('--wsc-negative', action='store_true')
+    group.add_argument('--overwrite', action='store_true')
+    group.add_argument('--no-validation', action='store_true')
+    # Continuous prompt arguments
+    group.add_argument('--num-prompt-tokens', type=int, default=0)
+    group.add_argument('--prompt-func', default='lstm', choices=["lstm", "mlp", "none"])
+    group.add_argument('--freeze-transformer', action='store_true', default=False)
+    group.add_argument('--tune-prefix-layers', type=int, default=None)
+    group.add_argument('--prompt-init', action='store_true', default=False)
+    group.add_argument('--mask-pad-token', action='store_true')
     return parser

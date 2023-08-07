@@ -33,26 +33,26 @@ def post_language_model_processing(lm_output, labels, logit_weights,
     """
 
     # Output. Format [s b h]
-    output = parallel_lm_logits(
+    logits = parallel_lm_logits(
         lm_output,
         logit_weights,
         parallel_output)
 
     if labels is None:
         # [s b h] => [b s h]
-        return output.transpose(0, 1).contiguous()
+        return logits.transpose(0, 1).contiguous()
     else:
         # [b s] => [s b]
         labels = labels.transpose(0, 1).contiguous()
         if fp16_lm_cross_entropy:
-            assert output.dtype == torch.half
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output, labels)
+            assert logits.dtype == torch.half
+            loss = tensor_parallel.vocab_parallel_cross_entropy(logits, labels)
         else:
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels)
+            loss = tensor_parallel.vocab_parallel_cross_entropy(logits.float(), labels)
 
         # [s b] => [b, s]
         loss = loss.transpose(0, 1).contiguous()
-        return loss
+        return loss, logits.transpose(0, 1).contiguous()
 
 
 class GLMModel(MegatronModule):
@@ -150,7 +150,7 @@ class GLMModel(MegatronModule):
                 self.parallel_output,
                 self.fp16_lm_cross_entropy)
         else:
-            return lm_output
+            return lm_output, None
 
     def state_dict_for_save_checkpoint(self, prefix='', keep_vars=False):
         """
