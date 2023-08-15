@@ -280,105 +280,122 @@ class CoreAttention(MegatronModule):
     @nvtx.annotate("CoreAttention forward", color="cyan")
     def forward(self, query_layer, key_layer,
                 value_layer, attention_mask, alibi=None):
-
-        # ===================================
-        # Raw attention scores. [b, np, s, s]
-        # ===================================
-
-        # [b, np, sq, sk]
-        output_size = (query_layer.size(1),
-                       query_layer.size(2),
-                       query_layer.size(0),
-                       key_layer.size(0))
-
-        # [sq, b, np, hn] -> [sq, b * np, hn]
-        query_layer = query_layer.view(output_size[2],
-                                       output_size[0] * output_size[1], -1)
-        # [sk, b, np, hn] -> [sk, b * np, hn]
-        key_layer = key_layer.view(output_size[3],
-                                   output_size[0] * output_size[1], -1)
-
-        if alibi is None:
-            # preallocting input tensor: [b * np, sq, sk]
-            matmul_input_buffer = mpu.get_global_memory_buffer().get_tensor(
-                (output_size[0]*output_size[1], output_size[2], output_size[3]),
-                query_layer.dtype, "mpu")
-            beta = 0.0
-        else:
-            # use alibi tensor as matmul_input_buffer
-            matmul_input_buffer = alibi[:output_size[0]*output_size[1], :, :output_size[3]]
-            if self.apply_query_key_layer_scaling:
-                beta = 1.0 / self.layer_number
+        args = get_args()
+        if hasattr(torch.nn.functional, "scaled_dot_product_attention") and args.model_type_custom == "chatglm2-6b":
+            query_layer, key_layer, value_layer = [k.permute(1, 2, 0, 3) for k in [query_layer, key_layer, value_layer]]
+            if attention_mask is None and query_layer.shape[2] == key_layer.shape[2]:
+                context_layer = torch.nn.functional.scaled_dot_product_attention(query_layer, key_layer, value_layer,
+                                                                                 is_causal=True)
             else:
-                beta = 1.0
-
-        # Raw attention scores. [b * np, sq, sk]
-        matmul_result = torch.baddbmm(
-            matmul_input_buffer,
-            query_layer.transpose(0, 1),   # [b * np, sq, hn]
-            key_layer.transpose(0, 1).transpose(1, 2),  # [b * np, hn, sk]
-            beta=beta, alpha=(1.0/self.norm_factor))
-
-        # change view to [b, np, sq, sk]
-        attention_scores = matmul_result.view(*output_size)
-
-        if self.enable_debug:
-            debug(self, "before probs", attention_scores=attention_scores)
-
-        # ===========================
-        # Attention probs and dropout
-        # ===========================
-
-        # attention scores and attention mask [b, np, sq, sk]
-        attention_probs = self.scale_mask_softmax(attention_scores,
-                                                  attention_mask)
-
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        if not self.sequence_parallel:
-            with tensor_parallel.get_cuda_rng_tracker().fork():
-                attention_probs = self.attention_dropout(attention_probs)
+                if attention_mask is not None:
+                    attention_mask = ~attention_mask
+                context_layer = torch.nn.functional.scaled_dot_product_attention(query_layer, key_layer, value_layer,
+                                                                                 attention_mask)
+            context_layer = context_layer.permute(2, 0, 1, 3)
+            new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+            context_layer = context_layer.reshape(*new_context_layer_shape)
+            if self.enable_debug:
+                debug(self, "final output", context_layer=context_layer)
         else:
-            attention_probs = self.attention_dropout(attention_probs)
 
-        # =========================
-        # Context layer. [sq, b, hp]
-        # =========================
+            # ===================================
+            # Raw attention scores. [b, np, s, s]
+            # ===================================
 
-        # value_layer -> context layer.
-        # [sk, b, np, hn] --> [b, np, sq, hn]
+            # [b, np, sq, sk]
+            output_size = (query_layer.size(1),
+                        query_layer.size(2),
+                        query_layer.size(0),
+                        key_layer.size(0))
 
-        # context layer shape: [b, np, sq, hn]
-        output_size = (value_layer.size(1),
-                       value_layer.size(2),
-                       query_layer.size(0),
-                       value_layer.size(3))
+            # [sq, b, np, hn] -> [sq, b * np, hn]
+            query_layer = query_layer.view(output_size[2],
+                                        output_size[0] * output_size[1], -1)
+            # [sk, b, np, hn] -> [sk, b * np, hn]
+            key_layer = key_layer.contiguous().view(output_size[3],
+                                    output_size[0] * output_size[1], -1)
 
-        # change view [sk, b * np, hn]
-        value_layer = value_layer.view(value_layer.size(0),
-                                       output_size[0] * output_size[1], -1)
+            if alibi is None:
+                # preallocting input tensor: [b * np, sq, sk]
+                matmul_input_buffer = mpu.get_global_memory_buffer().get_tensor(
+                    (output_size[0]*output_size[1], output_size[2], output_size[3]),
+                    query_layer.dtype, "mpu")
+                beta = 0.0
+            else:
+                # use alibi tensor as matmul_input_buffer
+                matmul_input_buffer = alibi[:output_size[0]*output_size[1], :, :output_size[3]]
+                if self.apply_query_key_layer_scaling:
+                    beta = 1.0 / self.layer_number
+                else:
+                    beta = 1.0
 
-        # change view [b * np, sq, sk]
-        attention_probs = attention_probs.view(output_size[0] * output_size[1],
-                                               output_size[2], -1)
+            # Raw attention scores. [b * np, sq, sk]
+            matmul_result = torch.baddbmm(
+                matmul_input_buffer,
+                query_layer.transpose(0, 1),   # [b * np, sq, hn]
+                key_layer.transpose(0, 1).transpose(1, 2),  # [b * np, hn, sk]
+                beta=beta, alpha=(1.0/self.norm_factor))
 
-        # matmul: [b * np, sq, hn]
-        context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
+            # change view to [b, np, sq, sk]
+            attention_scores = matmul_result.view(*output_size)
+            
+            if self.enable_debug:
+                debug(self, "before probs", attention_scores=attention_scores)
 
-        # change view [b, np, sq, hn]
-        context_layer = context_layer.view(*output_size)
+            # ===========================
+            # Attention probs and dropout
+            # ===========================
 
-        # [b, np, sq, hn] --> [sq, b, np, hn]
-        context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
+            # attention scores and attention mask [b, np, sq, sk]
+            attention_probs = self.scale_mask_softmax(attention_scores,
+                                                    attention_mask)
 
-        # [sq, b, np, hn] --> [sq, b, hp]
-        new_context_layer_shape = context_layer.size()[:-2] + \
-            (self.hidden_size_per_partition,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            if not self.sequence_parallel:
+                with tensor_parallel.get_cuda_rng_tracker().fork():
+                    attention_probs = self.attention_dropout(attention_probs)
+            else:
+                attention_probs = self.attention_dropout(attention_probs)
 
-        if self.enable_debug:
-            debug(self, "final output", attention_probs=attention_probs)
-            debug(self, "final output", context_layer=context_layer)
+            # =========================
+            # Context layer. [sq, b, hp]
+            # =========================
+
+            # value_layer -> context layer.
+            # [sk, b, np, hn] --> [b, np, sq, hn]
+
+            # context layer shape: [b, np, sq, hn]
+            output_size = (value_layer.size(1),
+                        value_layer.size(2),
+                        query_layer.size(0),
+                        value_layer.size(3))
+
+            # change view [sk, b * np, hn]
+            value_layer = value_layer.contiguous().view(value_layer.size(0),
+                                        output_size[0] * output_size[1], -1)
+
+            # change view [b * np, sq, sk]
+            attention_probs = attention_probs.view(output_size[0] * output_size[1],
+                                                output_size[2], -1)
+
+            # matmul: [b * np, sq, hn]
+            context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
+
+            # change view [b, np, sq, hn]
+            context_layer = context_layer.view(*output_size)
+
+            # [b, np, sq, hn] --> [sq, b, np, hn]
+            context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
+
+            # [sq, b, np, hn] --> [sq, b, hp]
+            new_context_layer_shape = context_layer.size()[:-2] + \
+                (self.hidden_size_per_partition,)
+            context_layer = context_layer.view(*new_context_layer_shape)
+
+            if self.enable_debug:
+                debug(self, "final output", attention_probs=attention_probs)
+                debug(self, "final output", context_layer=context_layer)
 
         return context_layer
 
@@ -470,7 +487,9 @@ class ParallelAttention(MegatronModule):
         self.params_dtype = args.params_dtype
         self.sequence_parallel = args.sequence_parallel
         self.rotary_embedding_2d = args.rotary_embedding_2d
+        self.rotary_embedding_2d_to_1d = args.rotary_embedding_2d_to_1d
         self.apply_rotary_positional_embedding_kernel = args.apply_rotary_positional_embedding_kernel
+
         self.group_query_attention = args.group_query_attention
         self.num_query_groups = args.num_query_groups
 
@@ -522,10 +541,11 @@ class ParallelAttention(MegatronModule):
                 rotary_dim = int(rotary_dim * args.rotary_percent)
 
             self.rotary_emb = RotaryEmbeddingWithPositionIds(
-                    self.hidden_size_per_attention_head // (2 if self.rotary_embedding_2d else 1),
-                    base=10000,
-                    precision=args.params_dtype,
-                    learnable=args.learnable_rotary_embedding)
+                self.hidden_size_per_attention_head // (2 if self.rotary_embedding_2d or self.rotary_embedding_2d_to_1d else 1),
+                base=10000,
+                precision=args.params_dtype,
+                learnable=args.learnable_rotary_embedding,
+                rope_ratio=args.rope_ratio)
 
         # Strided linear layer.
         if attention_type == AttnType.self_attn:
@@ -618,7 +638,8 @@ class ParallelAttention(MegatronModule):
             )
             if args.deepnorm
             else output_layer_init_method,
-            skip_bias_add=True,
+            skip_bias_add=(False if args.model_type_custom == "chatglm2-6b"
+            else True),
             **_args_to_kwargs())
 
         self.enable_debug = args.enable_debug
@@ -657,7 +678,6 @@ class ParallelAttention(MegatronModule):
             self.hidden_size_per_attention_head,
             dtype=self.params_dtype,
             device=torch.cuda.current_device())
-
     def _repeat_kv(self, x):
         """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
         if self.num_repeats == 1:
@@ -751,6 +771,7 @@ class ParallelAttention(MegatronModule):
         # call RotaryEmbeddingWithPositionIds forward
         # to get rotary_pos_emb with given position_ids
         # and set corresponding apply_rotary_fn
+        args = get_args()
         if position_ids is not None:
             apply_rotary_fn = (
                 apply_rotary_pos_emb_index_fused
@@ -828,7 +849,14 @@ class ParallelAttention(MegatronModule):
             q_pos_emb, k_pos_emb = rotary_pos_emb
             # call apply_rotary_fn with position_ids
             if position_ids is not None:
-                if self.rotary_embedding_2d:
+                if self.rotary_embedding_2d_to_1d:
+                    cos, sin = q_pos_emb, k_pos_emb
+                    q1, q2 = query_layer.chunk(2, dim=(query_layer.ndim - 1))
+                    k1, k2 = key_layer.chunk(2, dim=(key_layer.ndim - 1))
+                    q1, k1 = apply_rotary_fn(q1, k1, cos, sin, position_ids)
+                    query_layer = torch.concat([q1, q2], dim=(query_layer.ndim - 1))
+                    key_layer = torch.concat([k1, k2], dim=(key_layer.ndim - 1))
+                elif self.rotary_embedding_2d:
                     q1, q2 = query_layer.chunk(2, dim=(query_layer.ndim - 1))
                     k1, k2 = key_layer.chunk(2, dim=(key_layer.ndim - 1))
                     cos, sin = self.rotary_emb(q1, seq_len=position_ids.max() + 1)
@@ -840,10 +868,10 @@ class ParallelAttention(MegatronModule):
                     key_layer = torch.concat([k1, k2], dim=(key_layer.ndim - 1))
                 else:
                     query_layer, key_layer = apply_rotary_fn(query_layer,
-                                                             key_layer,
-                                                             q_pos_emb,
-                                                             k_pos_emb,
-                                                             position_ids)
+                                                            key_layer,
+                                                            q_pos_emb,
+                                                            k_pos_emb,
+                                                            position_ids)
             # call apply_rotary_fn without position_ids
             else:
                 query_layer = apply_rotary_fn(query_layer, q_pos_emb)
@@ -873,7 +901,6 @@ class ParallelAttention(MegatronModule):
         # =================
         # Output. [sq, b, h]
         # =================
-
         output, bias = self.dense(context_layer)
 
         return output, bias
@@ -960,7 +987,8 @@ class ParallelTransformerLayer(MegatronModule):
                 self.input_layernorm = RMSNorm(
                     args.hidden_size,
                     eps=args.rmsnorm_epsilon,
-                    sequence_parallel=args.sequence_parallel)
+                    sequence_parallel=args.sequence_parallel,
+                    weigth_empty=args.rmsnorm_weigth_empty)
 
         # Self attention.
         self.self_attention = ParallelAttention(
@@ -992,7 +1020,8 @@ class ParallelTransformerLayer(MegatronModule):
                 self.post_attention_layernorm = RMSNorm(
                     args.hidden_size,
                     eps=args.rmsnorm_epsilon,
-                    sequence_parallel=args.sequence_parallel)
+                    sequence_parallel=args.sequence_parallel,
+                    weigth_empty=args.rmsnorm_weigth_empty)
 
         if self.layer_type == LayerType.decoder:
             self.inter_attention = ParallelAttention(
@@ -1019,7 +1048,8 @@ class ParallelTransformerLayer(MegatronModule):
                     self.post_inter_attention_layernorm = RMSNorm(
                         args.hidden_size,
                         eps=args.rmsnorm_epsilon,
-                        sequence_parallel=args.sequence_parallel)
+                        sequence_parallel=args.sequence_parallel,
+                        weigth_empty=args.rmsnorm_weigth_empty)
 
         # MLP
         if args.num_experts is not None:
@@ -1519,7 +1549,8 @@ class ParallelTransformer(MegatronModule):
                     self.final_layernorm = RMSNorm(
                         args.hidden_size,
                         eps=args.rmsnorm_epsilon,
-                        sequence_parallel=args.sequence_parallel)
+                        sequence_parallel=args.sequence_parallel,
+                        weigth_empty=args.rmsnorm_weigth_empty)
 
         self.enable_debug = args.enable_debug
 

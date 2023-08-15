@@ -13,6 +13,7 @@ from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
 from .tokenization_chatglm import ChatGLMTokenizer
 from .chinese_sp_tokenizer import GLMChineseTokenizer
+from .chatglm2_tokenization import ChatGLM2Tokenizer
 from .tokenization_llama import LlamaTokenizer
 
 
@@ -81,6 +82,19 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'NullTokenizer':
         assert args.vocab_size is not None
         tokenizer = _NullTokenizer(args.vocab_size)
+    elif args.tokenizer_type == "ChatGLM2Tokenizer":
+        assert args.tokenizer_model is not None
+
+        # prevent transformers from logging info and warnings on each rank
+        import transformers
+        import logging
+        if args.rank == 0:
+            transformers.utils.logging.set_verbosity(logging.INFO)
+        else:
+            # shut the warnings on replicas
+            transformers.utils.logging.set_verbosity(logging.ERROR)
+
+        tokenizer = ChatGLM2Tokenizer(vocab_file=args.tokenizer_model)
     elif args.tokenizer_type == "LLaMASFTTokenizerHF":
         assert args.tokenizer_model is not None
         assert args.seq_length is not None

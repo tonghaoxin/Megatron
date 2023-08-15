@@ -76,7 +76,7 @@ class GLMModel(MegatronModule):
         super(GLMModel, self).__init__(share_word_embeddings=not args.untie_embeddings_and_output_weights)
 
         # Rotary Embedding are required for GLM model
-        if args.model_type_custom in ["glm-130b", "chatglm-6b"] :
+        if args.model_type_custom in ["glm-130b", "chatglm-6b", "chatglm2-6b"] :
             if not args.use_rotary_position_embeddings_with_position_ids:
                 raise RuntimeError("Rotary embedding is required for GLM model")
 
@@ -97,7 +97,8 @@ class GLMModel(MegatronModule):
             scaled_init_method=scaled_init_method_normal(args.init_method_std,
                                                          args.num_layers),
             pre_process=self.pre_process,
-            post_process=self.post_process)
+            post_process=self.post_process,
+            norm_type="rmsnorm" if args.model_type_custom == "chatglm2-6b" else "layernorm" )
 
         if args.dump_model:
             with open('model.txt', 'w') as f:

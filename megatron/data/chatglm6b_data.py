@@ -50,30 +50,52 @@ def build_train_valid_test_datasets(
             if examples[prompt_column][i] and examples[response_column][i]:
                 query, answer = examples[prompt_column][i], examples[response_column][i]
 
-                if history_column is None:
-                    prompt = query
+                # chatglm2 
+                # [Round {}]\n\n问：{}\n\n答：{}\n\n
+                # [gmask]+sop+source+target+eos
+                # label是len([gmask]+sop+source)大小直接给padding
+                # chatglm  
+                # [Round {}]\n问：{}\n答：{}\n
+                # source+[gmask, bos]+target+eos
+                # label bos前面的都是-100
+                if args.model_type_custom == "chatglm2-6b":
+                    history = examples[history_column][i] if history_column is not None else None
+                    prompt = tokenizer.build_prompt(query, history)
+                
+                    prompt = prefix + prompt
+                    a_ids = tokenizer.encode(text=prompt, add_special_tokens=True, truncation=True,
+                                         max_length=max_source_length)
+                    b_ids = tokenizer.encode(text=answer, add_special_tokens=False, truncation=True,
+                                         max_length=max_target_length)
+
+                    context_length = len(a_ids)
+                    input_ids = a_ids + b_ids + [tokenizer.eos_token_id]
+                    labels = [tokenizer.pad_token_id] * context_length + b_ids + [tokenizer.eos_token_id]
+                    
                 else:
-                    prompt = ""
-                    history = examples[history_column][i]
-                    for turn_idx, (old_query, response) in enumerate(history):
-                        prompt += "[Round {}]\n问：{}\n答：{}\n".format(turn_idx, old_query, response)
-                    prompt += "[Round {}]\n问：{}\n答：".format(len(history), query)
+                    if history_column is None:
+                        prompt = query
+                    else:
+                        prompt = ""
+                        history = examples[history_column][i]
+                        for turn_idx, (old_query, response) in enumerate(history):
+                            prompt += "[Round {}]\n问：{}\n答：{}\n".format(turn_idx, old_query, response)
+                        prompt += "[Round {}]\n问：{}\n答：".format(len(history), query)
 
-                prompt = prefix + prompt
-                a_ids = tokenizer.encode(text=prompt, add_special_tokens=False)
-                b_ids = tokenizer.encode(text=answer, add_special_tokens=False)
+                    prompt = prefix + prompt
+                    a_ids = tokenizer.encode(text=prompt, add_special_tokens=False)
+                    b_ids = tokenizer.encode(text=answer, add_special_tokens=False)
 
-                if len(a_ids) > max_source_length - 1:
-                    a_ids = a_ids[: max_source_length - 1]
+                    if len(a_ids) > max_source_length - 1:
+                        a_ids = a_ids[: max_source_length - 1]
 
-                if len(b_ids) > max_target_length - 2:
-                    b_ids = b_ids[: max_target_length - 2]
+                    if len(b_ids) > max_target_length - 2:
+                        b_ids = b_ids[: max_target_length - 2]
 
-                input_ids = tokenizer.build_inputs_with_special_tokens(a_ids, b_ids)
-
-                context_length = input_ids.index(tokenizer.bos_token_id)
-                mask_position = context_length - 1
-                labels = [-100] * context_length + input_ids[mask_position + 1:]
+                    input_ids = tokenizer.build_inputs_with_special_tokens(a_ids, b_ids)
+                    context_length = input_ids.index(tokenizer.bos_token_id)    
+                    mask_position = context_length - 1
+                    labels = [-100] * context_length + input_ids[mask_position + 1:]
                 
                 pad_len = max_seq_length - len(input_ids)
                 input_ids = input_ids + [tokenizer.pad_token_id] * pad_len

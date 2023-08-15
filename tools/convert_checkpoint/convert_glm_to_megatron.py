@@ -28,6 +28,7 @@ name_map = {
 
 LAYER_CONCAT_DIM = {
     "attention.dense.weight": 1,
+    "self_attention.dense.weight": 1,
     "mlp.dense_4h_to_h.weight": 1,
 }
 
@@ -43,6 +44,7 @@ SEQUENTIAL_LAYERS = [
     "final_layernorm.weight",
     "final_layernorm.bias",
     "attention.rotary_emb.inv_freq",
+    "output_layer.weight",
 ]
 
 # GLU_LAYERS = [
@@ -153,11 +155,19 @@ def add_megatron_checkpoint_args(parser):
     parser.add_argument(
         "--model_type",
         default='glm-130b',
-        choices=['glm-130b', 'glm-10b-chinese', 'chatglm-6b'],
+        choices=['glm-130b', 'glm-10b-chinese', 'chatglm-6b', 'chatglm2-6b'],
         help=(
             "The GLM model type of the converted checkpoint."
         ),
     )
+    parser.add_argument(
+        "--add_qkv_reordering",
+        action='store_true',
+        help=(
+            "add_qkv_reordering."
+        ),
+    )
+
     return parser
 
 
@@ -341,6 +351,7 @@ def preprocess(args):
             "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
             "rank": 0,
             "tokenizer_type": "IceTokenizer",
+            "compile_str": "transformer.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)",
         }
 
     elif args.model_type == 'glm-10b-chinese':
@@ -395,6 +406,7 @@ def preprocess(args):
                 "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
                 "rank": 0,
                 "tokenizer_type": "ChineseSPTokenizer",
+                "compile_str": "transformer.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)",
             }
         else:
             megatron_args = {
@@ -410,6 +422,7 @@ def preprocess(args):
                 "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
                 "rank": 0,
                 "tokenizer_type": "ChineseSPTokenizer",
+                "compile_str": "transformer.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)",
             }
 
     elif args.model_type == 'chatglm-6b':
@@ -461,7 +474,62 @@ def preprocess(args):
             "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
             "rank": 0,
             "tokenizer_type": "ChatGLMTokenizer",
+            "compile_str": "transformer.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)",
         }
+    elif args.model_type == 'chatglm2-6b':
+        # load transformer model state dict
+        sub_dirs = [x for x in os.listdir(args.load_path) if x.startswith("pytorch_model")]
+        if len(sub_dirs) == 1:
+            checkpoint_name = "pytorch_model.bin"
+            state_dict = torch.load(os.path.join(args.load_path, checkpoint_name), map_location="cpu")
+        else:
+            num_checkpoints = len(sub_dirs) - 1
+            state_dict = merge_transformers_sharded_states(args.load_path, num_checkpoints)
+
+        # enable embedding padding workflow
+        args.add_embedding_padding = True
+
+        # disable positional embedding
+        args.add_position_embedding = False
+
+        # use rotary positional embeddings
+        args.use_rotary_position_embeddings = True
+
+        # use rotary embedding 2d
+        args.use_rotary_embedding_2d = True
+
+        # reset source checkpoint type to hf
+        args.source_ckpt_type = 'hf'
+
+        # disable qkv ordering
+        args.add_qkv_reordering =True
+
+        # set megatron args
+        from transformers import AutoConfig
+        config = AutoConfig.from_pretrained(args.load_path,
+                                            trust_remote_code=True,
+                                            max_sequence_length=1024,
+                                            position_encoding_2d=args.use_rotary_embedding_2d)
+        print(f"--------- Model hf config: ----------- \n {config}")
+
+        megatron_args = {
+            "orig_vocab_size": config.padded_vocab_size,
+            "max_position_embeddings": None,
+            "hidden_size": config.hidden_size,
+            "num_layers": config.num_layers,
+            "num_attention_heads": config.num_attention_heads,
+            "ffn_hidden_size": config.ffn_hidden_size,
+            "tensor_model_parallel_size": args.target_tensor_model_parallel_size,
+            "pipeline_model_parallel_size": args.target_pipeline_model_parallel_size,
+            "data_parallel_size": args.target_data_parallel_size,
+            "make_vocab_size_divisible_by": args.make_vocab_size_divisible_by,
+            "rank": 0,
+            "tokenizer_type": "ChatGLM2Tokenizer",
+            "multi_query_attention": config.multi_query_attention,
+            "multi_query_group_num": config.multi_query_group_num,
+            "compile_str": "transformer.encoder.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)",
+        }
+
 
 
     # set up margs
@@ -505,7 +573,6 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
         except ModuleNotFoundError:
             print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
             exit(1)
-
     # Saving the tracker file
     tracker_filepath = os.path.join(args.save_path, "latest_checkpointed_iteration.txt")
     with open(tracker_filepath, "w") as f:
@@ -563,6 +630,9 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
         word_embedding = state_dict["transformer.word_embeddings.weight"].to(dtype)
     elif args.model_type == 'glm-10b-chinese':
         word_embedding = state_dict["word_embeddings.weight"].to(dtype)
+    elif args.model_type == 'chatglm2-6b':
+        word_embedding = state_dict["transformer.embedding.word_embeddings.weight"].to(dtype)
+
 
     if args.add_position_embedding:
         position_embedding = state_dict["transformer.position_embeddings.weight"].to(dtype)
@@ -636,8 +706,7 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
     # Obtain num_layers for each pipeline stage
     layer_list, layer_index = get_num_layers_per_pipeline(args, margs)
 
-    layer_re = re.compile("transformer.layers\.(\d+)\.([a-z0-9_.]+)\.([a-z]+)")
-
+    layer_re = re.compile(margs.compile_str)
     for pp_rank in range(args.target_pipeline_model_parallel_size):
         num_layers = layer_list[pp_rank]
         layer_offset = layer_index[pp_rank]
@@ -655,7 +724,7 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
             layers_to_copy = [
                 layer_name
                 for layer_name in state_dict.keys()
-                if layer_name.startswith(f"transformer.layers.{pp_layer_id}.")
+                if layer_name.startswith(f"transformer.layers.{pp_layer_id}.") or layer_name.startswith(f"transformer.encoder.layers.{pp_layer_id}.")
             ]
             print(layers_to_copy)
 
@@ -683,12 +752,18 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
                     op_name = 'attention.rotary_emb.inv_freq'
                     find_rope_invfreq = True
 
-                mapped_op_name = name_map[op_name]
+                if op_name in name_map.keys():
+                    mapped_op_name = name_map[op_name]
+                else:
+                    mapped_op_name = None
 
                 if mapped_op_name == 'self_attention.rotary_emb.inv_freq':
                     layer_name = f"layers.{layer}.{mapped_op_name}"
                 else:
-                    layer_name = f"layers.{layer}.{mapped_op_name}.{weight_or_bias}"
+                    if mapped_op_name is None:
+                        layer_name = f"layers.{layer}.{op_name}.{weight_or_bias}"
+                    else:
+                        layer_name = f"layers.{layer}.{mapped_op_name}.{weight_or_bias}"
 
                 print(f"==== find {op_name}, to {layer_name} ====")
 
@@ -699,8 +774,9 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
                 # chunk non-sequential layers according to target tp degree
                 if op_name != 'attention.rotary_emb.inv_freq':
                     op_name = op_name + "." + weight_or_bias
-
-                if op_name == ("attention.query_key_value." + weight_or_bias) and args.add_qkv_reordering:
+                    
+                if (op_name == ("attention.query_key_value." + weight_or_bias) and args.add_qkv_reordering) or \
+                    (op_name == ("self_attention.query_key_value." + weight_or_bias) and args.add_qkv_reordering):
                     if args.source_ckpt_type == 'sat':
                         input_shape = params.size()
                         current_shape = (args.source_tensor_model_parallel_size,
@@ -711,21 +787,54 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
                         params = params.transpose(0, 1).contiguous()
                         params = params.view(*input_shape)
 
-                    params = transformers_to_megatron_fix_query_key_value_ordering(
-                        params,
-                        3.0,
-                        3,
-                        heads,
-                        hidden_size_per_head
-                    )
-
+                    if margs.multi_query_attention:
+                        query_size = heads
+                        key_size = margs.multi_query_group_num
+                        value_size = margs.multi_query_group_num
+                        split_sizes = [query_size, key_size, value_size]
+                        input_shape = params.size()
+                        if op_name == "self_attention.query_key_value.weight":
+                            current_shape = (int(query_size+key_size+value_size), hidden_size_per_head) + input_shape[1:]
+                        else:
+                            current_shape = (int(query_size+key_size+value_size), hidden_size_per_head)
+                        param = params.view(*current_shape)
+                        sub_tensors = torch.split(param, split_sizes, dim=0)
+                        query = sub_tensors[0]
+                        key = sub_tensors[1]
+                        value = sub_tensors[2]
+                        print("query.shape:"+str(query.shape)+"key.shape:"+str(key.shape)+"value:"+str(value.shape))
+                        querys = torch.chunk(query, args.target_tensor_model_parallel_size, dim=0)
+                        keys = torch.chunk(key, args.target_tensor_model_parallel_size, dim=0)
+                        values = torch.chunk(value, args.target_tensor_model_parallel_size, dim=0)
+                        params = []
+                        for i in range(args.target_tensor_model_parallel_size):
+                            tmp = torch.cat(((querys[i]),keys[i],values[i]), dim=0)
+                            item = torch.flatten(tmp, start_dim=0, end_dim=1)
+                            params.append(item)
+                    else:
+                        params = transformers_to_megatron_fix_query_key_value_ordering(
+                            params,
+                            3.0,
+                            3,
+                            heads,
+                            hidden_size_per_head,
+                        )
                 if op_name not in SEQUENTIAL_LAYERS:
-                    print(f"op_name: {op_name}; params.shape: {params.shape}")
-                    params = torch.chunk(params,
+                    if op_name != "self_attention.query_key_value.weight" and op_name != "self_attention.query_key_value.bias":
+                        print(f"before chunk op_name: {op_name}; params.shape: {params.shape} {params}",)
+                        if op_name == "mlp.dense_h_to_4h.weight":
+                            _shape = params.shape
+                            params = params.view(2,
+                                                args.target_tensor_model_parallel_size,
+                                                _shape[0]//( 2 * args.target_tensor_model_parallel_size),
+                                                _shape[1])
+                            params = params.transpose(0,1).contiguous()
+                            params = params.view(*_shape)
+
+                        params = torch.chunk(params,
                                          args.target_tensor_model_parallel_size,
                                          dim=LAYER_CONCAT_DIM.get(op_name, 0))
-                    print(f"after chunk op_name: {op_name}; params.shape: {params[0].shape}")
-
+                        print(f"after chunk op_name: {op_name}; params.shape: {params[0].shape} {params[0]} ")
                 for i in range(args.target_tensor_model_parallel_size):
                     params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.encoder")
                     params_dict[layer_name] = (
@@ -739,17 +848,35 @@ def convert_checkpoint_to_megatron(args, margs, state_dict):
                 layer_name = f"layers.{layer}.{mapped_op_name}"
                 for i in range(args.target_tensor_model_parallel_size):
                     params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.encoder")
-                    params_dict[layer_name] = rotary_emb.inv_freq.to(dtype)
+                    if "transformer.rotary_pos_emb.inv_freq" in state_dict.keys():
+                        # chatglm2 get rotary_emb.inv_freq from hf
+                        params_dict[layer_name] = state_dict["transformer.rotary_pos_emb.inv_freq"].to(dtype)
+                    else:
+                        params_dict[layer_name] = rotary_emb.inv_freq.to(dtype)
 
         if pp_rank == args.target_pipeline_model_parallel_size - 1:
+            # output-layer deal in pp last stage
+            if "transformer.output_layer.weight" in state_dict:
+                output_layer = state_dict["transformer.output_layer.weight"].to(dtype)
+                out_output_layer = torch.chunk(output_layer, args.target_tensor_model_parallel_size, dim=0)
+                layer_name = f"output_layer.weight"
+                for i in range(args.target_tensor_model_parallel_size):
+                    params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.output_layer")
+                    params_dict["weight"] = out_output_layer[i].clone()
+
             # handle final layernorm
             # weight_or_bias = "weight"
             for weight_or_bias in ["weight", "bias"]:
-                params = state_dict[f"transformer.final_layernorm.{weight_or_bias}"].to(dtype)
-                layer_name = f"final_layernorm.{weight_or_bias}"
-                for i in range(args.target_tensor_model_parallel_size):
-                    params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.encoder")
-                    params_dict[layer_name] = params
+                params = None
+                if "transformer.encoder.final_layernorm."+weight_or_bias in state_dict.keys():
+                    params = state_dict[f"transformer.encoder.final_layernorm.{weight_or_bias}"].to(dtype)
+                if "transformer.final_layernorm."+weight_or_bias in state_dict.keys():
+                    params = state_dict[f"transformer.final_layernorm.{weight_or_bias}"].to(dtype)
+                if params is not None:
+                    layer_name = f"final_layernorm.{weight_or_bias}"
+                    for i in range(args.target_tensor_model_parallel_size):
+                        params_dict = get_element_from_dict_by_path(output_state_dict[i], "model.language_model.encoder")
+                        params_dict[layer_name] = params
 
             # add the LM head
             if state_dict.get("lm_head.weight", None) is None:

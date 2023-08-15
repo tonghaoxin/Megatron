@@ -6,7 +6,7 @@ from apex.normalization.fused_layer_norm import FusedRMSNorm as ApexFusedRMSNorm
 
 class RMSNorm(torch.nn.Module):
     """RMSNorm."""
-    def __init__(self, dim, eps=1e-6, sequence_parallel=False):
+    def __init__(self, dim, eps=1e-6, sequence_parallel=False, weigth_empty=False):
         """
         Init method
         Args:
@@ -16,7 +16,10 @@ class RMSNorm(torch.nn.Module):
         """
         super().__init__()
         self.eps = eps
-        self.weight = torch.nn.Parameter(torch.ones(dim))
+        if weigth_empty:
+            self.weight = torch.nn.Parameter(torch.empty(dim))
+        else:
+            self.weight = torch.nn.Parameter(torch.ones(dim))
         self.sequence_parallel = sequence_parallel
 
         setattr(self.weight, 'sequence_parallel', self.sequence_parallel)

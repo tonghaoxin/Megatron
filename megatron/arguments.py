@@ -7,6 +7,7 @@ import collections
 import json
 import os
 import torch
+import torch.nn.functional
 import types
 
 from megatron.global_vars import set_retro_args, get_retro_args
@@ -102,7 +103,11 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
 
-
+    # torch2.x 禁用scaled-dot-product-attetion的算子优化, 可能会导致结果不准确
+    if args.disable_scaled_dot_product_attetion_op and hasattr(torch.nn.functional, "scaled_dot_product_attention"):
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        
     return args
 
 def validate_args(args, defaults={}):
@@ -638,8 +643,12 @@ def _add_network_size_args(parser):
                        help='Use rotary positional embeddings with position ids or not')
     group.add_argument('--rotary-percent', type=float, default=1.0,
                        help='Percent of rotary dimension to use, default 100%')
+    group.add_argument('--rope-ratio', type=float, default=1.0,
+                       help='ratio of rope to use, default 1')
     group.add_argument('--rotary-embedding-2d', action='store_true',
                        help='If set, use 2D rotary embedding.')
+    group.add_argument('--rotary-embedding-2d-to-1d', action='store_true',
+                       help='If set, use 2D rotary embedding and 2dto1d.')
     group.add_argument('--apply-rotary-positional-embedding-kernel', action='store_true',
                        help='Use custom cuda kernel for rotary positional embedding.')
     group.add_argument('--learnable-rotary-embedding', action='store_true',
@@ -1295,8 +1304,10 @@ def _add_data_args(parser):
                                 'ChatGLMTokenizer',
                                 'GLMChineseTokenizer',
                                 'OptTokenizer',
+                                'ChatGLM2Tokenizer',
                                 'LLaMASFTTokenizerHF',
                                 'NullTokenizer'],
+                       
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
@@ -1461,7 +1472,7 @@ def _add_vision_args(parser):
     group.add_argument('--dino-warmup-teacher-temp-epochs', type=int, default=30,
                        help='warmup teacher temperaure epochs')
     group.add_argument('--model-type-custom', type=str, required=False, default=None,
-                        choices=['chatglm-6b', 'glm-10b', 'glm-130b'],
+                        choices=['chatglm-6b', 'glm-10b', 'glm-130b', 'chatglm2-6b'],
                        help='custom model type such as chatglm-6b, glm-10b, glm-130b')
 
     return parser
@@ -1534,6 +1545,11 @@ def _add_chatglm_args(parser):
     group.add_argument("--prompt-history-name", type=str, default=None)
     group.add_argument('--preprocessing-num-workers', type=int, default=2,
                        help='preprocessing num workers token trans string to int')
+    group.add_argument('--add-qkv-bias', type=bool, required=False,
+                       help='add-qkv-bias')
+    group.add_argument('--rmsnorm-weigth-empty', type=bool, default=False, required=False,
+                       help='rmsnorm-weigth-empty')
+    group.add_argument('--disable-scaled-dot-product-attetion-op', action='store_true', default=False)
     return parser
 
 def _add_finetune_config_args(parser):

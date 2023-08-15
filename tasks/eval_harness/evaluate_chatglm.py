@@ -40,6 +40,31 @@ from megatron.model.distributed import DistributedDataParallel as LocalDDP
 from megatron.model.module import Float16Module
 
 
+def get_masks_chatglm2(input_ids, past_key_values, padding_mask=None):
+    batch_size, seq_length = input_ids.shape
+    full_attention_mask = torch.ones(batch_size, seq_length, seq_length, device=input_ids.device)
+    full_attention_mask.tril_()
+    past_length = 0
+    if past_key_values:
+        past_length = past_key_values[0][0].shape[0]
+    if past_length:
+        full_attention_mask = torch.cat((torch.ones(batch_size, seq_length, past_length,
+                                                    device=input_ids.device), full_attention_mask), dim=-1)
+    if padding_mask is not None:
+        full_attention_mask = full_attention_mask * padding_mask.unsqueeze(1)
+    if not past_length and padding_mask is not None:
+        full_attention_mask -= padding_mask.unsqueeze(-1) - 1
+    full_attention_mask = (full_attention_mask < 0.5).bool()
+    full_attention_mask.unsqueeze_(1)
+    return full_attention_mask
+
+
+
+def get_position_ids_chatglm2(input_ids, device):
+    batch_size, seq_length = input_ids.shape
+    position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
+    return position_ids
+
 def get_masks(input_ids, device):
     """Generate attention mask."""
 
@@ -77,15 +102,20 @@ def get_position_ids(input_ids, mask_positions, device):
 
 
 def get_masks_and_position_ids(tokens):
+    args = get_args()
+    
     tokenizer = get_tokenizer()
-
-    attention_mask = get_masks(tokens, tokens.device)
-    MASK, gMASK = tokenizer.mask_token_id, tokenizer.gmask_token_id
-    mask_positions = []
-    for seq in tokens.tolist():
-        mask_token = gMASK if gMASK in seq else MASK
-        mask_positions.append(seq.index(mask_token))
-    position_ids = get_position_ids(tokens, mask_positions, tokens.device)
+    if args.model_type_custom == "chatglm2-6b":
+        attention_mask = get_masks_chatglm2(tokens, None, None)
+        position_ids = get_position_ids_chatglm2(tokens, tokens.device)
+    else:
+        attention_mask = get_masks(tokens, tokens.device)
+        MASK, gMASK = tokenizer.mask_token_id, tokenizer.gmask_token_id
+        mask_positions = []
+        for seq in tokens.tolist():
+            mask_token = gMASK if gMASK in seq else MASK
+            mask_positions.append(seq.index(mask_token))
+        position_ids = get_position_ids(tokens, mask_positions, tokens.device)
 
     return attention_mask, position_ids
 
