@@ -692,6 +692,8 @@ def _add_network_size_args(parser):
                        choices=['relu', 'gelu', 'geglu', 'liglu', 'reglu', 'swiglu',
                                 'openai_gelu', 'erf_gelu', 'squared_relu'],
                        help='Activation function for MLP layer.')
+    group.add_argument('--apply-activation-func-fusion', action='store_true',
+                       help='If set, use torch.jit.script to fuse activation function.')
     group.add_argument('--bert-no-binary-head', action='store_false',
                        help='Disable BERT binary head.',
                        dest='bert_binary_head')

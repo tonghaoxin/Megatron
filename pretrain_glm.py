@@ -143,7 +143,6 @@ def forward_step(data_iterator, model):
     return output_tensor[0], partial(loss_func, loss_mask)
 
 
-#
 def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
     args = get_args()

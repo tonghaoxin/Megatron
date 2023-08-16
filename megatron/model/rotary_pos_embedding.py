@@ -17,7 +17,8 @@ except ImportError:
     pass
 
 
-__all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds', 'apply_rotary_pos_emb',
+__all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds',
+           'apply_rotary_pos_emb', 'apply_rotary_pos_emb_fused',
            'apply_rotary_pos_emb_index', 'apply_rotary_pos_emb_index_fused']
 
 
@@ -176,7 +177,18 @@ def apply_rotary_pos_emb(t, freqs):
     return torch.cat((t, t_pass), dim=-1)
 
 
-@torch.jit.script
+def apply_rotary_pos_emb_fused(t, freqs):
+    """
+    Fused RoPE function
+    """
+    rot_dim = freqs.shape[-1]
+    # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
+    t, t_pass = t[..., :rot_dim], t[..., rot_dim:]
+
+    t = RotaryPositionalEmbeddingFunction.apply(t, freqs.cos(), freqs.sin())
+    return torch.cat((t, t_pass), dim=-1)
+
+
 def apply_rotary_pos_emb_index(q, k, cos, sin, position_id):
     """
     RoPE function using position_id
@@ -189,6 +201,9 @@ def apply_rotary_pos_emb_index(q, k, cos, sin, position_id):
 
 
 def apply_rotary_pos_emb_index_fused(q, k, cos, sin, position_id):
+    """
+    Fused RoPE function using position_id
+    """
     # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, hn] -> [sq, b, 1, hn]
     cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(2), \
                F.embedding(position_id, sin.squeeze(1)).unsqueeze(2)

@@ -20,7 +20,7 @@ from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
-from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
+from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb, apply_rotary_pos_emb_fused
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index, apply_rotary_pos_emb_index_fused
 from megatron.model.utils import attention_mask_func, get_deepnorm_coefficients, init_method_normal
 from megatron.utils import print_rank, get_hook_fn, debug
@@ -144,10 +144,14 @@ class ParallelMLP(MegatronModule):
                     v, deepnorm_coeff.beta, tp_degree=world_size, partition_dim=0
                 )
 
+        # Activation function
         self.bias_gelu_fusion = False
         if args.activation_func == 'gelu':
             self.bias_gelu_fusion = args.bias_gelu_fusion
         self.activation_func = ACTIVATION_FUNCS[args.activation_func]
+        if args.apply_activation_func_fusion:
+            #NOTE: JIT-compilation may lead to bad result, check it carefully
+            self.activation_func = torch.jit.script(self.activation_func)
 
         # Project back to h.
         self.dense_4h_to_h = tensor_parallel.RowParallelLinear(
@@ -782,7 +786,11 @@ class ParallelAttention(MegatronModule):
             position_ids = position_ids.transpose(0, 1)
             rotary_pos_emb = self.rotary_emb(value_layer, seq_len=position_ids.max() + 1)
         else:
-            apply_rotary_fn = apply_rotary_pos_emb
+            apply_rotary_fn = (
+                apply_rotary_pos_emb_fused
+                if self.apply_rotary_positional_embedding_kernel
+                else apply_rotary_pos_emb
+            )
 
         if self.enable_debug:
             debug(self, "after rotary", position_ids=position_ids)

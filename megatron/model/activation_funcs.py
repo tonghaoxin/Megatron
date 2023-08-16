@@ -106,7 +106,6 @@ class SquaredReLU(_ActivationBaseModule):
 
 relu = F.relu
 gelu = F.gelu
-#FIXME: verify if we can use torh.jit.script for the following acitvation funcs
 liglu = LiGLU()
 geglu = GeGLU()
 reglu = ReGLU()

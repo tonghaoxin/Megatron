@@ -50,6 +50,7 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                --activation-func swiglu \
                --use-rotary-position-embeddings \
+               --apply-rotary-positional-embedding-kernel \
                --rmsnorm-epsilon 1e-6 \
                --fused-rmsnorm \
                --no-position-embedding \
@@ -58,9 +59,8 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --hidden-dropout 0 \
                --use-distributed-optimizer \
                --untie-embeddings-and-output-weights \
+               --initial-loss-scale 16 \
                --use-flash-attn \
-               --multi-query-attention \
-               --multi-query-group-num 1 \
                --fp16"
                # --use-alibi-position-embeddings \
                # --sequence-parallel
@@ -179,11 +179,11 @@ OUTPUT_ARGS="--log-interval 1 \
              --eval-iters 10"
 
 OTHER_ARGS="--save $CHECKPOINT_PATH \
+            --load $CHECKPOINT_PATH \
             --data-path $DATA_PATH \
             --data-impl mmap \
             --split 949,50,1 \
             --distributed-backend nccl"
-            # --load $CHECKPOINT_PATH \
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \
