@@ -552,7 +552,7 @@ class ParallelAttention(MegatronModule):
             self.query_key_value = tensor_parallel.ColumnParallelLinear(
                 args.hidden_size,
                 projection_size + 2 * key_projection_size,
-                bias=args.add_bias_linear,
+                bias=args.add_bias_linear or args.add_qkv_bias,
                 gather_output=False,
                 init_method=init_method,
                 async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
