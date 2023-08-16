@@ -338,7 +338,7 @@ class CoreAttention(MegatronModule):
 
             # change view to [b, np, sq, sk]
             attention_scores = matmul_result.view(*output_size)
-            
+
             if self.enable_debug:
                 debug(self, "before probs", attention_scores=attention_scores)
 
@@ -545,7 +545,7 @@ class ParallelAttention(MegatronModule):
                 base=10000,
                 precision=args.params_dtype,
                 learnable=args.learnable_rotary_embedding,
-                rope_ratio=args.rope_ratio)
+                seq_len_interpolation_factor=args.rotary_seq_len_interpolation_factor)
 
         # Strided linear layer.
         if attention_type == AttnType.self_attn:

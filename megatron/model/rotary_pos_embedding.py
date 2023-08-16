@@ -26,8 +26,9 @@ class RotaryEmbedding(nn.Module):
     Original RotaryEmbedding
     """
 
-    def __init__(self, dim):
+    def __init__(self, dim, seq_len_interpolation_factor=1):
         super().__init__()
+        self.seq_len_interpolation_factor = seq_len_interpolation_factor
         inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer('inv_freq', inv_freq)
         if importlib.util.find_spec('einops') is None:
@@ -36,7 +37,7 @@ class RotaryEmbedding(nn.Module):
     @nvtx.annotate("RotaryEmbedding forward", color="indigo")
     def forward(self, max_seq_len, offset=0):
         seq = torch.arange(max_seq_len, device=self.inv_freq.device) + offset
-        freqs = einsum('i , j -> i j', seq.type_as(self.inv_freq), self.inv_freq)
+        freqs = einsum('i , j -> i j', seq.type_as(self.inv_freq) / self.seq_len_interpolation_factor, self.inv_freq)
         # first part even vector components, second part odd vector components,
         #  2 * dim in dimension size
         emb = torch.cat((freqs, freqs), dim=-1)
@@ -58,7 +59,7 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
     RotaryEmbedding with position ids
     """
 
-    def __init__(self, dim, base=10000, precision=torch.half, learnable=False, rope_ratio=1):
+    def __init__(self, dim, base=10000, precision=torch.half, learnable=False, seq_len_interpolation_factor=1):
         """
         __init__ function
         Args:
@@ -80,7 +81,7 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
             self.cos_cached = None
             self.sin_cached = None
         self.precision = precision
-        self.rope_ratio = rope_ratio
+        self.seq_len_interpolation_factor = seq_len_interpolation_factor
 
     @nvtx.annotate("RotaryEmbeddingWithPositionIds forward", color="indigo")
     def forward(self, x, seq_dim=1, seq_len=None):
@@ -96,7 +97,7 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
             seq_len = x.shape[seq_dim]
         if self.max_seq_len_cached is None or (seq_len > self.max_seq_len_cached):
             self.max_seq_len_cached = None if self.learnable else seq_len
-            t = torch.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype) / self.rope_ratio
+            t = torch.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype) / self.seq_len_interpolation_factor
             freqs = torch.einsum('i,j->ij', t, self.inv_freq)
             # Different from paper, but it uses a different permutation in order to obtain the same calculation
             emb = torch.cat((freqs, freqs), dim=-1).to(x.device)

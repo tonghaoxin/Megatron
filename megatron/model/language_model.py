@@ -548,7 +548,10 @@ class TransformerLanguageModel(MegatronModule):
             # partial rotary embeddings, which is better than full rotary
             # Wang and Komatsuzaki et al
             # https://github.com/kingoflolz/mesh-transformer-jax/
-            self.rotary_pos_emb = RotaryEmbedding(rotary_dim)
+            self.rotary_pos_emb = RotaryEmbedding(
+                rotary_dim,
+                seq_len_interpolation_factor=args.rotary_seq_len_interpolation_factor
+            )
 
         # Retriever (bi-directional transformer with cross attention)
         if args.retro_add_retriever:

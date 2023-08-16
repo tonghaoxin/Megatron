@@ -107,7 +107,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     if args.disable_scaled_dot_product_attetion_op and hasattr(torch.nn.functional, "scaled_dot_product_attention"):
         torch.backends.cuda.enable_flash_sdp(False)
         torch.backends.cuda.enable_mem_efficient_sdp(False)
-        
+
     return args
 
 def validate_args(args, defaults={}):
@@ -638,13 +638,13 @@ def _add_network_size_args(parser):
                        help='Maximum number of position embeddings to use. '
                        'This is the size of position embedding.')
     group.add_argument('--use-rotary-position-embeddings', action='store_true',
-                       help='Use rotary positional embeddings or not')
+                       help='Use rotary positional embeddings or not.')
     group.add_argument('--use-rotary-position-embeddings-with-position-ids', action='store_true',
-                       help='Use rotary positional embeddings with position ids or not')
+                       help='Use rotary positional embeddings with position ids or not.')
     group.add_argument('--rotary-percent', type=float, default=1.0,
                        help='Percent of rotary dimension to use, default 100%')
-    group.add_argument('--rope-ratio', type=float, default=1.0,
-                       help='ratio of rope to use, default 1')
+    group.add_argument('--rotary-seq-len-interpolation-factor', type=int, default=1,
+                       help='Sequence length interpolation factor for rotary embeddings.')
     group.add_argument('--rotary-embedding-2d', action='store_true',
                        help='If set, use 2D rotary embedding.')
     group.add_argument('--rotary-embedding-2d-to-1d', action='store_true',
@@ -657,13 +657,13 @@ def _add_network_size_args(parser):
                        help='Use learned positional embeddings for opt/galactica '
                        'model training')
     group.add_argument('--use-alibi-position-embeddings', action='store_true',
-                       help='Use alibi positional embeddings or not')
+                       help='Use alibi positional embeddings or not.')
     group.add_argument('--no-position-embedding',
                        action='store_false',
                        help='Disable position embedding.',
                        dest='add_position_embedding')
     group.add_argument('--positional-encoding-2d', action='store_true',
-                       help='Use positional encoding 2d or not')
+                       help='Use positional encoding 2d or not.')
     group.add_argument('--make-vocab-size-divisible-by', type=int, default=128,
                        help='Pad the vocab size to be divisible by this value.'
                        'This is added for computational efficieny reasons.')
@@ -681,22 +681,22 @@ def _add_network_size_args(parser):
                        help='If set, use original BERT residula connection '
                        'ordering.')
     group.add_argument('--deepnorm', action='store_true',
-                       help='use DeepNorm')
+                       help='use DeepNorm.')
     group.add_argument('--fused-rmsnorm', action='store_true',
-                       help='Use fused rmsnorm instead of default rmsnorm')
+                       help='Use fused rmsnorm instead of default rmsnorm.')
     group.add_argument('--rmsnorm-epsilon', type=float, default=1e-6,
                        help='RMS norm epsilon.')
     group.add_argument('--add-embed-layernorm', action='store_true',
-                       help='Enable embedding layernorm')
+                       help='Enable embedding layernorm.')
     group.add_argument('--activation-func', type=str, required=False, default='gelu',
                        choices=['relu', 'gelu', 'geglu', 'liglu', 'reglu', 'swiglu',
                                 'openai_gelu', 'erf_gelu', 'squared_relu'],
-                       help='Activation function for MLP layer')
+                       help='Activation function for MLP layer.')
     group.add_argument('--bert-no-binary-head', action='store_false',
                        help='Disable BERT binary head.',
                        dest='bert_binary_head')
     group.add_argument('--num-experts', type=int, default=None,
-                       help='Number of Experts in Switch Transformer (None means no Switch)')
+                       help='Number of Experts in Switch Transformer (None means no Switch).')
     group.add_argument('--untie-embeddings-and-output-weights', action='store_true',
                        help='Untie embeddings and output weights.')
     group.add_argument('--multi-query-attention', action='store_true',
@@ -706,9 +706,9 @@ def _add_network_size_args(parser):
                        'min = tensor_model_parallel_size, '
                        'max = num-attention-heads // tensor_model_parallel_size)')
     group.add_argument('--ffn-dim-multiplier', type=float, default=None,
-                       help='Dimension multiplier for Transformer Feed-Forward Network')
+                       help='Dimension multiplier for Transformer Feed-Forward Network.')
     group.add_argument('--multiple-of', type=int, default=256,
-                       help='Make SwiGLU hidden layer size multiple of large power of 2')
+                       help='Make SwiGLU hidden layer size multiple of large power of 2.')
     return parser
 
 
@@ -1307,7 +1307,7 @@ def _add_data_args(parser):
                                 'ChatGLM2Tokenizer',
                                 'LLaMASFTTokenizerHF',
                                 'NullTokenizer'],
-                       
+
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
