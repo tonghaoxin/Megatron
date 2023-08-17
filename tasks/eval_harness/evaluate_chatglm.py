@@ -127,8 +127,14 @@ class EvalHarnessAdaptor(GPT2LM):
         self.model = model
         self.tokenizer = tokenizer
         self.VOCAB_SIZE = tokenizer.vocab_size
-        self.EOT_TOKEN_ID = tokenizer.sp_tokenizer[tokenizer.eos_token]
-        self.BOS_TOKEN_ID = tokenizer.sp_tokenizer[tokenizer.bos_token]
+        if args.model_type_custom == "chatglm2-6b":
+            self.EOT_TOKEN_ID = tokenizer.tokenizer.eos_id
+            self.BOS_TOKEN_ID = tokenizer.tokenizer.bos_id
+        else:
+            self.EOT_TOKEN_ID = tokenizer.sp_tokenizer[tokenizer.eos_token]
+            self.BOS_TOKEN_ID = tokenizer.sp_tokenizer[tokenizer.bos_token]
+        
+
 
         self._max_length = args.seq_length
 
@@ -177,7 +183,10 @@ class EvalHarnessAdaptor(GPT2LM):
                 if len(continuation_enc) > max_target_length - 2:
                     continuation_enc = continuation_enc[: max_target_length - 2]
 
-                context_enc += [self.tokenizer.gmask_token_id, self.tokenizer.bos_token_id]
+                if self.args.model_type_custom == "chatglm2-6b":
+                    context_enc = [self.tokenizer.get_command("[gMASK]"), self.tokenizer.get_command("sop")] + context_enc
+                else:
+                    context_enc += [self.tokenizer.gmask_token_id, self.tokenizer.bos_token_id]
                 continuation_enc += [self.tokenizer.eos_token_id]
 
                 new_reqs.append(((context, continuation), context_enc, continuation_enc))
@@ -297,7 +306,7 @@ class EvalHarnessAdaptor(GPT2LM):
         unwrapped_model = unwrap_model(self.model, (torchDDP, LocalDDP, Float16Module))
         unwrapped_model.set_input_tensor(input_tensor)
         output = self.model(*self.create_model_inputs(inps))
-        p2p_communication.send_forward(output)
+        p2p_communication.send_forward(output[0])
 
         if mpu.is_pipeline_last_stage():
             return tensor_parallel.gather_from_tensor_model_parallel_region(output)[..., :self.tokenizer.vocab_size]
@@ -306,7 +315,10 @@ class EvalHarnessAdaptor(GPT2LM):
 
     def tokenizer_encode(self, text):
         """Tokenize text *without* adding special tokens."""
-        return self.tokenizer.sp_tokenizer.encode(text)
+        if self.args.model_type_custom == "chatglm2-6b":
+            return self.tokenizer.tokenizer.encode(text)
+        else:
+            return self.tokenizer.sp_tokenizer.encode(text)
 
 
 def model_provider(pre_process=True, post_process=True):
