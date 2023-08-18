@@ -189,14 +189,28 @@ def apply_rotary_pos_emb_fused(t, freqs):
     return torch.cat((t, t_pass), dim=-1)
 
 
-def apply_rotary_pos_emb_index(q, k, cos, sin, position_id):
+def apply_rotary_pos_emb_index(q, k, cos, sin, position_id, original=False):
     """
     RoPE function using position_id
+    增加参数original, 默认False, 如果是True, 走论文里的逻辑, 即chatglm2的处理逻辑
     """
     # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, 1, hn] -> [sq, b, hn]
     cos, sin = F.embedding(position_id, cos.squeeze()).unsqueeze(2), \
                F.embedding(position_id, sin.squeeze()).unsqueeze(2)
-    q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+    if original:
+        q = q.reshape(q.size(0), -1, q.size(2), q.size(3)//2, 2)
+        q = torch.cat([q[...,0], q[...,1]], dim=-1)
+        k = k.reshape(k.size(0), -1, k.size(2), k.size(3)//2, 2)
+        k = torch.cat([k[...,0], k[...,1]], dim=-1)
+        q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+        s1, s2, s3, s4 = q.size(0), q.size(1), q.size(2), q.size(3)
+        k1, k2, k3, k4 = k.size(0), k.size(1), k.size(2), k.size(3)
+        q = torch.stack(torch.chunk(q, 2, -1), dim=-1)
+        q = q.reshape(s1, s2, s3, s4)
+        k = torch.stack(torch.chunk(k, 2, -1), dim=-1)
+        k = k.reshape(k1, k2, k3, k4)
+    else:
+        q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
     return q, k
 
 

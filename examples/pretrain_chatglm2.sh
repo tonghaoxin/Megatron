@@ -6,8 +6,8 @@ EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 DATA_PATH=/root/data/ChatGLM2-6B/ptuning/AdvertiseGen
-#CHECKPOINT_PATH=/workspace/THUDM/chatglm-6b/tp1-pp1-dp8
-CHECKPOINT_PATH=/tmp/
+CHECKPOINT_PATH=/workspace/THUDM/chatglm-6b/tp2-pp4-dp1
+
 TENSORBOARD_PATH=./tensorborads/$EXP_NAME
 LOG_PATH=./logs/$EXP_NAME
 
@@ -62,7 +62,6 @@ OPTIMIZER_ARGS="--optimizer adam \
                 --clip-grad 1.0 \
                 --weight-decay 1e-1"
 
-#             --save-interval 10000 \
 OUTPUT_ARGS="--log-interval 10 \
              --eval-interval 1000 \
              --eval-iters 3 \
@@ -71,10 +70,10 @@ OUTPUT_ARGS="--log-interval 10 \
              --log-timers-to-tensorboard \
              --log-batch-size-to-tensorboard \
              --log-validation-ppl-to-tensorboard \
-             --load $CHECKPOINT_PATH "
+             --load $CHECKPOINT_PATH \
+             --save-interval 3000 \
+             --save $CHECKPOINT_PATH"
 
-#               --save $CHECKPOINT_PATH \
-#               --load $CHECKPOINT_PATH \
 TRAINING_ARGS="--train-iters 5000 \
                --lr-decay-iters 3200 \
                --lr-warmup-fraction 0.01 \
@@ -105,7 +104,8 @@ TRAINING_ARGS="--train-iters 5000 \
                --fp16 \
                --no-bias-dropout-fusion \
                --dataloader-type cyclic \
-	       --untie-embeddings-and-output-weights"
+               --preprocessing-num-workers 10 \
+	             --untie-embeddings-and-output-weights"
 
 OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8 NCCL_IB_DISABLE=0"
 

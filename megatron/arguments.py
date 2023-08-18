@@ -103,11 +103,6 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
 
-    # torch2.x 禁用scaled-dot-product-attetion的算子优化, 可能会导致结果不准确
-    if args.disable_scaled_dot_product_attetion_op and hasattr(torch.nn.functional, "scaled_dot_product_attention"):
-        torch.backends.cuda.enable_flash_sdp(False)
-        torch.backends.cuda.enable_mem_efficient_sdp(False)
-
     return args
 
 def validate_args(args, defaults={}):
@@ -1551,7 +1546,6 @@ def _add_chatglm_args(parser):
                        help='add-qkv-bias')
     group.add_argument('--rmsnorm-weigth-empty', type=bool, default=False, required=False,
                        help='rmsnorm-weigth-empty')
-    group.add_argument('--disable-scaled-dot-product-attetion-op', action='store_true', default=False)
     return parser
 
 def _add_finetune_config_args(parser):
