@@ -10,17 +10,13 @@ import torch
 
 from torch import einsum, nn
 import torch.nn.functional as F
+from megatron.accelerator import get_accelerator
 
-try:
-    import nvtx
-except ImportError:
-    pass
-
+custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
 
 __all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds',
            'apply_rotary_pos_emb', 'apply_rotary_pos_emb_fused',
            'apply_rotary_pos_emb_index', 'apply_rotary_pos_emb_index_fused']
-
 
 class RotaryEmbedding(nn.Module):
     """
@@ -35,7 +31,7 @@ class RotaryEmbedding(nn.Module):
         if importlib.util.find_spec('einops') is None:
             raise RuntimeError("einops is required for Rotary Embedding")
 
-    @nvtx.annotate("RotaryEmbedding forward", color="indigo")
+    @custom_profiler_decorator("RotaryEmbedding forward", color="indigo")
     def forward(self, max_seq_len, offset=0):
         seq = torch.arange(max_seq_len, device=self.inv_freq.device) + offset
         freqs = einsum('i , j -> i j', seq.type_as(self.inv_freq) / self.seq_len_interpolation_factor, self.inv_freq)
@@ -84,7 +80,7 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
         self.precision = precision
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
 
-    @nvtx.annotate("RotaryEmbeddingWithPositionIds forward", color="indigo")
+    @custom_profiler_decorator("RotaryEmbeddingWithPositionIds forward", color="indigo")
     def forward(self, x, seq_dim=1, seq_len=None):
         """
         forward function
@@ -114,33 +110,6 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
                 return cos_cached, sin_cached
             self.cos_cached, self.sin_cached = cos_cached, sin_cached
         return self.cos_cached[:seq_len, ...], self.sin_cached[:seq_len, ...]
-
-
-class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
-
-    @staticmethod
-    @nvtx.annotate("RotaryPositionalEmbeddingFunction forward", color="skyblue")
-    def forward(ctx, q, cos, sin):
-        import rotary_positional_embedding_cuda
-
-        q_ = q.contiguous()
-        cos_ = cos.contiguous()
-        sin_ = sin.contiguous()
-        output = rotary_positional_embedding_cuda.forward(*q.shape, q_, cos_, sin_)
-        ctx.save_for_backward(cos_, sin_)
-
-        return output
-
-    @staticmethod
-    @nvtx.annotate("RotaryPositionalEmbeddingFunction backward", color="violet")
-    def backward(ctx, grad_output):
-        import rotary_positional_embedding_cuda
-
-        cos_, sin_ = ctx.saved_tensors
-        grad_q = rotary_positional_embedding_cuda.backward(*grad_output.shape, grad_output, cos_, sin_)
-
-        return grad_q, None, None
-
 
 def _rotate_half(x):
     """
@@ -181,11 +150,13 @@ def apply_rotary_pos_emb_fused(t, freqs):
     """
     Fused RoPE function
     """
+    custom_rope = get_accelerator().get_operator('custom_rope')
+
     rot_dim = freqs.shape[-1]
     # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
     t, t_pass = t[..., :rot_dim], t[..., rot_dim:]
 
-    t = RotaryPositionalEmbeddingFunction.apply(t, freqs.cos(), freqs.sin())
+    t = custom_rope(t, freqs.cos(), freqs.sin())
     return torch.cat((t, t_pass), dim=-1)
 
 
@@ -218,9 +189,11 @@ def apply_rotary_pos_emb_index_fused(q, k, cos, sin, position_id):
     """
     Fused RoPE function using position_id
     """
+    custom_rope = get_accelerator().get_operator('custom_rope')
+
     # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, hn] -> [sq, b, 1, hn]
     cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(2), \
                F.embedding(position_id, sin.squeeze(1)).unsqueeze(2)
-    q = RotaryPositionalEmbeddingFunction.apply(q, cos, sin)
-    k = RotaryPositionalEmbeddingFunction.apply(k, cos, sin)
+    q = custom_rope(q, cos, sin)
+    k = custom_rope(k, cos, sin)
     return q, k

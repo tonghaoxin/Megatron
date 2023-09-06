@@ -4,8 +4,6 @@
 
 from abc import ABC
 from abc import abstractmethod
-from apex.multi_tensor_apply import multi_tensor_applier
-import amp_C
 import torch
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
@@ -16,9 +14,11 @@ from megatron.core import mpu, tensor_parallel
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
 from megatron.utils import unwrap_model, param_is_not_shared
+from megatron.accelerator import get_accelerator
 
 from .clip_grads import clip_grad_norm_fp32, count_zeros_fp32
 
+custom_multi_tensor_applier = get_accelerator().get_operator('custom_multi_tensor_applier')
 
 def _zero_grad_group_helper(group, set_to_none):
     """Zero out the gradient for a group of parameters.
@@ -43,10 +43,12 @@ def _multi_tensor_copy_this_to_that(this, that, overflow_buf=None):
     if overflow_buf:
         overflow_buf.fill_(0)
         # Scaling with factor `1.0` is equivalent to copy.
-        multi_tensor_applier(amp_C.multi_tensor_scale,
-                             overflow_buf,
-                             [this, that],
-                             1.0)
+        custom_multi_tensor_applier(
+                overflow_buf,
+                [this, that],
+                1.0,
+                op='scale'
+        )
     else:
         for this_, that_ in zip(this, that):
             that_.copy_(this_)
@@ -133,7 +135,7 @@ class MegatronOptimizer(ABC):
 
     @abstractmethod
     def get_loss_scale(self):
-        """The output should be a cuda tensor of size 1."""
+        """The output should be an accelerator tensor of size 1."""
         pass
 
 
@@ -261,7 +263,7 @@ class MegatronOptimizer(ABC):
                 args.sequence_parallel:
             grads = []
             for model_module in self.models:
-                unwrapped_model = unwrap_model( 
+                unwrapped_model = unwrap_model(
                     model_module, (torchDDP, LocalDDP, Float16Module))
                 for param in unwrapped_model.parameters():
                     if getattr(param, 'sequence_parallel', False):
@@ -354,19 +356,19 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
         # Note that we keep this for the cases that grad scaler is none.
         # We still record nan/inf if we have a bfloat16 with a grad scaler.
         if self.grad_scaler:
-            self.found_inf = torch.cuda.FloatTensor([0.0])
+            self.found_inf = get_accelerator().FloatTensor([0.0])
 
-        # Dummy tensor needed for apex multi-apply tensor.
+        # Dummy tensor needed for multi-apply tensor.
         # For bfloat, we don't have multi-tensor apply and for now
         # we set it to none so the multi-tensor apply gets ignored.
         if bf16:
             self._dummy_overflow_buf = None
         else:
-            self._dummy_overflow_buf = torch.cuda.IntTensor([0])
+            self._dummy_overflow_buf = get_accelerator().IntTensor([0])
 
         # In case grad scaler is not passed, define the unity scale.
         if self.grad_scaler is None:
-            self._scale_one = torch.cuda.FloatTensor([1.0])
+            self._scale_one = get_accelerator().FloatTensor([1.0])
 
 
     def get_loss_scale(self):
@@ -521,8 +523,8 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
                 if param.requires_grad:
 
                     # float16 params:
-                    if param.type() in ['torch.cuda.HalfTensor',
-                                        'torch.cuda.BFloat16Tensor']:
+                    if param.type() in [get_accelerator().HalfTensor_name(),
+                                        get_accelerator().BFloat16Tensor_name()]:
                         float16_params_this_group.append(param)
                         # Create a copy
                         main_param = param.detach().clone().float()
@@ -540,15 +542,13 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
                             self.optimizer.state[main_param] \
                                 = self.optimizer.state.pop(param)
                     # fp32 params.
-                    elif param.type() == 'torch.cuda.FloatTensor':
+                    elif param.type() == get_accelerator().FloatTensor_name():
                         fp32_params_this_group.append(param)
                         param_group['params'][i] = param
 
                     else:
                         raise TypeError('Wrapped parameters must be one of '
-                                        'torch.cuda.FloatTensor,  '
-                                        'torch.cuda.HalfTensor, or '
-                                        'torch.cuda.BFloat16Tensor. '
+                                        'FloatTensor, HalfTensor, or BFloat16Tensor. '
                                         'Received {}'.format(param.type()))
 
             self.float16_groups.append(float16_params_this_group)
@@ -586,7 +586,7 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
             for main_param in main_group:
                 if main_param.grad is not None:
                     main_grads.append(main_param.grad.data)
-        
+
         return main_grads
 
 
@@ -702,7 +702,7 @@ class FP32Optimizer(MegatronOptimizer):
             params_have_main_grad, use_contiguous_buffers_in_local_ddp,
             models)
 
-        self._scale = torch.cuda.FloatTensor([1.0])
+        self._scale = get_accelerator().FloatTensor([1.0])
 
 
     def zero_grad(self, set_to_none=True):

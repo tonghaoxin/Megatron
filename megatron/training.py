@@ -41,6 +41,7 @@ from megatron.utils import calc_params_l2_norm
 from megatron.core.pipeline_parallel import get_forward_backward_func
 from megatron.utils import report_memory
 from megatron.model.vision.knn_monitor import compute_feature_bank
+from megatron.accelerator import get_accelerator
 
 
 def print_datetime(string):
@@ -96,7 +97,7 @@ def pretrain(train_valid_test_dataset_provider,
     # This will be closer to what scheduler will see (outside of
     # image ... launches.
     global _TRAIN_START_TIME
-    start_time_tensor = torch.cuda.DoubleTensor([_TRAIN_START_TIME])
+    start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
     torch.distributed.all_reduce(start_time_tensor,
                                  op=torch.distributed.ReduceOp.MIN)
     _TRAIN_START_TIME = start_time_tensor.item()
@@ -283,7 +284,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
 
     # GPU allocation.
     for model_module in model:
-        model_module.cuda(torch.cuda.current_device())
+        get_accelerator().h2d_copy(model_module)
 
     # Fp16 conversion.
     if args.fp16 or args.bf16:
@@ -291,7 +292,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
 
     if wrap_with_ddp:
         if args.DDP_impl == 'torch':
-            i = torch.cuda.current_device()
+            i = get_accelerator().current_device()
             model = [torchDDP(model_module, device_ids=[i], output_device=i,
                               process_group=mpu.get_data_parallel_group())
                      for model_module in model]
@@ -450,7 +451,7 @@ def train_step(forward_step_func, data_iterator,
         grad_scaler=optimizer.scale_loss,
         sequence_parallel=args.sequence_parallel,
         overlap_p2p_comm=args.overlap_p2p_comm,
-        batch_p2p_comm=not args.overlap_p2p_comm,
+        batch_p2p_comm=args.batch_p2p_comm,
         forward_only=False,
         timers=fwd_bwd_timers,
         no_sync_func=no_sync_func,
@@ -459,7 +460,7 @@ def train_step(forward_step_func, data_iterator,
 
     # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
-        torch.cuda.empty_cache()
+        get_accelerator().empty_cache()
 
     # Reduce gradients.
     optimizer.reduce_model_grads(args, timers)
@@ -497,7 +498,7 @@ def train_step(forward_step_func, data_iterator,
 
     # Empty unused memory.
     if args.empty_unused_memory_level >= 2:
-        torch.cuda.empty_cache()
+        get_accelerator().empty_cache()
 
     if mpu.is_pipeline_last_stage(ignore_virtual=True):
         # Average loss across microbatches.
@@ -536,7 +537,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     for key in loss_dict:
         if not skipped_iter:
             total_loss_dict[key] = total_loss_dict.get(
-                key, torch.cuda.FloatTensor([0.0])) + loss_dict[key]
+                key, get_accelerator().FloatTensor([0.0])) + loss_dict[key]
         else:
             value = loss_dict[key].float().sum().item()
             is_nan = value == float('inf') or \
@@ -621,7 +622,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             writer.add_scalar('params-norm vs samples', params_norm,
                               args.consumed_train_samples)
         if args.log_memory_to_tensorboard:
-            mem_stats = torch.cuda.memory_stats()
+            mem_stats = get_accelerator().memory_stats()
             writer.add_scalar(
                 "mem-reserved-bytes",
                 mem_stats["reserved_bytes.all.current"],
@@ -666,7 +667,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                       float(max(1, total_loss_dict[advanced_iters_key]))
                 if avg > 0.0:
                     log_string += ' {}: {:.6E} |'.format(key, avg)
-                total_loss_dict[key] = torch.cuda.FloatTensor([0.0])
+                total_loss_dict[key] = get_accelerator().FloatTensor([0.0])
         log_string += ' loss scale: {:.1f} |'.format(loss_scale)
         if grad_norm is not None:
             log_string += ' grad norm: {:.3f} |'.format(grad_norm)
@@ -736,9 +737,9 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         if args.profile and \
            iteration == args.profile_step_start and \
            torch.distributed.get_rank() in args.profile_ranks:
-            torch.cuda.cudart().cudaProfilerStart()
-            backward_nvtx_ctx = torch.autograd.profiler.emit_nvtx(record_shapes=True)
-            backward_nvtx_ctx.__enter__()
+               backward_profiler_ctx = get_accelerator().get_bwd_profiler_ctx()
+               get_accelerator().profiler_start(backward_profiler_ctx)
+
         if (
             # train_data_iterator is not None
             args.skip_train_iteration_range is not None
@@ -836,11 +837,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # Exiting based on duration
         if args.exit_duration_in_mins:
             train_time = (time.time() - _TRAIN_START_TIME) / 60.0
-            done_cuda = torch.cuda.IntTensor(
+            done_tensor = get_accelerator().IntTensor(
                 [train_time > args.exit_duration_in_mins])
             torch.distributed.all_reduce(
-                done_cuda, op=torch.distributed.ReduceOp.MAX)
-            done = done_cuda.item()
+                done_tensor, op=torch.distributed.ReduceOp.MAX)
+            done = done_tensor.item()
             if done:
                 if not saved_checkpoint:
                     save_checkpoint_and_time(iteration, model, optimizer,
@@ -856,12 +857,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             torch.distributed.barrier()
             print_datetime('exiting program at iteration {}'.format(iteration))
             sys.exit()
-        
+
         if args.profile and \
            iteration == args.profile_step_end and \
            torch.distributed.get_rank() in args.profile_ranks:
-            backward_nvtx_ctx.__exit__(None, None, None)
-            torch.cuda.cudart().cudaProfilerStop()
+               get_accelerator().profiler_stop(backward_profiler_ctx)
 
     return iteration
 
@@ -905,14 +905,14 @@ def evaluate(forward_step_func,
 
             # Empty unused memory
             if args.empty_unused_memory_level >= 1:
-                torch.cuda.empty_cache()
+                get_accelerator().empty_cache()
 
             if mpu.is_pipeline_last_stage(ignore_virtual=True):
                 # Reduce across processes.
                 for loss_dict in loss_dicts:
                     for key in loss_dict:
                         total_loss_dict[key] = total_loss_dict.get(
-                            key, torch.cuda.FloatTensor([0.0])) + loss_dict[key]
+                            key, get_accelerator().FloatTensor([0.0])) + loss_dict[key]
 
             args.consumed_valid_samples += mpu.get_data_parallel_world_size() \
                                            * args.micro_batch_size \
@@ -1030,10 +1030,10 @@ def build_train_valid_test_data_loaders(
         do_valid = valid_dataloader is not None and args.eval_iters > 0
         do_test = test_dataloader is not None and args.eval_iters > 0
         # Need to broadcast num_tokens and num_type_tokens.
-        flags = torch.cuda.LongTensor(
+        flags = get_accelerator().LongTensor(
             [int(do_train), int(do_valid), int(do_test)])
     else:
-        flags = torch.cuda.LongTensor([0, 0, 0])
+        flags = get_accelerator().LongTensor([0, 0, 0])
 
     # Broadcast num tokens.
     torch.distributed.broadcast(flags,

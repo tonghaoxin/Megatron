@@ -16,6 +16,7 @@ from megatron.utils import average_losses_across_data_parallel_group, unwrap_mod
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
+from megatron.accelerator import get_accelerator
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
@@ -27,17 +28,17 @@ def get_batch(data_iterator):
 
     # only data parallelism; no need for broadcast
     if isinstance(data[0], list):
-        images = [aug.cuda() for aug in data[0]]
+        images = [get_accelerator().h2d_copy(aug) for aug in data[0]]
     else:
-        images = data[0].cuda()
-    labels = data[1].cuda()
+        images = get_accelerator().h2d_copy(data[0])
+    labels = get_accelerator().h2d_copy(data[1])
 
     return images, labels
 
 
 def loss_func(model, labels, output_tensor, collect_data=False):
     args = get_args()
-    
+
     model = unwrap_model(
         model,
         (torchDDP, LocalDDP, Float16Module)

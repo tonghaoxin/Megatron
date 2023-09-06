@@ -23,6 +23,7 @@ from .datasets import build_dataset
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
+from megatron.accelerator import get_accelerator
 
 def get_model_provider(eval_metric):
     """Based on evaluation metric set the parallel-output flag and
@@ -53,8 +54,8 @@ def process_batch(batch):
     args = get_args()
     tokenizer = get_tokenizer()
 
-    loss_mask = batch['pad_mask'].long().cuda().contiguous().byte()
-    tokens_ = batch['text'].long().cuda().contiguous()
+    loss_mask = get_accelerator().h2d_copy(batch['pad_mask'].long()).contiguous().byte()
+    tokens_ = get_accelerator().h2d_copy(batch['text'].long()).contiguous()
     labels = tokens_[:, 1:].contiguous()
     tokens = tokens_[:, :-1].contiguous()
 

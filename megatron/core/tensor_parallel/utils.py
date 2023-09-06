@@ -5,6 +5,7 @@ from typing import List, Sequence
 
 from megatron.core.utils import divide
 from megatron.core import parallel_state
+from megatron.accelerator import get_accelerator
 
 def split_tensor_along_last_dim(
     tensor: torch.Tensor,
@@ -53,7 +54,7 @@ def split_tensor_into_1d_equal_chunks(tensor, new_buffer=False):
     end_index = start_index + partition_size
     if new_buffer:
         data = torch.empty(partition_size, dtype=tensor.dtype,
-                           device=torch.cuda.current_device(),
+                           device=get_accelerator().current_device(),
                            requires_grad=False)
         data.copy_(tensor.view(-1)[start_index:end_index])
     else:
@@ -73,7 +74,7 @@ def gather_split_1d_tensor(tensor):
     numel_gathered = torch.numel(tensor) * \
         parallel_state.get_tensor_model_parallel_world_size()
     gathered = torch.empty(numel_gathered, dtype=tensor.dtype,
-                           device=torch.cuda.current_device(),
+                           device=get_accelerator().current_device(),
                            requires_grad=False)
     # TODO: This API is experimental in pytorch (as of Feb 2022) and
     # this might break in future pytorch releases. We chose this API

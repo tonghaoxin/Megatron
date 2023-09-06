@@ -2,6 +2,7 @@
 
 from commons import print_separator
 from commons import initialize_distributed
+from megatron.accelerator import get_accelerator
 from mpu import data as data_utils
 import mpu
 import torch
@@ -52,7 +53,7 @@ def test_broadcast_data(tensor_model_parallel_size):
 
     data_b = data_utils.broadcast_data(keys, data, torch.int64)
     for key in keys:
-        tensor = data_t[key].cuda()
+        tensor = get_accelerator().h2d_copy(data_t[key])
         assert data_b[key].sub(tensor).abs().max() == 0
 
     # Reset groups

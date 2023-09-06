@@ -8,15 +8,15 @@ from random import random
 import torch
 from torch.nn.parallel import DistributedDataParallel as torchDDP
 
-from apex.multi_tensor_apply import multi_tensor_applier
-import amp_C
-
 from megatron import (
     get_args,
     get_adlr_autoresume,
 )
 from megatron.core import mpu
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
+from megatron.accelerator import get_accelerator
+
+custom_multi_tensor_applier = get_accelerator().get_operator('custom_multi_tensor_applier')
 
 def param_is_not_shared(param):
     return not hasattr(param, 'shared') or not param.shared
@@ -53,12 +53,13 @@ def calc_params_l2_norm(model):
                 else:
                     params_data.append(param.data)
     # Calculate norm
-    dummy_overflow_buf = torch.cuda.IntTensor([0])
-    norm, _ = multi_tensor_applier(
-        amp_C.multi_tensor_l2norm,
+    dummy_overflow_buf = get_accelerator().IntTensor([0])
+    norm, _ = custom_multi_tensor_applier(
         dummy_overflow_buf,
         [params_data],
-        False # no per-parameter norm
+        False, # no per-parameter norm
+        op='l2norm',
+        memory_saving=args().memory_saving
     )
     norm_2 = norm * norm
     # Sum across all model-parallel GPUs.
@@ -72,8 +73,9 @@ def average_losses_across_data_parallel_group(losses):
     """Reduce a tensor of losses across all GPUs."""
     averaged_losses = torch.cat(
         [loss.clone().detach().view(1) for loss in losses])
-    torch.distributed.all_reduce(averaged_losses,
-                                 group=mpu.get_data_parallel_group())
+    if mpu.get_data_parallel_world_size() > 1:
+        torch.distributed.all_reduce(averaged_losses,
+                                    group=mpu.get_data_parallel_group())
     averaged_losses = averaged_losses / \
         torch.distributed.get_world_size(group=mpu.get_data_parallel_group())
 
@@ -85,13 +87,13 @@ def report_memory(name):
     mega_bytes = 1024.0 * 1024.0
     string = name + ' memory (MB)'
     string += ' | allocated: {}'.format(
-        torch.cuda.memory_allocated() / mega_bytes)
+        get_accelerator().memory_allocated() / mega_bytes)
     string += ' | max allocated: {}'.format(
-        torch.cuda.max_memory_allocated() / mega_bytes)
+        get_accelerator().max_memory_allocated() / mega_bytes)
     string += ' | reserved: {}'.format(
-        torch.cuda.memory_reserved() / mega_bytes)
+        get_accelerator().memory_reserved() / mega_bytes)
     string += ' | max reserved: {}'.format(
-        torch.cuda.max_memory_reserved() / mega_bytes)
+        get_accelerator().max_memory_reserved() / mega_bytes)
     if mpu.get_data_parallel_rank() == 0:
         print("[Rank {}] {}".format(torch.distributed.get_rank(), string),
               flush=True)

@@ -11,6 +11,7 @@ from megatron.core import parallel_state
 from megatron.core.pipeline_parallel import p2p_communication
 from megatron.core.enums import ModelType
 from megatron.core.utils import get_attr_wrapped_model, get_model_type
+from megatron.accelerator import get_accelerator
 
 # Types
 Shape = Union[List[int], torch.Size]
@@ -220,7 +221,7 @@ def forward_step(forward_step_func,
     set_input_tensor(input_tensor)
 
     if enable_autocast:
-        context_manager = torch.autocast("cuda", dtype=autocast_dtype)
+        context_manager = get_accelerator().autocast(autocast_dtype)
     else:
         context_manager = contextlib.nullcontext()
     with context_manager:

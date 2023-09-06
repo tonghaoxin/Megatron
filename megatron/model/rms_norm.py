@@ -1,7 +1,9 @@
 """RMSNorm."""
 import torch
 
-from apex.normalization.fused_layer_norm import FusedRMSNorm as ApexFusedRMSNorm
+from megatron.accelerator import get_accelerator
+
+FusedRMSNorm_ = get_accelerator().get_operator('fused_rms_norm')
 
 
 class RMSNorm(torch.nn.Module):
@@ -52,7 +54,7 @@ class RMSNorm(torch.nn.Module):
         return 'weight shape={}, eps={}'.format(self.weight.size(), self.eps)
 
 
-class FusedRMSNorm(ApexFusedRMSNorm):
+class FusedRMSNorm(FusedRMSNorm_):
     """Fused RMS Norm"""
     def __init__(self, normalized_shape, eps=1e-5,
                  elementwise_affine=True,
@@ -66,3 +68,9 @@ class FusedRMSNorm(ApexFusedRMSNorm):
 
         # set sequence parallelism flag on weight parameters
         setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
+
+
+# interface for rmsnorm replacement
+CustomRMSNorm = get_accelerator().get_operator('custom_rms_norm')
+if CustomRMSNorm is not None:
+    FusedRMSNorm_ = CustomRMSNorm

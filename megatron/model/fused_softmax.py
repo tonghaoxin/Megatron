@@ -4,99 +4,7 @@
 import torch
 import torch.nn as nn
 from megatron.model.enums import AttnMaskType
-
-
-class ScaledUpperTriangMaskedSoftmax(torch.autograd.Function):
-    """
-    Fused operation which performs following three operations in sequence
-    1. Scale the tensor.
-    2. Apply upper triangular mask (typically used in gpt models).
-    3. Perform softmax.
-    """
-
-    @staticmethod
-    def forward(ctx, inputs, scale):
-        import scaled_upper_triang_masked_softmax_cuda
-
-        scale_t = torch.tensor([scale])
-        softmax_results = scaled_upper_triang_masked_softmax_cuda.forward(
-            inputs, scale_t[0]
-        )
-
-        ctx.save_for_backward(softmax_results, scale_t)
-        return softmax_results
-
-    @staticmethod
-    def backward(ctx, output_grads):
-        import scaled_upper_triang_masked_softmax_cuda
-
-        softmax_results, scale_t = ctx.saved_tensors
-        input_grads = scaled_upper_triang_masked_softmax_cuda.backward(
-            output_grads, softmax_results, scale_t[0]
-        )
-
-        return input_grads, None
-
-
-class ScaledMaskedSoftmax(torch.autograd.Function):
-    """
-    Fused operation which performs following three operations in sequence
-    1. Scale the tensor.
-    2. Apply the mask.
-    3. Perform softmax.
-    """
-
-    @staticmethod
-    def forward(ctx, inputs, mask, scale):
-        import scaled_masked_softmax_cuda
-
-        scale_t = torch.tensor([scale])
-
-        softmax_results = scaled_masked_softmax_cuda.forward(inputs, mask, scale_t[0])
-        ctx.save_for_backward(softmax_results, scale_t)
-        return softmax_results
-
-    @staticmethod
-    def backward(ctx, output_grads):
-        import scaled_masked_softmax_cuda
-
-        softmax_results, scale_t = ctx.saved_tensors
-
-        input_grads = scaled_masked_softmax_cuda.backward(
-            output_grads, softmax_results, scale_t[0]
-        )
-        return input_grads, None, None
-
-
-class ScaledSoftmax(torch.autograd.Function):
-    """
-    Fused operation which performs following two operations in sequence
-    1. Scale the tensor.
-    2. Perform softmax.
-    """
-
-    @staticmethod
-    def forward(ctx, inputs, scale):
-        import scaled_softmax_cuda
-
-        scale_t = torch.tensor([scale])
-
-        softmax_results = scaled_softmax_cuda.forward(
-            inputs, scale_t[0]
-        )
-        ctx.save_for_backward(softmax_results, scale_t)
-        return softmax_results
-
-    @staticmethod
-    def backward(ctx, output_grads):
-        import scaled_softmax_cuda
-
-        softmax_results, scale_t = ctx.saved_tensors
-
-        input_grads = scaled_softmax_cuda.backward(
-            output_grads, softmax_results, scale_t[0]
-        )
-        return input_grads, None, None
+from megatron.accelerator import get_accelerator
 
 
 class FusedScaleMaskSoftmax(nn.Module):
@@ -136,6 +44,11 @@ class FusedScaleMaskSoftmax(nn.Module):
         self.softmax_in_fp32 = softmax_in_fp32
         self.scale = scale
 
+        self.scaled_upper_triang_masked_softmax = get_accelerator().get_operator('scaled_upper_triang_masked_softmax')
+        self.scaled_masked_softmax = get_accelerator().get_operator('scaled_masked_softmax')
+        self.scaled_softmax = get_accelerator().get_operator('scaled_softmax')
+        self.custom_softmax = get_accelerator().get_operator('custom_softmax')
+
         assert (
             self.scale is None or softmax_in_fp32
         ), "softmax should be in fp32 when scaled"
@@ -144,7 +57,10 @@ class FusedScaleMaskSoftmax(nn.Module):
         # [b, np, sq, sk]
         assert input.dim() == 4
 
-        if self.is_kernel_available(mask, *input.size()):
+        # interface for softmax kernel replacement
+        if self.custom_softmax is not None:
+            return self.forward_custom_softmax(input, mask)
+        elif self.is_kernel_available(mask, *input.size()):
             return self.forward_fused_softmax(input, mask)
         else:
             return self.forward_torch_softmax(input, mask)
@@ -171,6 +87,11 @@ class FusedScaleMaskSoftmax(nn.Module):
                         return True
         return False
 
+    def forward_custom_softmax(self, input, mask):
+        """forward_custom_softmax"""
+        scale = self.scale if self.scale is not None else 1.0
+        return self.custom_softmax(input, mask, scale)
+
     def forward_fused_softmax(self, input, mask):
         b, np, sq, sk = input.size()
         scale = self.scale if self.scale is not None else 1.0
@@ -180,14 +101,14 @@ class FusedScaleMaskSoftmax(nn.Module):
 
             # input is 3D tensor (attn_batches, sq, sk)
             input = input.view(-1, sq, sk)
-            probs = ScaledUpperTriangMaskedSoftmax.apply(input, scale)
+            probs = self.scaled_upper_triang_masked_softmax(input, scale)
             return probs.view(b, np, sq, sk)
         else:
             # input is 4D tensor (b, np, sq, sk)
             if mask is not None:
-                return ScaledMaskedSoftmax.apply(input, mask, scale)
+                return self.scaled_masked_softmax(input, mask, scale)
             else:
-                return ScaledSoftmax.apply(input, scale)
+                return self.scaled_softmax(input, scale)
 
     def forward_torch_softmax(self, input, mask):
         if self.input_in_float16 and self.softmax_in_fp32:
@@ -206,11 +127,9 @@ class FusedScaleMaskSoftmax(nn.Module):
 
         return probs
 
-    @staticmethod
-    def get_batch_per_block(sq, sk, b, np):
-        import scaled_masked_softmax_cuda
-
-        return scaled_masked_softmax_cuda.get_batch_per_block(sq, sk, b, np)
+    def get_batch_per_block(self, sq, sk, b, np):
+        """get_batch_per_block"""
+        return self.scaled_masked_softmax.get_batch_per_block(sq, sk, b, np)
 
     def extra_repr(self):
         """

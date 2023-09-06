@@ -10,6 +10,7 @@ from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 from megatron import get_args
 from megatron.core import mpu
 from .module import MegatronModule
+from megatron.accelerator import get_accelerator
 
 
 class MemoryBuffer:
@@ -20,7 +21,7 @@ class MemoryBuffer:
         self.dtype = dtype
         self.data = torch.zeros(self.numel_padded,
                                 dtype=self.dtype,
-                                device=torch.cuda.current_device(),
+                                device=get_accelerator().current_device(),
                                 requires_grad=False)
 
     def zero(self):
@@ -211,9 +212,11 @@ class DistributedDataParallel(DistributedDataParallelBase):
         # If we have buffers, simply reduce the data in the buffer.
         if self._grad_buffers is not None:
             for _, buffer_ in self._grad_buffers.items():
-                buffer_.data /= mpu.get_data_parallel_world_size()
-                torch.distributed.all_reduce(
-                    buffer_.data, group=mpu.get_data_parallel_group())
+                coeff = 1 / mpu.get_data_parallel_world_size()
+                buffer_.data *= coeff
+                if mpu.get_data_parallel_world_size() > 1:
+                    torch.distributed.all_reduce(
+                        buffer_.data, group=mpu.get_data_parallel_group())
         else:
             # Otherwise, bucketize and all-reduce
             buckets = {}
@@ -230,10 +233,19 @@ class DistributedDataParallel(DistributedDataParallelBase):
             for tp in buckets:
                 bucket = buckets[tp]
                 grads = [param.grad.data for param in bucket]
-                coalesced = _flatten_dense_tensors(grads)
-                coalesced /= mpu.get_data_parallel_world_size()
-                torch.distributed.all_reduce(
-                    coalesced, group=mpu.get_data_parallel_group())
-                for buf, synced in zip(grads, _unflatten_dense_tensors(
-                        coalesced, grads)):
-                    buf.copy_(synced)
+                coeff = 1 / mpu.get_data_parallel_world_size()
+                if not get_args().memory_saving:
+                    coalesced = _flatten_dense_tensors(grads)
+                    coalesced *= coeff
+                    if mpu.get_data_parallel_world_size() > 1:
+                        torch.distributed.all_reduce(
+                            coalesced, group=mpu.get_data_parallel_group())
+                    for buf, synced in zip(grads, _unflatten_dense_tensors(
+                            coalesced, grads)):
+                        buf.copy_(synced)
+                else:
+                    for grad in grads:
+                        grad *= coeff
+                        if mpu.get_data_parallel_world_size() > 1:
+                            torch.distributed.all_reduce(
+                                grad, group=mpu.get_data_parallel_group())

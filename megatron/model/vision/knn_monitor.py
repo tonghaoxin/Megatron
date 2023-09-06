@@ -4,6 +4,7 @@ from megatron import print_rank_0, get_args
 from megatron.core import mpu
 from megatron.data.vit_dataset import ClassificationTransform
 from megatron.data.image_folder import ImageFolder
+from megatron.accelerator import get_accelerator
 
 _FEATURE_BANK = None
 
@@ -47,19 +48,19 @@ def compute_feature_bank(model):
     )
     classes = len(train_ds.classes)
     dataloader = build_data_loader(train_ds)
-     
+
     for m in model:
         m.eval()
 
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
-            images = batch[0].cuda().contiguous()
-            labels = batch[1].cuda().contiguous()
+            images = get_accelerator().h2d_copy(batch[0]).contiguous()
+            labels = get_accelerator().h2d_copy(batch[1]).contiguous()
             student_feature, teacher_feature = model[0](images)
             feature = F.normalize(teacher_feature.float(), dim=1)
             feature_bank.append(feature)
             feature_label.append(labels)
-    
+
     for m in model:
         m.train()
 

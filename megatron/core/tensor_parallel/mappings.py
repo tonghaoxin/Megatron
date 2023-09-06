@@ -2,6 +2,7 @@
 
 import torch
 
+from megatron.accelerator import get_accelerator
 from megatron.core.parallel_state import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
@@ -98,7 +99,7 @@ def _gather_along_first_dim(input_):
     dim_size[0] = dim_size[0] * world_size
 
     output = torch.empty(dim_size, dtype=input_.dtype,
-                         device=torch.cuda.current_device())
+                         device=get_accelerator().current_device())
     torch.distributed._all_gather_base(output, input_.contiguous(),
                                        group=get_tensor_model_parallel_group())
 
@@ -114,12 +115,12 @@ def _reduce_scatter_along_first_dim(input_):
     dim_size = list(input_.size())
     assert dim_size[0] % world_size == 0, \
         "First dimension of the tensor should be divisible by tensor parallel size"
-    
+
     dim_size[0] = dim_size[0] // world_size
-   
+
     output = torch.empty(dim_size, dtype=input_.dtype,
-                         device=torch.cuda.current_device())
-    torch.distributed._reduce_scatter_base(output, input_.contiguous(), 
+                         device=get_accelerator().current_device())
+    torch.distributed._reduce_scatter_base(output, input_.contiguous(),
                                            group=get_tensor_model_parallel_group())
     return output
 
@@ -130,7 +131,7 @@ class _CopyToModelParallelRegion(torch.autograd.Function):
     @staticmethod
     def symbolic(graph, input_):
         return input_
-    
+
     @staticmethod
     def forward(ctx, input_):
         return input_
@@ -146,7 +147,7 @@ class _ReduceFromModelParallelRegion(torch.autograd.Function):
     @staticmethod
     def symbolic(graph, input_):
         return _reduce(input_)
-    
+
     @staticmethod
     def forward(ctx, input_):
         return _reduce(input_)
@@ -178,7 +179,7 @@ class _GatherFromModelParallelRegion(torch.autograd.Function):
     @staticmethod
     def symbolic(graph, input_):
         return _gather_along_last_dim(input_)
-    
+
     @staticmethod
     def forward(ctx, input_):
         return _gather_along_last_dim(input_)
@@ -205,12 +206,12 @@ class _ScatterToSequenceParallelRegion(torch.autograd.Function):
 
 
 class _GatherFromSequenceParallelRegion(torch.autograd.Function):
-    """Gather the input from sequence parallel region and concatinate.""" 
+    """Gather the input from sequence parallel region and concatinate."""
 
     @staticmethod
     def symbolic(graph, input_, tensor_parallel_output_grad=True):
         return _gather_along_first_dim(input_)
-    
+
     @staticmethod
     def forward(ctx, input_, tensor_parallel_output_grad=True):
         ctx.tensor_parallel_output_grad = tensor_parallel_output_grad
@@ -221,8 +222,8 @@ class _GatherFromSequenceParallelRegion(torch.autograd.Function):
         tensor_parallel_output_grad = ctx.tensor_parallel_output_grad
 
         # If the computation graph after the gather operation is
-        # in the tensor parallel mode, output gradients need to reduce 
-        # scattered and whereas if the computation is duplicated, 
+        # in the tensor parallel mode, output gradients need to reduce
+        # scattered and whereas if the computation is duplicated,
         # output gradients need to be scattered.
         if tensor_parallel_output_grad:
             return _reduce_scatter_along_first_dim(grad_output), None
@@ -236,7 +237,7 @@ class _ReduceScatterToSequenceParallelRegion(torch.autograd.Function):
     @staticmethod
     def symbolic(graph, input_):
         return _reduce_scatter_along_first_dim(input_)
-    
+
     @staticmethod
     def forward(ctx, input_):
         return _reduce_scatter_along_first_dim(input_)

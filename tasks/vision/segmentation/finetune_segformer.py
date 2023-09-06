@@ -16,6 +16,7 @@ from megatron.schedules import get_forward_backward_func
 from tasks.vision.segmentation.data import build_train_valid_datasets
 from tasks.vision.segmentation.seg_models import SegformerSegmentationModel
 from megatron.model.vision.utils import resize
+from megatron.accelerator import get_accelerator
 
 
 def calculate_iou(hist_data):
@@ -73,8 +74,8 @@ def segmentation():
 
     def process_batch(batch):
         """Process batch and produce inputs for the model."""
-        images = batch[0].cuda().contiguous()
-        masks = batch[1].cuda().contiguous()
+        images = get_accelerator().h2d_copy(batch[0]).contiguous()
+        masks = get_accelerator().h2d_copy(batch[1]).contiguous()
         return images, masks
 
     def calculate_weight(masks, num_classes):
@@ -91,7 +92,7 @@ def segmentation():
         logits = output_tensor.contiguous().float()
         logits = resize(logits, size=masks.shape[1:],
                         mode='bilinear', align_corners=False)
-      
+
         # Cross-entropy loss.
         # weight = calculate_weight(masks, num_classes)
         loss = F.cross_entropy(logits, masks, ignore_index=ignore_index)
@@ -182,7 +183,7 @@ def segmentation():
             m.train()
         # Reduce.
         if mpu.is_pipeline_last_stage():
-            performs_tensor = torch.cuda.FloatTensor(performs)
+            performs_tensor = get_accelerator().FloatTensor(performs)
             torch.distributed.all_reduce(performs_tensor,
                                          group=mpu.get_data_parallel_group())
             hist = performs_tensor.cpu().numpy()

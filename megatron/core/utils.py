@@ -5,6 +5,7 @@ import operator
 import torch
 
 from megatron.core import parallel_state
+from megatron.accelerator import get_accelerator
 
 
 def ensure_divisibility(numerator, denominator):
@@ -51,7 +52,7 @@ class GlobalMemoryBuffer:
             self.buffer[(name, dtype)] = \
                 torch.empty(required_len,
                             dtype=dtype,
-                            device=torch.cuda.current_device(),
+                            device=get_accelerator().current_device(),
                             requires_grad=False)
 
         return self.buffer[(name, dtype)][0:required_len].view(*tensor_shape)

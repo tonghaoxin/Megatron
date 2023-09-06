@@ -1,6 +1,6 @@
 # BSD 3-Clause License
 #
-# Copyright (c) Soumith Chintala 2016, 
+# Copyright (c) Soumith Chintala 2016,
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,7 +28,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# code taken from 
+# code taken from
 # https://github.com/pytorch/vision/blob/main/torchvision/datasets/cityscapes.py
 # modified it to change max label index from 255 to 19 (num_classes)
 
@@ -42,6 +42,7 @@ from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable
 from torchvision.datasets import VisionDataset
 from PIL import Image
 from megatron import print_rank_0
+from megatron.accelerator import get_accelerator
 
 
 class Cityscapes(VisionDataset):
@@ -99,11 +100,11 @@ class Cityscapes(VisionDataset):
          [0, 80, 100],
          [0, 0, 230],
          [119, 11, 32],
-         [0, 0, 0]], dtype=torch.float, device='cuda')
+         [0, 0, 0]], dtype=torch.float, device=get_accelerator().device_name())
 
 
     # Based on https://github.com/mcordts/cityscapesScripts
-    CityscapesClass = namedtuple('CityscapesClass', ['name', 'id', 'train_id', 
+    CityscapesClass = namedtuple('CityscapesClass', ['name', 'id', 'train_id',
         'category', 'category_id', 'has_instances', 'ignore_in_eval', 'color'])
 
     classes = [
@@ -184,8 +185,8 @@ class Cityscapes(VisionDataset):
             than one item. Otherwise target is a json object if target_type="polygon", else the image segmentation.
         """
         image = Image.open(self.images[index]).convert('RGB')
-        
-        target = Image.open(self.targets[index]) 
+
+        target = Image.open(self.targets[index])
         target = np.array(target)
 
         target_copy = target.copy()

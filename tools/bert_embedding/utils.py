@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from megatron import print_rank_0
 from megatron.core import parallel_state
+from megatron.accelerator import get_accelerator
 
 from .external_libs import h5py
 
@@ -147,7 +148,7 @@ def get_missing_blocks_by_rank(workdir, n_samples, block_size,
 
     # Extend rank's missing blocks (with None) such that all ranks have equal
     # length lists. This allows for easier tracking of global progress.
-    n_missing_tensor = torch.cuda.LongTensor([len(rank_missing_blocks)])
+    n_missing_tensor = get_accelerator().LongTensor([len(rank_missing_blocks)])
     torch.distributed.all_reduce(n_missing_tensor,
                                  op=torch.distributed.ReduceOp.MAX)
     max_n_missing = n_missing_tensor.item()

@@ -12,6 +12,7 @@ from tasks.vision.finetune_utils import finetune
 from tasks.vision.finetune_utils import build_data_loader
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.schedules import get_forward_backward_func
+from megatron.accelerator import get_accelerator
 from tasks.vision.segmentation.metrics import CFMatrix
 from tasks.vision.segmentation.data import build_train_valid_datasets
 from tasks.vision.segmentation.seg_models import SetrSegmentationModel
@@ -39,8 +40,8 @@ def segmentation():
 
     def process_batch(batch):
         """Process batch and produce inputs for the model."""
-        images = batch[0].cuda().contiguous()
-        masks = batch[1].cuda().contiguous()
+        images = get_accelerator().h2d_copy(batch[0]).contiguous()
+        masks = get_accelerator().h2d_copy(batch[1]).contiguous()
         return images, masks
 
     def calculate_weight(masks, num_classes):
@@ -87,7 +88,7 @@ def segmentation():
         if not model.training:
             images, masks, _, _ = slidingcrops(images, masks)
         #print_rank_0("images size = {}".format(images.size()))
-       
+
         if not model.training:
             output_tensor = torch.cat([model(image) for image in torch.split(images, args.micro_batch_size)])
         else:

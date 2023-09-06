@@ -11,6 +11,7 @@ import torch
 
 from megatron import update_num_microbatches
 from megatron.core import mpu, tensor_parallel
+from megatron.accelerator import get_accelerator
 from .global_vars import get_args
 from .utils import (unwrap_model,
                     print_rank_0)
@@ -158,9 +159,9 @@ def read_metadata(tracker_filename):
 
     # Get the max iteration retrieved across the ranks.
     if torch.distributed.is_initialized():
-        iters_cuda = torch.cuda.LongTensor([iteration])
-        torch.distributed.all_reduce(iters_cuda, op=torch.distributed.ReduceOp.MAX)
-        max_iter = iters_cuda[0].item()
+        iters_accelerator = get_accelerator().LongTensor([iteration])
+        torch.distributed.all_reduce(iters_accelerator, op=torch.distributed.ReduceOp.MAX)
+        max_iter = iters_accelerator[0].item()
         rank = torch.distributed.get_rank()
 
         # We should now have all the same iteration.
@@ -186,8 +187,8 @@ def get_rng_state():
         'random_rng_state': random.getstate(),
         'np_rng_state': np.random.get_state(),
         'torch_rng_state': torch.get_rng_state(),
-        'cuda_rng_state': torch.cuda.get_rng_state(),
-        'rng_tracker_states': tensor_parallel.get_cuda_rng_tracker().get_states()}
+        'cuda_rng_state': get_accelerator().get_rng_state(),
+        'rng_tracker_states': tensor_parallel.get_rng_tracker().get_states()}
 
     rng_state_list = None
     if torch.distributed.is_initialized() and \
@@ -605,21 +606,21 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
                 random.setstate(rng_state['random_rng_state'])
                 np.random.set_state(rng_state['np_rng_state'])
                 torch.set_rng_state(rng_state['torch_rng_state'])
-                torch.cuda.set_rng_state(rng_state['cuda_rng_state'])
+                get_accelerator().set_rng_state(rng_state['cuda_rng_state'])
                 # Check for empty states array
                 if not rng_state['rng_tracker_states']:
                     raise KeyError
-                tensor_parallel.get_cuda_rng_tracker().set_states(
+                tensor_parallel.get_rng_tracker().set_states(
                     rng_state['rng_tracker_states'])
             else:  # backward compatability
                 random.setstate(model_state_dict['random_rng_state'])
                 np.random.set_state(model_state_dict['np_rng_state'])
                 torch.set_rng_state(model_state_dict['torch_rng_state'])
-                torch.cuda.set_rng_state(model_state_dict['cuda_rng_state'])
+                get_accelerator().set_rng_state(model_state_dict['cuda_rng_state'])
                 # Check for empty states array
                 if not model_state_dict['rng_tracker_states']:
                     raise KeyError
-                tensor_parallel.get_cuda_rng_tracker().set_states(
+                tensor_parallel.get_rng_tracker().set_states(
                     model_state_dict['rng_tracker_states'])
         except KeyError:
             print_rank_0('Unable to load rng state from checkpoint {}. '
@@ -725,21 +726,21 @@ def load_model_checkpoint_for_zero(model, load_arg='load', strict=True):
                 random.setstate(rng_state['random_rng_state'])
                 np.random.set_state(rng_state['np_rng_state'])
                 torch.set_rng_state(rng_state['torch_rng_state'])
-                torch.cuda.set_rng_state(rng_state['cuda_rng_state'])
+                get_accelerator().set_rng_state(rng_state['cuda_rng_state'])
                 # Check for empty states array
                 if not rng_state['rng_tracker_states']:
                     raise KeyError
-                tensor_parallel.get_cuda_rng_tracker().set_states(
+                tensor_parallel.get_rng_tracker().set_states(
                     rng_state['rng_tracker_states'])
             else:  # backward compatability
                 random.setstate(model_state_dict['random_rng_state'])
                 np.random.set_state(model_state_dict['np_rng_state'])
                 torch.set_rng_state(model_state_dict['torch_rng_state'])
-                torch.cuda.set_rng_state(model_state_dict['cuda_rng_state'])
+                get_accelerator().set_rng_state(model_state_dict['cuda_rng_state'])
                 # Check for empty states array
                 if not model_state_dict['rng_tracker_states']:
                     raise KeyError
-                tensor_parallel.get_cuda_rng_tracker().set_states(
+                tensor_parallel.get_rng_tracker().set_states(
                     model_state_dict['rng_tracker_states'])
         except KeyError:
             print_rank_0('Unable to load rng state from checkpoint {}. '

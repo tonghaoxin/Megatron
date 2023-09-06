@@ -3,6 +3,7 @@
 
 import torch
 
+from megatron.accelerator import get_accelerator
 
 # A dictionary of all the memory buffers allocated.
 _MEM_BUFFS = dict()
@@ -45,7 +46,7 @@ class MemoryBuffer:
         self.dtype = dtype
         self.data = torch.empty(self.numel,
                                 dtype=self.dtype,
-                                device=torch.cuda.current_device(),
+                                device=get_accelerator().current_device(),
                                 requires_grad=False)
 
         # Index tracking the start of the free memory.

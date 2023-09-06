@@ -58,14 +58,15 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --attention-dropout 0 \
                --hidden-dropout 0 \
                --use-distributed-optimizer \
+               --use-flash-attn \
                --untie-embeddings-and-output-weights \
                --initial-loss-scale 16 \
-               --use-flash-attn \
                --fp16"
+               # --use-zero-optimizer \
+               # --no-contiguous-buffers-in-local-ddp \
+               # --no-gradient-accumulation-fusion \
                # --use-alibi-position-embeddings \
                # --sequence-parallel
-               # --vocab-file $VOCAB_FILE \
-               # --merge-file $MERGE_FILE \
 
 LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --pipeline-model-parallel-size 4 \
@@ -87,7 +88,7 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --lr-warmup-fraction .01 \
                 --recompute-method uniform \
                 --no-async-tensor-model-parallel-allreduce \
-                --fp16
+                --fp16 \
                 --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                 --activation-func swiglu \
@@ -100,7 +101,6 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --hidden-dropout 0 \
                 --untie-embeddings-and-output-weights \
                 --use-flash-attn"
-                # --sequence-parallel
 
 LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --pipeline-model-parallel-size 4 \
@@ -122,7 +122,7 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --lr-warmup-fraction .01 \
                 --recompute-method uniform \
                 --no-async-tensor-model-parallel-allreduce \
-                --fp16
+                --fp16 \
                 --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                 --activation-func swiglu \
@@ -135,7 +135,6 @@ LLAMA_33B_ARGS="--tensor-model-parallel-size 2 \
                 --hidden-dropout 0 \
                 --untie-embeddings-and-output-weights \
                 --use-flash-attn"
-                # --sequence-parallel
 
 LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --pipeline-model-parallel-size 8 \
@@ -157,7 +156,7 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --lr-warmup-fraction .01 \
                 --recompute-method uniform \
                 --no-async-tensor-model-parallel-allreduce \
-                --fp16
+                --fp16 \
                 --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
                 --swiglu \
@@ -170,20 +169,18 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --hidden-dropout 0 \
                 --untie-embeddings-and-output-weights \
                 --use-flash-attn"
-                # --sequence-parallel
-                # --bf16
 
 OUTPUT_ARGS="--log-interval 1 \
              --save-interval 10000 \
              --eval-interval 1000 \
              --eval-iters 10"
 
-OTHER_ARGS="--save $CHECKPOINT_PATH \
-            --load $CHECKPOINT_PATH \
-            --data-path $DATA_PATH \
+OTHER_ARGS="--data-path $DATA_PATH \
             --data-impl mmap \
             --split 949,50,1 \
             --distributed-backend nccl"
+            # --save $CHECKPOINT_PATH \
+            # --load $CHECKPOINT_PATH \
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \

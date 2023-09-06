@@ -12,6 +12,7 @@ from megatron.model.vision.classification import VitClassificationModel
 from megatron.model.vision.classification import MitClassificationModel
 from megatron.training import pretrain
 from megatron.utils import average_losses_across_data_parallel_group
+from megatron.accelerator import get_accelerator
 
 
 def model_provider(pre_process=True, post_process=True):
@@ -40,8 +41,8 @@ def get_batch(data_iterator):
     data = next(data_iterator)
 
     # only data parallelism; no need for broadcast
-    images = data[0].cuda()
-    labels = data[1].cuda()
+    images = get_accelerator().h2d_copy(data[0])
+    labels = get_accelerator().h2d_copy(data[1])
 
     return images, labels
 

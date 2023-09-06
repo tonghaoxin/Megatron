@@ -1,3 +1,5 @@
+# !/usr/bin/env python3
+
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """Megatron initialization."""
@@ -11,7 +13,6 @@ import numpy as np
 import torch
 from datetime import timedelta
 
-from megatron import fused_kernels
 from megatron import get_adlr_autoresume
 from megatron import get_args
 from megatron import get_tensorboard_writer
@@ -21,24 +22,26 @@ from megatron.checkpointing import load_args_from_checkpoint
 from megatron.global_vars import set_global_variables
 from megatron.model.transformer import bias_dropout_add_fused_train
 from megatron.model.fused_bias_gelu import bias_gelu
+from megatron.accelerator import get_accelerator
 
 
 def initialize_megatron(extra_args_provider=None, args_defaults={},
-                        ignore_unknown_args=False, allow_no_cuda=False):
+                        ignore_unknown_args=False, allow_no_accelerator=False):
     """Set global variables, initialize distributed, and
     set autoresume and random seeds.
-    `allow_no_cuda` should not be set unless using megatron for cpu only
+    `allow_no_accelerator` should not be set unless using megatron for cpu only
     data processing. In general this arg should not be set unless you know
     what you are doing.
     Returns a function to finalize distributed env initialization
     (optionally, only when args.lazy_mpu_init == True)
     """
-    if not allow_no_cuda:
-        # Make sure cuda is available.
-        assert torch.cuda.is_available(), 'Megatron requires CUDA.'
-
     # Parse arguments
     args = parse_args(extra_args_provider, ignore_unknown_args)
+
+    if not allow_no_accelerator:
+        # Make sure accelerator is available.
+        assert get_accelerator().is_available(), \
+                f'{get_accelerator().device_name()} is available for Megatron.'
 
     if args.use_checkpoint_args or args_defaults.get('use_checkpoint_args', False):
         assert args.load is not None, '--use-checkpoints-args requires --load argument'
@@ -130,11 +133,11 @@ def _compile_dependencies():
     if torch.distributed.get_rank() == 0:
         start_time = time.time()
         print('> compiling and loading fused kernels ...', flush=True)
-        fused_kernels.load(args)
+        get_accelerator().load_custom_ops(args)
         torch.distributed.barrier()
     else:
         torch.distributed.barrier()
-        fused_kernels.load(args)
+        get_accelerator().load_custom_ops(args)
     # Simple barrier to make sure all ranks have passed the
     # compilation phase successfully before moving on to the
     # rest of the program. We think this might ensure that
@@ -151,7 +154,7 @@ def _initialize_distributed():
     """Initialize torch.distributed and core model parallel."""
     args = get_args()
 
-    device_count = torch.cuda.device_count()
+    device_count = get_accelerator().device_count()
     if torch.distributed.is_initialized():
 
         if args.rank == 0:
@@ -172,7 +175,7 @@ def _initialize_distributed():
                     'expected local-rank to be the same as rank % device-count.'
             else:
                 args.local_rank = device
-            torch.cuda.set_device(device)
+            get_accelerator().set_device(device)
     # Call the init process
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
@@ -223,8 +226,8 @@ def _set_random_seed(seed_, data_parallel_random_init=False):
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        if torch.cuda.device_count() > 0:
-            tensor_parallel.model_parallel_cuda_manual_seed(seed)
+        if get_accelerator().device_count() > 0:
+            tensor_parallel.model_parallel_manual_seed(seed)
     else:
         raise ValueError('Seed ({}) should be a positive integer.'.format(seed))
 
@@ -251,7 +254,8 @@ def set_jit_fusion_options():
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_override_can_fuse_on_gpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)
-        torch._C._jit_set_nvfuser_enabled(True)
+        if get_accelerator().device_name() == 'cuda':
+            torch._C._jit_set_nvfuser_enabled(True)
         torch._C._debug_set_autodiff_subgraph_inlining(False)
     else:
         # legacy pytorch fuser
@@ -275,10 +279,10 @@ def _warmup_jit_function():
 
     # Warmup fused bias+gelu
     bias = torch.rand(args.ffn_hidden_size // args.tensor_model_parallel_size,
-                      dtype=dtype, device='cuda')
+                      dtype=dtype, device=get_accelerator().device_name())
     input = torch.rand((args.seq_length, args.micro_batch_size,
                         args.ffn_hidden_size // args.tensor_model_parallel_size),
-                       dtype=dtype, device='cuda')
+                       dtype=dtype, device=get_accelerator().device_name())
     # Warmup JIT fusions with the input grad_enable state of both forward
     # prop and recomputation
     for bias_grad, input_grad in zip([True, True], [False, True]):
@@ -293,10 +297,10 @@ def _warmup_jit_function():
     else:
         seq_length = args.seq_length
     input = torch.rand((seq_length, args.micro_batch_size, args.hidden_size),
-                       dtype=dtype, device='cuda')
+                       dtype=dtype, device=get_accelerator().device_name())
     residual = torch.rand((seq_length, args.micro_batch_size, args.hidden_size),
-                          dtype=dtype, device='cuda')
-    bias = torch.rand((args.hidden_size), dtype=dtype, device='cuda').expand_as(residual)
+                          dtype=dtype, device=get_accelerator().device_name())
+    bias = torch.rand((args.hidden_size), dtype=dtype, device=get_accelerator().device_name()).expand_as(residual)
     dropout_rate = 0.1
     # Warmup JIT fusions with the input grad_enable state of both forward
     # prop and recomputation
@@ -307,4 +311,4 @@ def _warmup_jit_function():
         for _ in range(5):
             output = bias_dropout_add_fused_train(input, bias, residual, dropout_rate)
     del bias, input, residual, output
-    torch.cuda.empty_cache()
+    get_accelerator().empty_cache()

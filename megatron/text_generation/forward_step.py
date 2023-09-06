@@ -8,6 +8,7 @@ import torch
 
 from megatron import get_args
 from megatron.core import mpu
+from megatron.accelerator import get_accelerator
 from .communication import (
     send_to_next_pipeline_rank,
     recv_from_prev_pipeline_rank_)
@@ -32,7 +33,7 @@ class InferenceParams:
         "swap between batches"
         if len(self.key_value_memory_dict) == 0:
             raise ValueError("should not swap when dict in empty")
-        
+
         for layer_number in self.key_value_memory_dict.keys():
             inference_key_memory, inference_value_memory = self.key_value_memory_dict[layer_number]
             assert len(batch_idx) == inference_key_memory.shape[1] ## make sure batch size is the same
@@ -105,7 +106,7 @@ def _allocate_recv_buffer(batch_size, sequence_length):
     recv_size = (sequence_length, batch_size, args.hidden_size)
     return torch.empty(recv_size,
                        dtype=_get_recv_buffer_dtype(args),
-                       device=torch.cuda.current_device())
+                       device=get_accelerator().current_device())
 
 
 
@@ -169,7 +170,7 @@ def _with_pipelining_forward_step(model, tokens, position_ids, attention_mask,
         args = get_args()
         logits = torch.empty(
             (batch_size, sequence_length, args.padded_vocab_size),
-            dtype=torch.float32, device=torch.cuda.current_device())
+            dtype=torch.float32, device=get_accelerator().current_device())
 
     # Preallocate recv buffer.
     recv_buffer = _allocate_recv_buffer(micro_batch_size, sequence_length)

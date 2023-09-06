@@ -2,12 +2,14 @@
 import math
 import einops
 import torch
-import apex
 import torch.nn.functional as F
 from megatron import get_args
 from megatron.model import LayerNorm
 from megatron.model.module import MegatronModule
 from megatron.model.vision.utils import resize
+from megatron.accelerator import get_accelerator
+
+sync_batch_norm = get_accelerator().get_operator('sync_batch_norm')
 
 
 class SetrSegmentationHead(MegatronModule):
@@ -23,7 +25,7 @@ class SetrSegmentationHead(MegatronModule):
         self.layernorm = LayerNorm(hidden_size, eps=args.layernorm_epsilon)
         self.conv_0 = torch.nn.Conv2d(hidden_size, hidden_size,
                                       1, 1, bias=False)
-        self.norm_0 = apex.parallel.SyncBatchNorm(hidden_size)
+        self.norm_0 = sync_batch_norm(hidden_size)
         self.conv_1 = torch.nn.Conv2d(hidden_size, num_classes, 1, 1)
 
     def to_2D(self, x):
@@ -93,7 +95,7 @@ class SegformerSegmentationHead(MegatronModule):
 
         self.conv_fuse = torch.nn.Conv2d(self.embedding_dim*4,
                                          self.embedding_dim, 1, 1)
-        self.norm = apex.parallel.SyncBatchNorm(self.embedding_dim)
+        self.norm = sync_batch_norm(self.embedding_dim)
 
         self.dropout = torch.nn.Dropout2d(self.dropout_ratio)
         self.linear_pred = torch.nn.Conv2d(self.embedding_dim,

@@ -8,20 +8,9 @@ import numbers
 import torch
 from torch.nn.parameter import Parameter
 from torch.nn import init
-import importlib
 
 from megatron.core.utils import make_viewless_tensor
-
-try:
-    from apex.contrib.layer_norm.layer_norm import FastLayerNormFN
-    HAVE_PERSIST_LAYER_NORM = True
-except:
-    HAVE_PERSIST_LAYER_NORM = False
-
-from apex.normalization.fused_layer_norm import FusedLayerNormAffineFunction
-
-global fused_layer_norm_cuda
-fused_layer_norm_cuda = None
+from megatron.accelerator import get_accelerator
 
 
 class MixedFusedLayerNorm(torch.nn.Module):
@@ -34,9 +23,6 @@ class MixedFusedLayerNorm(torch.nn.Module):
 
         self.apply_layernorm_1p = apply_layernorm_1p
 
-        global fused_layer_norm_cuda
-        fused_layer_norm_cuda = importlib.import_module("fused_layer_norm_cuda")
-
         # List of hiddens sizes supported in the persistent layer norm kernel
         # If the hidden size is not supported, fall back to the non-persistent
         # kernel.
@@ -44,7 +30,7 @@ class MixedFusedLayerNorm(torch.nn.Module):
             5120, 6144, 8192, 10240, 12288, 12800, 15360, 16384, 18432, 20480,
             24576, 25600, 30720, 32768, 40960, 49152, 65536]
         if normalized_shape not in persist_ln_hidden_sizes or \
-                not HAVE_PERSIST_LAYER_NORM:
+                get_accelerator().get_operator('fast_layer_norm') is None:
             no_persist_layer_norm = True
 
         if isinstance(normalized_shape, numbers.Integral):
@@ -76,9 +62,11 @@ class MixedFusedLayerNorm(torch.nn.Module):
     weight = self.weight + 1 if self.apply_layernorm_1p else self.weight
 
     if self.no_persist_layer_norm:
-        return FusedLayerNormAffineFunction.apply(input, weight, self.bias, self.normalized_shape, self.eps)
+        return get_accelerator().get_operator('fused_layer_norm')\
+                .apply(input, weight, self.bias, self.normalized_shape, self.eps)
     else:
-        output = FastLayerNormFN.apply(input, weight, self.bias, self.eps)
+        output = get_accelerator().get_operator('fast_layer_norm')\
+                .apply(input, weight, self.bias, self.eps)
 
         # Apex's fast layer norm function outputs a 'view' tensor (i.e., has
         # a populated '_base' field). This will result in schedule.py's
@@ -89,3 +77,9 @@ class MixedFusedLayerNorm(torch.nn.Module):
                                       keep_graph = True)
 
         return output
+
+
+# interface for layernorm replacement
+CustomLayerNorm = get_accelerator().get_operator('custom_layer_norm')
+if CustomLayerNorm is not None:
+    MixedFusedLayerNorm = CustomLayerNorm

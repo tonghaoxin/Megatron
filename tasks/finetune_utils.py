@@ -20,16 +20,17 @@ from megatron.training import training_log
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.utils import calc_params_l2_norm
 from megatron.utils import check_adlr_autoresume_termination
+from megatron.accelerator import get_accelerator
 
 
 def process_batch(batch):
     """Process batch and produce inputs for the model."""
     args = get_args()
 
-    tokens = batch['text'].long().cuda().contiguous()
-    types = batch['types'].long().cuda().contiguous()
-    labels = batch['label'].long().cuda().contiguous()
-    attention_mask = batch['padding_mask'].float().cuda().contiguous()
+    tokens = get_accelerator().h2d_copy(batch['text'].long()).contiguous()
+    types = get_accelerator().h2d_copy(batch['types'].long()).contiguous()
+    labels = get_accelerator().h2d_copy(batch['label'].long()).contiguous()
+    attention_mask = get_accelerator().h2d_copy(batch['padding_mask'].float()).contiguous()
     if args.fp16:
         attention_mask = attention_mask.half()
 
@@ -41,7 +42,7 @@ def cross_entropy_loss_func(labels, output_tensor):
 
     # Cross-entropy loss.
     loss_func = torch.nn.CrossEntropyLoss()
-    loss = loss_func(logits.contiguous().float(), labels)
+    loss = loss_func(get_accelerator().contiguous(logits).float(), labels)
 
     # Reduce loss for logging.
     averaged_loss = average_losses_across_data_parallel_group([loss])
@@ -102,7 +103,7 @@ def _build_infinite_size_dataloader(dataloader):
             iterator = dataloader.__iter__()
 
 
-def _build_train_valid_dataloaders(train_dataset, valid_dataset, 
+def _build_train_valid_dataloaders(train_dataset, valid_dataset,
     task_collate_fn=None):
     """Traing and validation dataloaders."""
     args = get_args()

@@ -25,6 +25,7 @@ from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index, appl
 from megatron.model.utils import attention_mask_func, get_deepnorm_coefficients, init_method_normal
 from megatron.utils import print_rank, get_hook_fn, debug
 from .activation_funcs import ACTIVATION_FUNCS
+from megatron.accelerator import get_accelerator
 
 try:
     from einops import rearrange
@@ -39,10 +40,10 @@ except ImportError:
     except ImportError:
         flash_attn_unpadded_func = None
 
-try:
-    import nvtx
-except ImportError:
-    pass
+custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
+custom_bmm = get_accelerator().get_operator('custom_bmm')
+custom_baddbmm = get_accelerator().get_operator('custom_baddbmm')
+
 
 """ We use the following notation throughout this file:
      h: hidden size
@@ -133,9 +134,9 @@ class ParallelMLP(MegatronModule):
             **_args_to_kwargs())
 
         if args.deepnorm and args.activation_func == 'geglu':
-            _get_cuda_rng_tracker = tensor_parallel.get_cuda_rng_tracker
+            _get_rng_tracker = tensor_parallel.get_rng_tracker
 
-            with _get_cuda_rng_tracker().fork():
+            with _get_rng_tracker().fork():
                 w, v = self.dense_h_to_4h.weight.chunk(2, dim=0)
                 tensor_parallel.xavier_normal_tensor_parallel_(
                     w, deepnorm_coeff.beta, tp_degree=world_size, partition_dim=0
@@ -163,7 +164,7 @@ class ParallelMLP(MegatronModule):
             skip_bias_add=True,
             **_args_to_kwargs())
 
-    @nvtx.annotate("ParallelMLP forward", color="teal")
+    @custom_profiler_decorator("ParallelMLP forward", color="teal")
     def forward(self, hidden_states):
 
         # [s, b, 4hp]
@@ -194,7 +195,7 @@ class SwitchMLP(MegatronModule):
         for i in range(args.num_experts):
             self.experts.append(ParallelMLP(init_method, output_layer_init_method))
 
-    @nvtx.annotate("SwitchMLP forward", color="teal")
+    @custom_profiler_decorator("SwitchMLP forward", color="teal")
     def forward(self, hidden_states):
         # hidden_states: [s, b, h]
         s = hidden_states.size(0)
@@ -281,10 +282,10 @@ class CoreAttention(MegatronModule):
 
         self.enable_debug = args.enable_debug
 
-    @nvtx.annotate("CoreAttention forward", color="cyan")
+    @custom_profiler_decorator("CoreAttention forward", color="cyan")
     def forward(self, query_layer, key_layer,
                 value_layer, attention_mask, alibi=None):
-        
+
         # ===================================
         # Raw attention scores. [b, np, s, s]
         # ===================================
@@ -317,7 +318,7 @@ class CoreAttention(MegatronModule):
                 beta = 1.0
 
         # Raw attention scores. [b * np, sq, sk]
-        matmul_result = torch.baddbmm(
+        matmul_result = custom_baddbmm(
             matmul_input_buffer,
             query_layer.transpose(0, 1),   # [b * np, sq, hn]
             key_layer.transpose(0, 1).transpose(1, 2),  # [b * np, hn, sk]
@@ -340,7 +341,7 @@ class CoreAttention(MegatronModule):
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         if not self.sequence_parallel:
-            with tensor_parallel.get_cuda_rng_tracker().fork():
+            with tensor_parallel.get_rng_tracker().fork():
                 attention_probs = self.attention_dropout(attention_probs)
         else:
             attention_probs = self.attention_dropout(attention_probs)
@@ -367,7 +368,7 @@ class CoreAttention(MegatronModule):
                                             output_size[2], -1)
 
         # matmul: [b * np, sq, hn]
-        context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
+        context_layer = custom_bmm(attention_probs, value_layer.transpose(0, 1))
 
         # change view [b, np, sq, hn]
         context_layer = context_layer.view(*output_size)
@@ -407,7 +408,7 @@ class FlashSelfAttention(torch.nn.Module):
         self.softmax_scale = softmax_scale
         self.dropout_p = attention_dropout
 
-    @nvtx.annotate("FlashSelfAttention forward", color="cyan")
+    @custom_profiler_decorator("FlashSelfAttention forward", color="cyan")
     def forward(self, q, k, v):
         """Implements the multihead softmax attention.
         Arguments
@@ -415,8 +416,8 @@ class FlashSelfAttention(torch.nn.Module):
             q, k, v: The tensor containing the query, key, and value. (B, S, H, D)
         """
 
-        assert all((i.dtype in [torch.float16, torch.bfloat16] for i in (q,k,v)))
-        assert all((i.is_cuda for i in (q,k,v)))
+        assert all((i.dtype in [torch.float16, torch.bfloat16] for i in (q, k, v)))
+        assert all((get_accelerator().on_accelerator(i) for i in (q, k, v)))
 
         batch_size, seqlen_q = q.shape[0], q.shape[1]
         seqlen_k = k.shape[1]
@@ -497,8 +498,7 @@ class ParallelAttention(MegatronModule):
             if rearrange is None:
                 raise ImportError('einops is not installed, please install with pip install einops')
 
-        import parallel_attention
-        self.update_func = parallel_attention.update
+        self.update_func = get_accelerator().get_operator('custom_parallel_attention')
 
         projection_size = args.kv_channels * args.num_attention_heads
 
@@ -546,10 +546,10 @@ class ParallelAttention(MegatronModule):
                 **_args_to_kwargs())
 
             if args.deepnorm:
-                _get_cuda_rng_tracker = tensor_parallel.get_cuda_rng_tracker
+                _get_rng_tracker = tensor_parallel.get_rng_tracker
 
                 deepnorm_coeff = get_deepnorm_coefficients()
-                with _get_cuda_rng_tracker().fork():
+                with _get_rng_tracker().fork():
                     if self.group_query_attention:
                         wq, wk, wv = self.query_key_value.weight.split(
                             [
@@ -631,7 +631,7 @@ class ParallelAttention(MegatronModule):
 
         self.enable_debug = args.enable_debug
 
-    @nvtx.annotate("ParallelAttention _checkpointed_attention_forward", color="lightskyblue")
+    @custom_profiler_decorator("ParallelAttention _checkpointed_attention_forward", color="lightskyblue")
     def _checkpointed_attention_forward(self, query_layer, key_layer,
                                         value_layer, attention_mask,
                                         rotary_pos_emb=None, alibi=None):
@@ -664,14 +664,14 @@ class ParallelAttention(MegatronModule):
             num_attention_heads,
             self.hidden_size_per_attention_head,
             dtype=self.params_dtype,
-            device=torch.cuda.current_device())
+            device=get_accelerator().current_device())
     def _repeat_kv(self, x):
         """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
         if self.num_repeats == 1:
             return x
         return x.repeat_interleave(self.num_repeats, dim = 2)
 
-    @nvtx.annotate("ParallelAttention forward", color="greenyellow")
+    @custom_profiler_decorator("ParallelAttention forward", color="greenyellow")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None,
                 rotary_pos_emb=None, position_ids=None, alibi=None):
@@ -883,7 +883,7 @@ class ParallelAttention(MegatronModule):
             q, k, v = [rearrange(x, 's b ... -> b s ...').contiguous()
                        for x in (query_layer, key_layer, value_layer)]
             if not self.sequence_parallel:
-                with tensor_parallel.get_cuda_rng_tracker().fork():
+                with tensor_parallel.get_rng_tracker().fork():
                     context_layer = self.core_attention_flash(q, k, v)
             else:
                 context_layer = self.core_attention_flash(q, k, v)
@@ -979,7 +979,7 @@ class ParallelTransformerLayer(MegatronModule):
                     args.hidden_size,
                     eps=args.rmsnorm_epsilon,
                     sequence_parallel=args.sequence_parallel,
-                    weigth_empty=args.rmsnorm_weigth_empty)
+                    weight_empty=args.rmsnorm_weight_empty)
 
         # Self attention.
         self.self_attention = ParallelAttention(
@@ -1012,7 +1012,7 @@ class ParallelTransformerLayer(MegatronModule):
                     args.hidden_size,
                     eps=args.rmsnorm_epsilon,
                     sequence_parallel=args.sequence_parallel,
-                    weigth_empty=args.rmsnorm_weigth_empty)
+                    weight_empty=args.rmsnorm_weight_empty)
 
         if self.layer_type == LayerType.decoder:
             self.inter_attention = ParallelAttention(
@@ -1040,7 +1040,7 @@ class ParallelTransformerLayer(MegatronModule):
                         args.hidden_size,
                         eps=args.rmsnorm_epsilon,
                         sequence_parallel=args.sequence_parallel,
-                        weigth_empty=args.rmsnorm_weigth_empty)
+                        weight_empty=args.rmsnorm_weight_empty)
 
         # MLP
         if args.num_experts is not None:
@@ -1062,14 +1062,14 @@ class ParallelTransformerLayer(MegatronModule):
                     self._build_alibi_tensor(args.seq_length,
                                              args.num_attention_heads,
                                              args.micro_batch_size).\
-                                                     to(torch.cuda.current_device()).\
+                                                     to(get_accelerator().current_device()).\
                                                      to(args.params_dtype)
         else:
             self.alibi = None
 
         self.enable_debug = args.enable_debug
 
-    @nvtx.annotate("ParallelTransformerLayer forward", color="mediumorchid")
+    @custom_profiler_decorator("ParallelTransformerLayer forward", color="mediumorchid")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
                 rotary_pos_emb=None, position_ids=None,
@@ -1432,7 +1432,7 @@ class ParallelTransformer(MegatronModule):
                     kv_channels=args.kv_channels,
                     self_attn_mask_type=self_attn_mask_type.name,
                     tp_group=mpu.get_tensor_model_parallel_group(),
-                    get_rng_state_tracker=tensor_parallel.get_cuda_rng_tracker,
+                    get_rng_state_tracker=tensor_parallel.get_rng_tracker,
                     fuse_wgrad_accumulation=args.gradient_accumulation_fusion,
                     apply_query_key_layer_scaling=args.apply_query_key_layer_scaling,
                     attention_softmax_in_fp32=args.attention_softmax_in_fp32,
@@ -1541,14 +1541,14 @@ class ParallelTransformer(MegatronModule):
                         args.hidden_size,
                         eps=args.rmsnorm_epsilon,
                         sequence_parallel=args.sequence_parallel,
-                        weigth_empty=args.rmsnorm_weigth_empty)
+                        weight_empty=args.rmsnorm_weight_empty)
 
         self.enable_debug = args.enable_debug
 
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
 
-    @nvtx.annotate("ParallelTransformer _checkpointed_forward", color="deeppink")
+    @custom_profiler_decorator("ParallelTransformer _checkpointed_forward", color="deeppink")
     def _checkpointed_forward(self, hidden_states, attention_mask,
                               encoder_output, enc_dec_attn_mask,
                               rotary_pos_emb, is_first_microbatch,
@@ -1578,7 +1578,7 @@ class ParallelTransformer(MegatronModule):
                     hidden_states = transformer_engine.pytorch.distributed.checkpoint(
                         custom(l, l + self.recompute_num_layers, is_transformer_engine=True),
                         self.distribute_saved_activations,
-                        tensor_parallel.get_cuda_rng_tracker,
+                        tensor_parallel.get_rng_tracker,
                         mpu.get_tensor_model_parallel_group(),
                         hidden_states, attention_mask, encoder_output,
                         enc_dec_attn_mask, rotary_pos_emb, position_ids)
@@ -1604,7 +1604,7 @@ class ParallelTransformer(MegatronModule):
                         hidden_states = transformer_engine.pytorch.distributed.checkpoint(
                             custom(l, l + 1, is_transformer_engine=True),
                             self.distribute_saved_activations,
-                            tensor_parallel.get_cuda_rng_tracker,
+                            tensor_parallel.get_rng_tracker,
                             mpu.get_tensor_model_parallel_group(),
                             hidden_states, attention_mask, encoder_output,
                             enc_dec_attn_mask, rotary_pos_emb, position_ids)
@@ -1638,7 +1638,7 @@ class ParallelTransformer(MegatronModule):
         forward_step_func"""
         self.input_tensor = input_tensor
 
-    @nvtx.annotate("ParallelTransformer forward", color="paleturquoise")
+    @custom_profiler_decorator("ParallelTransformer forward", color="paleturquoise")
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
                 inference_params=None, rotary_pos_emb=None,
@@ -1679,7 +1679,7 @@ class ParallelTransformer(MegatronModule):
         )
 
         if self.sequence_parallel:
-            rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
+            rng_context = tensor_parallel.get_rng_tracker().fork()
         else:
             rng_context = nullcontext()
 

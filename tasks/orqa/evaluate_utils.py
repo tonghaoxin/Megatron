@@ -8,6 +8,7 @@ from megatron.data.orqa_wiki_dataset import get_open_retrieval_wiki_dataset
 from megatron.data.realm_index import OpenRetreivalDataStore, FaissMIPSIndex
 from megatron.model.biencoder_model import get_model_provider
 from megatron.training import get_model
+from megatron.accelerator import get_accelerator
 from tasks.orqa.unsupervised.nq import get_nq_dataset
 from tasks.orqa.unsupervised.nq import get_one_epoch_nq_dataloader
 from tasks.orqa.unsupervised.nq import process_nq_batch
@@ -53,7 +54,7 @@ class ORQAEvaluator(object):
 
     def faiss_wrapper(self):
         # Initialize FAISS wrapper on local rank = 0 as the evidence embeddings
-        # is distributed over all the GPUs in a node and FAISS is not 
+        # is distributed over all the GPUs in a node and FAISS is not
         # thread-safe
         args = get_args()
         if args.local_rank == 0:
@@ -88,7 +89,7 @@ class ORQAEvaluator(object):
 
             with torch.no_grad():
                 query_logits = unwrapped_model.embed_text(
-                    unwrapped_model.query_model, query_tokens, 
+                    unwrapped_model.query_model, query_tokens,
                     query_mask, query_types)
 
             reference_list.extend(reference)
@@ -108,7 +109,7 @@ class ORQAEvaluator(object):
                                                                     split)
         local_rank = args.local_rank
         rank = torch.distributed.get_rank()
-        device_count = torch.cuda.device_count()
+        device_count = get_accelerator().device_count()
         num_nodes = torch.distributed.get_world_size() // device_count
         node_id = rank // device_count
 
@@ -121,7 +122,7 @@ class ORQAEvaluator(object):
             if node_id == node:
                 device_start_rank = start_rank
                 group = node_group
-        
+
         input_ = torch.empty_like(query_tensor).copy_(query_tensor).detach_()
         tensor_list = [torch.empty_like(input_) for _ in range(device_count)]
         torch.distributed.all_gather(tensor_list, query_tensor, group=group)
@@ -130,16 +131,16 @@ class ORQAEvaluator(object):
             all_query_tensor = torch.cat(tensor_list, dim=0).contiguous()
 
             distance, topkindex = self.mips_index.search_mips_index(
-                all_query_tensor, top_k=args.faiss_topk_retrievals, 
+                all_query_tensor, top_k=args.faiss_topk_retrievals,
                 reconstruct=False)
-            distance = torch.from_numpy(distance).cuda()
-            topkindex = torch.LongTensor(topkindex).cuda()
+            distance = get_accelerator().h2d_copy(torch.from_numpy(distance))
+            topkindex = get_accelerator().h2d_copy(torch.LongTensor(topkindex))
 
         if local_rank != 0:
-            distance = torch.empty(device_count * len(query_tensor), \
-                args.faiss_topk_retrievals, dtype=torch.float32).cuda()
-            topkindex = torch.empty(device_count * len(query_tensor), \
-                args.faiss_topk_retrievals, dtype=torch.int64).cuda()
+            distance = get_accelerator().h2d_copy(torch.empty(device_count * len(query_tensor), \
+                args.faiss_topk_retrievals, dtype=torch.float32))
+            topkindex = get_accelerator().h2d_copy(torch.empty(device_count * len(query_tensor), \
+                args.faiss_topk_retrievals, dtype=torch.int64))
 
         torch.distributed.broadcast(distance, src=device_start_rank, \
             group=group)

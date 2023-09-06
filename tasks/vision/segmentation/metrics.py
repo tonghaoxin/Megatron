@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 #copyright (c) go-hiroaki & Chokurei
-#email: guangmingwu2010@gmail.com 
+#email: guangmingwu2010@gmail.com
 #       guozhilingty@gmail.com
 #
 #
@@ -11,6 +11,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from megatron.accelerator import get_accelerator
 
 eps = 1e-6
 
@@ -79,7 +80,7 @@ def _get_weights(y_true, nb_ch):
     """
     args:
         y_true : 3-d ndarray in [batch_size, img_rows, img_cols]
-        nb_ch : int 
+        nb_ch : int
     return [float] weights
     """
     batch_size, img_rows, img_cols = y_true.shape
@@ -519,7 +520,7 @@ class AE(object):
 
     def __repr__(self):
         return "AE"
-    
+
     def __call__(self, y_pred, y_true):
         """
         args:
@@ -540,12 +541,12 @@ if __name__ == "__main__":
         y_true = torch.rand(batch_size, ch, img_row, img_col)
         noise = torch.zeros(y_true.size()).data.normal_(0, std=0.1)
         y_pred = y_true + noise
-        for cuda in [False, True]:
-            if cuda:
-                y_pred = y_pred.cuda()
-                y_true = y_true.cuda()
+        for accelerator in [False, True]:
+            if accelerator:
+                y_pred = get_accelerator().h2d_copy(y_pred)
+                y_true = get_accelerator().h2d_copy(y_true)
 
-            print('#'*20, 'Cuda : {} ; size : {}'.format(cuda, y_true.size()))
+            print('#' * 20, 'Accelerator : {} ; size : {}'.format(accelerator, y_true.size()))
             ########### similarity metrics
             metric = MSE()
             acc = metric(y_pred, y_true).item()
@@ -558,15 +559,15 @@ if __name__ == "__main__":
             metric = SSIM()
             acc = metric(y_pred, y_true).item()
             print("{} ==> {}".format(repr(metric), acc))
-                  
-            metric = LPIPS(cuda)
-            acc = metric(y_pred, y_true).item()
-            print("{} ==> {}".format(repr(metric), acc))
-            
+
+            # metric = LPIPS(accelerator)
+            # acc = metric(y_pred, y_true).item()
+            # print("{} ==> {}".format(repr(metric), acc))
+
             metric = AE()
             acc = metric(y_pred, y_true).item()
             print("{} ==> {}".format(repr(metric), acc))
-            
+
             ########### accuracy metrics
             metric = OAAcc()
             maccu, accu = metric(y_pred, y_true)

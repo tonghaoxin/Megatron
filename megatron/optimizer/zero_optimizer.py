@@ -8,10 +8,11 @@ import torch
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 from torch import distributed as dist
 
+from .optimizer import MixedPrecisionOptimizer
 from megatron import get_args
 from megatron.core import mpu, tensor_parallel
 from megatron.utils import print_rank_0, param_is_not_shared
-from .optimizer import MixedPrecisionOptimizer
+from megatron.accelerator import get_accelerator
 
 class GradientBuffer:
     def __init__(self, numel: int, dtype, device) -> None:
@@ -123,7 +124,7 @@ class Bucket:
         target.copy_(grad)
 
         # Keep it from being released until copied
-        param.grad.record_stream(torch.cuda.current_stream())
+        param.grad.record_stream(get_accelerator().current_stream())
         self._collected_grad += 1
         # Discard grad right away after copied to the buffer
         param.grad = None
@@ -553,7 +554,7 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
         self._bucket_assignment = []
         self._param_buffer = []  # each param_group has a ParameterBuffer
 
-        self._reduction_stream = torch.cuda.Stream()
+        self._reduction_stream = get_accelerator().Stream()
         self._require_backward_grad_sync = True
         self._zero_stage = zero_stage
         # All-reduce layernorm parameters across model parallel nodes
@@ -624,8 +625,8 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
         if self.is_need_allreduce_layer_norm_grads:
             self._all_reduce_layer_norm_grads(param=param)
 
-        with torch.cuda.stream(self._reduction_stream):
-            torch.cuda.current_stream().wait_stream(torch.cuda.default_stream())
+        with get_accelerator().stream(self._reduction_stream):
+            get_accelerator().current_stream().wait_stream(get_accelerator().default_stream())
             self._collect_grad(param=param, group_idx=group_idx)
 
     def _register_hooks(self, hook, param_list, group_idx):
@@ -733,7 +734,7 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
 
     @torch.no_grad()
     def step(self, args, timers):
-        torch.cuda.synchronize()
+        get_accelerator().synchronize()
 
         # Do unscale, check for inf, and update grad scaler only for
         # the case that grad scaler is provided.
@@ -779,7 +780,7 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
         # ZeRO-2 must perform gradient finishing work, regardless of whether synchronization is enabled
         if not self._require_backward_grad_sync and self._zero_stage == 1:
             return
-        with torch.cuda.stream(self._reduction_stream):
+        with get_accelerator().stream(self._reduction_stream):
             for bucket_assignment in self._bucket_assignment:
                 bucket_assignment.reset_buckets()
 
@@ -803,7 +804,7 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
         for param_buffer, param_group in zip(self._param_buffer, self.optimizer.param_groups):
             param_group['params'] = [param_buffer.get_fp32_partitioned_param()]
 
-        torch.cuda.empty_cache()
+        get_accelerator().empty_cache()
 
     # Just keep the interface
     def reduce_model_grads(self, args, timers):
@@ -888,7 +889,7 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
             init_shard = lambda : torch.empty(
                         num_elements,
                         dtype=torch.float32,
-                        device=torch.cuda.current_device())
+                        device=get_accelerator().current_device())
 
             state_dict_state.append((i, {
                 "exp_avg" : init_shard(),

@@ -14,7 +14,14 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from torch.nn.parameter import Parameter
 
-from torch.cuda.amp import custom_fwd, custom_bwd
+from megatron.accelerator import get_accelerator, noop_decorator
+
+try:
+    custom_fwd = get_accelerator().amp().custom_fwd
+    custom_bwd = get_accelerator().amp().custom_bwd
+except (ImportError, AttributeError) as exp:
+    custom_fwd = noop_decorator
+    custom_bwd = noop_decorator
 
 from megatron.core.parallel_state import (
     get_tensor_model_parallel_rank,
@@ -22,6 +29,7 @@ from megatron.core.parallel_state import (
     get_tensor_model_parallel_group,
     get_global_memory_buffer,
 )
+
 from megatron import get_args
 from .mappings import (
     copy_to_tensor_model_parallel_region,
@@ -32,18 +40,15 @@ from .mappings import (
     reduce_scatter_to_sequence_parallel_region,
 )
 
-from .random import get_cuda_rng_tracker
+from .random import get_rng_tracker
 from .utils import (
     divide,
     split_tensor_along_last_dim,
     VocabUtility,
 )
 
-_grad_accum_fusion_available = True
-try:
-    import fused_weight_gradient_mlp_cuda
-except ImportError:
-    _grad_accum_fusion_available = False
+custom_fc = get_accelerator().get_operator('custom_fc')
+custom_grad_accum = get_accelerator().get_operator('custom_grad_accum')
 
 _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {'tensor_model_parallel': False,
                                       'partition_dim': -1,
@@ -91,7 +96,7 @@ def _initialize_affine_weight_gpu(weight, init_method,
                                          dim=partition_dim,
                                          stride=stride)
 
-    with get_cuda_rng_tracker().fork():
+    with get_rng_tracker().fork():
         init_method(weight)
 
 
@@ -207,7 +212,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         else:
             self.weight = Parameter(torch.empty(
                 self.num_embeddings_per_partition, self.embedding_dim,
-                device=torch.cuda.current_device(), dtype=params_dtype))
+                device=get_accelerator().current_device(), dtype=params_dtype))
             if perform_initialization:
                 _initialize_affine_weight_gpu(self.weight, init_method,
                                               partition_dim=0, stride=1)
@@ -247,6 +252,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         ctx.gradient_accumulation_fusion = gradient_accumulation_fusion
         ctx.async_grad_allreduce = async_grad_allreduce
         ctx.sequence_parallel = sequence_parallel
+        ctx.findmax_opt = get_args().findmax_opt
+        ctx.use_contiguous_buffers = get_args().use_contiguous_buffers_in_local_ddp
 
         if sequence_parallel:
             world_size = get_tensor_model_parallel_world_size()
@@ -263,10 +270,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         else:
             total_input = input
 
-        output = torch.matmul(total_input, weight.t())
-        if bias is not None:
-            output = output + bias
-        return output
+        return custom_fc(ctx, total_input, weight, bias, transpose=True, findmax_opt=ctx.findmax_opt)
 
     @staticmethod
     @custom_bwd
@@ -291,7 +295,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             total_input = all_gather_buffer
         else:
             total_input = input
-        grad_input = grad_output.matmul(weight)
+
+        grad_input = custom_fc(ctx, grad_output, weight, None, transpose=False, findmax_opt=ctx.findmax_opt)
 
         if ctx.sequence_parallel:
             handle.wait()
@@ -318,7 +323,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             assert not ctx.async_grad_allreduce
             dim_size = list(input.size())
             sub_grad_input = torch.empty(dim_size, dtype=input.dtype,
-                                         device=torch.cuda.current_device(),
+                                         device=get_accelerator().current_device(),
                                          requires_grad=False)
             # reduce_scatter
             handle = torch.distributed._reduce_scatter_base(sub_grad_input, grad_input,
@@ -327,17 +332,10 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # reduce scatter is scheduled before the weight gradient computation
 
-
-        if ctx.gradient_accumulation_fusion:
-            if weight.main_grad.dtype == torch.float32:
-                fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp32(total_input, grad_output, weight.main_grad)
-            elif weight.main_grad.dtype == torch.float16:
-                fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp16(total_input, grad_output, weight.main_grad)
-            else:
-                raise RuntimeError("Unsupported gradient type for gradient accumulation fusion")
-            grad_weight = None
-        else:
-            grad_weight = grad_output.t().matmul(total_input)
+        grad_weight = custom_grad_accum(ctx, total_input, grad_output,
+                                        weight.main_grad if ctx.use_contiguous_buffers else weight.grad,
+                                        to_fuse=ctx.gradient_accumulation_fusion,
+                                        findmax_opt=ctx.findmax_opt)
         grad_bias = grad_output.sum(dim=0) if use_bias else None
 
         if ctx.sequence_parallel:
@@ -391,13 +389,7 @@ def linear_with_grad_accumulation_and_async_allreduce(
     bias (torch.Tensor optional): bias like torch.nn.functional.linear
 
     gradient_accumulation_fusion (bool required): Perform the gradient
-        accumulation fusion, requires the custom CUDA extension
-        fused_weight_gradient_mlp_cuda module. To use
-        gradient_accumulation_fusion you must install APEX with
-        --cpp_ext and --cuda_ext. For example: "pip install
-        --global-option=\"--cpp_ext\" --global-option=\"--cuda_ext .\"
-        " Note that the extension requires CUDA>=11. Otherwise, you
-        must turn off gradient accumulation fusion."
+        accumulation fusion.
 
     async_grad_allreduce (bool required): Do the allreduce of input
         gradients asyncronously with the computation of weight
@@ -419,7 +411,8 @@ def linear_with_grad_accumulation_and_async_allreduce(
     ]
 
     if not linear_with_grad_accumulation_and_async_allreduce.warned:
-        if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
+        if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" and \
+                get_accelerator().device_name() == 'cuda':
             if sequence_parallel_enabled:
                 warnings.warn(
                     "When using sequence parallelism it is recommended to set the "
@@ -508,7 +501,7 @@ class ColumnParallelLinear(torch.nn.Module):
         else:
             self.weight = Parameter(torch.empty(
                 self.output_size_per_partition, self.input_size,
-                device=torch.cuda.current_device(), dtype=params_dtype))
+                device=get_accelerator().current_device(), dtype=params_dtype))
             if perform_initialization:
                 _initialize_affine_weight_gpu(self.weight, init_method,
                                               partition_dim=0, stride=stride)
@@ -520,7 +513,7 @@ class ColumnParallelLinear(torch.nn.Module):
             else:
                 self.bias = Parameter(torch.empty(
                     self.output_size_per_partition,
-                    device=torch.cuda.current_device(),
+                    device=get_accelerator().current_device(),
                     dtype=params_dtype))
             set_tensor_model_parallel_attributes(self.bias, True, 0, stride)
             # Always initialize bias to zero.
@@ -541,17 +534,6 @@ class ColumnParallelLinear(torch.nn.Module):
                 sequence_parallel_enabled = False
         self.sequence_parallel_enabled = sequence_parallel_enabled
 
-        if gradient_accumulation_fusion:
-            if not _grad_accum_fusion_available:
-                raise RuntimeError(
-                    "ColumnParallelLinear was called with gradient_accumulation_fusion set "
-                    "to True but the custom CUDA extension fused_weight_gradient_mlp_cuda "
-                    "module is not found. To use gradient_accumulation_fusion you must "
-                    "install APEX with --cpp_ext and --cuda_ext. For example: "
-                    "pip install --global-option=\"--cpp_ext\" --global-option=\"--cuda_ext .\" "
-                    "Note that the extension requires CUDA>=11. Otherwise, you must turn off "
-                    "gradient accumulation fusion."
-                )
         self.gradient_accumulation_fusion = gradient_accumulation_fusion
 
         if self.async_tensor_model_parallel_allreduce and self.sequence_parallel_enabled:
@@ -686,7 +668,7 @@ class RowParallelLinear(torch.nn.Module):
         else:
             self.weight = Parameter(torch.empty(
                 self.output_size, self.input_size_per_partition,
-                device=torch.cuda.current_device(), dtype=params_dtype))
+                device=get_accelerator().current_device(), dtype=params_dtype))
             if perform_initialization:
                 _initialize_affine_weight_gpu(self.weight, init_method,
                                               partition_dim=1, stride=stride)
@@ -696,7 +678,7 @@ class RowParallelLinear(torch.nn.Module):
                                                   dtype=params_dtype))
             else:
                 self.bias = Parameter(torch.empty(
-                    self.output_size, device=torch.cuda.current_device(),
+                    self.output_size, device=get_accelerator().current_device(),
                     dtype=params_dtype))
             setattr(self.bias, 'sequence_parallel', sequence_parallel_enabled)
 

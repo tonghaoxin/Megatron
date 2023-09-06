@@ -2,6 +2,7 @@ import math
 import torch
 import numpy as np
 from megatron import get_args
+from megatron.accelerator import get_accelerator
 
 def slidingcrops(img, mask):
     # img: [b c h w]
@@ -60,9 +61,9 @@ def slidingjoins(preds, probs, labels, slices_info, img_size):
 
     assert(len(preds_split) == num_slices)
 
-    total_max_probs = torch.zeros((split_size, h, w), dtype=torch.float, device='cuda')
-    total_preds = torch.zeros((split_size, h, w), dtype=torch.int, device='cuda')
-    total_labels = torch.zeros((split_size, h, w), dtype=torch.int, device='cuda')
+    total_max_probs = torch.zeros((split_size, h, w), dtype=torch.float, device=get_accelerator().device_name())
+    total_preds = torch.zeros((split_size, h, w), dtype=torch.int, device=get_accelerator().device_name())
+    total_labels = torch.zeros((split_size, h, w), dtype=torch.int, device=get_accelerator().device_name())
 
     for i in range(num_slices):
         sy, ey, sx, ex, sub_h, sub_w = slices_info[i]

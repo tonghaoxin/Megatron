@@ -7,6 +7,7 @@ from megatron.core.parallel_state import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_src_rank,
 )
+from megatron.accelerator import get_accelerator
 
 
 _MAX_DATA_DIM = 5
@@ -34,13 +35,13 @@ def _build_key_size_numel_dictionaries(keys, data):
                 sizes[i + offset] = s
             offset += max_dim
 
-    # Move to GPU and broadcast.
-    sizes_cuda = torch.cuda.LongTensor(sizes)
-    torch.distributed.broadcast(sizes_cuda, get_tensor_model_parallel_src_rank(),
+    # Move to accelerator and broadcast.
+    sizes_accelerator = get_accelerator().LongTensor(sizes)
+    torch.distributed.broadcast(sizes_accelerator, get_tensor_model_parallel_src_rank(),
                                 group=get_tensor_model_parallel_group())
 
     # Move back to cpu and unpack.
-    sizes_cpu = sizes_cuda.cpu()
+    sizes_cpu = get_accelerator().d2h_copy(sizes_accelerator)
     key_size = {}
     key_numel = {}
     total_numel = 0
@@ -82,11 +83,11 @@ def broadcast_data(keys, data, datatype):
         # Check that all keys have the same data type.
         _check_data_types(keys, data, datatype)
         # Flatten the data associated with the keys
-        flatten_data = torch.cat(
-            [data[key].contiguous().view(-1) for key in keys], dim=0).cuda()
+        flatten_data = get_accelerator().h2d_copy(
+                torch.cat([data[key].contiguous().view(-1) for key in keys], dim=0))
     else:
         flatten_data = torch.empty(total_numel,
-                                   device=torch.cuda.current_device(),
+                                   device=get_accelerator().current_device(),
                                    dtype=datatype)
 
     # Broadcast

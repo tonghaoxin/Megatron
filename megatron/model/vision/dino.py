@@ -6,7 +6,6 @@
 # copied from https://github.com/facebookresearch/dino/blob/main/main_dino.py
 # reworked/refactored some parts to make it run in Megatron.
 import math
-import apex
 import einops
 import torch
 import numpy as np
@@ -191,7 +190,7 @@ def get_student_backbone_and_num_features(pre_process=True, post_process=True):
     else:
         raise Exception('{} vision backbone is not supported.'.format(
                               args.vision_backbone_type))
- 
+
     return student, num_features
 
 def get_teacher_backbone_and_num_features(pre_process=True, post_process=True):

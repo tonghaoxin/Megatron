@@ -5,7 +5,6 @@
 import math
 import einops
 import torch
-import apex
 import torch.nn.functional as F
 from megatron import get_args
 from megatron.model.transformer import ParallelTransformer
@@ -15,6 +14,7 @@ from megatron.model.utils import (
     scaled_init_method_normal,
 )
 from megatron.model.module import MegatronModule
+from megatron.accelerator import get_accelerator
 
 CLASS_TOKEN_LENGTH = 8
 
@@ -178,8 +178,8 @@ class VitBackbone(MegatronModule):
                     torch.randn(1, CLASS_TOKEN_LENGTH, self.hidden_size)
                 )
                 torch.nn.init.zeros_(self.cls_token)
-            self.position_ids = torch.arange(self.seq_length).expand(1, -1).cuda()
-            
+            self.position_ids = get_accelerator().h2d_copy(torch.arange(self.seq_length).expand(1, -1))
+
             # Linear encoder
             self.linear_encoder = torch.nn.Linear(
                 self.flatten_dim, self.hidden_size

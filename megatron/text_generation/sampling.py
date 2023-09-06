@@ -8,6 +8,7 @@ Part of this code is inspired by:
 
 
 import torch
+from megatron.accelerator import get_accelerator
 
 
 
@@ -53,7 +54,7 @@ def sample(logits, top_k=0, top_p=0.0, temperature=1.0, vocab_size=None):
 
     # Check logits for consistency.
     assert logits.ndim == 2, 'expected the logits to be of [b, v] shape.'
-    assert logits.type() == 'torch.cuda.FloatTensor', \
+    assert logits.type() == get_accelerator().FloatTensor_name(), \
         'input logits should be floats.'
 
 

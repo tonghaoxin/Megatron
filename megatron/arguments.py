@@ -11,6 +11,7 @@ import torch.nn.functional
 import types
 
 from megatron.global_vars import set_retro_args, get_retro_args
+from megatron.accelerator import get_accelerator
 from tools.retro.utils import get_args_path as get_retro_args_path
 
 
@@ -459,16 +460,19 @@ def validate_args(args, defaults={}):
     if args.sequence_parallel:
         args.async_tensor_model_parallel_allreduce = False
 
-    if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" \
-        and not args.use_zero_optimizer:
+    if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" and \
+        get_accelerator().device_name() == "cuda" and \
+        not args.use_zero_optimizer:
         if args.sequence_parallel:
             raise RuntimeError(
                 "Using sequence parallelism requires setting the environment variable "
-                "CUDA_DEVICE_MAX_CONNECTIONS to 1")
+                "CUDA_DEVICE_MAX_CONNECTIONS to 1. "
+                "Other accelerator does not support sequence parallel for the moment.")
         if args.async_tensor_model_parallel_allreduce:
             raise RuntimeError(
                 "Using async gradient all reduce requires setting the environment "
-                "variable CUDA_DEVICE_MAX_CONNECTIONS to 1")
+                "variable CUDA_DEVICE_MAX_CONNECTIONS to 1. "
+                "Other accelerator does not support async gradient allreduce for the moment.")
 
     # Disable bias gelu fusion if we are disabling bias altogether
     if not args.add_bias_linear:
@@ -659,7 +663,7 @@ def _add_network_size_args(parser):
     group.add_argument('--rotary-embedding-2d-to-1d', action='store_true',
                        help='If set, use 2D rotary embedding and 2dto1d.')
     group.add_argument('--apply-rotary-positional-embedding-kernel', action='store_true',
-                       help='Use custom cuda kernel for rotary positional embedding.')
+                       help='Use custom kernel for rotary positional embedding.')
     group.add_argument('--learnable-rotary-embedding', action='store_true',
                        help='If set, make rotary embedding learnable.')
     group.add_argument('--use-learned-position-embeddings', action='store_true',
@@ -1007,6 +1011,10 @@ def _add_training_args(parser):
     group.add_argument('--onnx-safe', type=bool, required=False,
                        help='Use workarounds for known problems with '
                        'Torch ONNX exporter')
+    group.add_argument('--memory-saving', type=bool, default=False, required=False,
+                       help='Use memory saving strategies for several ops')
+    group.add_argument('--findmax-opt', action='store_true', default=False,
+                        help='open findmax optimization in fc/mm during training')
     return parser
 
 
@@ -1015,7 +1023,7 @@ def _add_initialization_args(parser):
 
     group.add_argument('--seed', type=int, default=1234,
                        help='Random seed used for python, numpy, '
-                       'pytorch, and cuda.')
+                       'pytorch, and accelerator.')
     group.add_argument('--data-parallel-random-init', action='store_true',
                        help='Enable random initialization of params '
                        'across data parallel ranks')
@@ -1175,6 +1183,10 @@ def _add_distributed_args(parser):
                        action='store_true',
                        help='overlap pipeline parallel communication with forward and backward chunks',
                        dest='overlap_p2p_comm')
+    group.add_argument('--no-batch-p2p-communication',
+                       action='store_false',
+                       help='If set, do not use batch p2p communication for pipeline parallel',
+                       dest='batch_p2p_comm')
     group.add_argument('--distributed-backend', default='nccl',
                        choices=['nccl', 'gloo'],
                        help='Which backend to use for distributed training.')
@@ -1208,7 +1220,7 @@ def _add_distributed_args(parser):
                        'initialization uses CPU' )
     group.add_argument('--empty-unused-memory-level', default=0, type=int,
                        choices=[0, 1, 2],
-                       help='Call torch.cuda.empty_cache() each iteration '
+                       help='Call get_accelerator().empty_cache() each iteration '
                        '(training and eval), to reduce fragmentation.'
                        '0=off, 1=moderate, 2=aggressive.')
     group.add_argument('--standalone-embedding-stage', action='store_true',
@@ -1571,8 +1583,8 @@ def _add_chatglm_args(parser):
                        help='preprocessing num workers token trans string to int')
     group.add_argument('--add-qkv-bias', type=bool, required=False,
                        help='add-qkv-bias')
-    group.add_argument('--rmsnorm-weigth-empty', type=bool, default=False, required=False,
-                       help='rmsnorm-weigth-empty')
+    group.add_argument('--rmsnorm-weight-empty', type=bool, default=False, required=False,
+                       help='rmsnorm-weight-empty')
     return parser
 
 def _add_finetune_config_args(parser):

@@ -11,6 +11,7 @@ from megatron.data.vit_dataset import build_train_valid_datasets
 from tasks.vision.classification.eval_utils import accuracy_func_provider
 from tasks.vision.finetune_utils import finetune
 from megatron.utils import average_losses_across_data_parallel_group
+from megatron.accelerator import get_accelerator
 
 
 def classification():
@@ -35,8 +36,8 @@ def classification():
 
     def process_batch(batch):
         """Process batch and produce inputs for the model."""
-        images = batch[0].cuda().contiguous()
-        labels = batch[1].cuda().contiguous()
+        images = get_accelerator().h2d_copy(batch[0]).contiguous()
+        labels = get_accelerator().h2d_copy(batch[1]).contiguous()
         return images, labels
 
     def cross_entropy_loss_func(labels, output_tensor):
@@ -65,7 +66,7 @@ def classification():
 
         # Forward model.
         output_tensor = model(images)
-      
+
         return output_tensor, partial(cross_entropy_loss_func, labels)
 
     """Finetune/evaluate."""

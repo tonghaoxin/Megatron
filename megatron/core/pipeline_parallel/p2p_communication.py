@@ -13,6 +13,7 @@ from megatron.core.parallel_state import (
     get_pipeline_model_parallel_prev_rank,
     get_pipeline_model_parallel_next_rank,
 )
+from megatron.accelerator import get_accelerator
 
 # Types
 Shape = Union[List[int], torch.Size]
@@ -44,19 +45,19 @@ def _communicate_shapes(tensor_send_next, tensor_send_prev,
     send_next_shape_tensor = None
     if recv_prev:
         recv_prev_shape_tensor = torch.empty((3),
-                                             device=torch.cuda.current_device(),
+                                             device=get_accelerator().current_device(),
                                              dtype=torch.int64)
     if recv_next:
         recv_next_shape_tensor = torch.empty((3),
-                                             device=torch.cuda.current_device(),
+                                             device=get_accelerator().current_device(),
                                              dtype=torch.int64)
     if tensor_send_prev is not None:
         send_prev_shape_tensor = torch.tensor(tensor_send_prev.size(),
-                                              device=torch.cuda.current_device(),
+                                              device=get_accelerator().current_device(),
                                               dtype=torch.int64)
     if tensor_send_next is not None:
         send_next_shape_tensor = torch.tensor(tensor_send_next.size(),
-                                              device=torch.cuda.current_device(),
+                                              device=get_accelerator().current_device(),
                                               dtype=torch.int64)
 
     if use_ring_exchange_p2p:
@@ -94,7 +95,7 @@ def _communicate_shapes(tensor_send_next, tensor_send_prev,
 
         # To protect against race condition when using batch_isend_irecv().
         # should take this out once the bug with batch_isend_irecv is resolved.
-        torch.cuda.synchronize()
+        get_accelerator().synchronize()
 
     recv_prev_shape = [0, 0, 0]
     if recv_prev_shape_tensor is not None:
@@ -316,7 +317,7 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
             )
         tensor_recv_prev = torch.empty(recv_prev_shape,
                                        requires_grad=True,
-                                       device=torch.cuda.current_device(),
+                                       device=get_accelerator().current_device(),
                                        dtype=dtype)
     if recv_next:
         if dtype is None:
@@ -328,7 +329,7 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
             )
         tensor_recv_next = torch.empty(recv_next_shape,
                                        requires_grad=True,
-                                       device=torch.cuda.current_device(),
+                                       device=get_accelerator().current_device(),
                                        dtype=dtype)
 
     # Send tensors in both the forward and backward directions as appropriate.
@@ -357,7 +358,7 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
     if batch_p2p_comm and batch_p2p_sync:
         # To protect against race condition when using batch_isend_irecv().
         # User should assert that we have a modern enough PyTorch to not need this
-        torch.cuda.synchronize()
+        get_accelerator().synchronize()
 
     return tensor_recv_prev, tensor_recv_next, reqs
 

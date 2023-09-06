@@ -26,6 +26,7 @@ from megatron.model import LayerNorm
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.utils import attention_mask_func, init_method_normal
+from megatron.accelerator import get_accelerator
 
 from .module import MegatronModule
 from .transformer import _get_num_layers, ParallelMLP, NoopTransformerLayer
@@ -209,7 +210,7 @@ class ParallelAttention(MegatronModule):
             self.num_attention_heads_per_partition,
             self.hidden_size_per_attention_head,
             dtype=self.params_dtype,
-            device=torch.cuda.current_device())
+            device=get_accelerator().current_device())
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None):
@@ -318,7 +319,7 @@ class ParallelAttention(MegatronModule):
             output_size[2],
             output_size[3],
             dtype=query_layer.dtype,
-            device=torch.cuda.current_device())
+            device=get_accelerator().current_device())
 
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.baddbmm(
@@ -340,7 +341,7 @@ class ParallelAttention(MegatronModule):
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
-        with tensor_parallel.get_cuda_rng_tracker().fork():
+        with tensor_parallel.get_rng_tracker().fork():
             attention_probs = self.attention_dropout(attention_probs)
 
         # =========================

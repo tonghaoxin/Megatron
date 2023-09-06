@@ -38,6 +38,7 @@ import json
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from megatron.model.distributed import DistributedDataParallel as LocalDDP
 from megatron.model.module import Float16Module
+from megatron.accelerator import get_accelerator
 
 
 def get_masks_chatglm2(input_ids, past_key_values, padding_mask=None):
@@ -103,7 +104,7 @@ def get_position_ids(input_ids, mask_positions, device):
 
 def get_masks_and_position_ids(tokens):
     args = get_args()
-    
+
     tokenizer = get_tokenizer()
     if args.model_type_custom == "chatglm2-6b":
         attention_mask = get_masks_chatglm2(tokens, None, None)
@@ -133,7 +134,7 @@ class EvalHarnessAdaptor(GPT2LM):
         else:
             self.EOT_TOKEN_ID = tokenizer.sp_tokenizer[tokenizer.eos_token]
             self.BOS_TOKEN_ID = tokenizer.sp_tokenizer[tokenizer.bos_token]
-        
+
 
 
         self._max_length = args.seq_length
@@ -145,7 +146,7 @@ class EvalHarnessAdaptor(GPT2LM):
         self.cache_hook = CacheHook(None)
         self.is_main = args.rank == 0
         self.is_local_main = args.local_rank == 0
-        self._device = torch.cuda.current_device()
+        self._device = get_accelerator().current_device()
         self.is_model_parallel = mpu.get_tensor_model_parallel_world_size() > 1
         self.is_pipe_parallel = mpu.get_pipeline_model_parallel_world_size() > 1
         self.is_data_parallel = mpu.get_data_parallel_world_size() > 1

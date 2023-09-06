@@ -6,6 +6,8 @@ from tqdm import tqdm
 
 from .external_libs import transformers
 
+from megatron.accelerator import get_accelerator
+
 
 class IterableTextDataset(torch.utils.data.IterableDataset):
     '''Iterable over a text dataset.'''
@@ -71,7 +73,7 @@ class HuggingfaceEmbedder:
         self.pipe = MyFeatureExtractionPipeline(
             model=self.model,
             tokenizer=self.tokenizer,
-            device=torch.cuda.current_device(),
+            device=get_accelerator().current_device(),
             truncation=True,
             max_length=max_seq_length,
         )

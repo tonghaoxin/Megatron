@@ -2,6 +2,7 @@ import pytest
 import torch
 import megatron.core.utils as util
 import numpy as np
+from megatron.accelerator import get_accelerator
 
 def test_divide_properly():
     assert util.divide(4,2) == 2
@@ -13,7 +14,7 @@ def test_divide_improperly():
 def test_global_memory_buffer():
     global_memory_buffer = util.GlobalMemoryBuffer()
     obtained_tensor = global_memory_buffer.get_tensor((3,2), torch.float32, "test_tensor")
-    expected_tensor = torch.empty((3,2), dtype=torch.float32, device=torch.cuda.current_device())
+    expected_tensor = torch.empty((3,2), dtype=torch.float32, device=get_accelerator().current_device())
     assert torch.equal(obtained_tensor, expected_tensor)
 
 def test_make_viewless_tensor():

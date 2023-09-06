@@ -9,6 +9,7 @@ from megatron import get_args
 from megatron.core import mpu, tensor_parallel
 from megatron.utils import get_hook_fn
 from megatron.model import LayerNorm
+from megatron.accelerator import get_accelerator
 
 from .enums import LayerType, AttnMaskType
 from .module import MegatronModule
@@ -19,10 +20,7 @@ from .transformer import ParallelTransformer
 from .utils import get_linear_layer
 from .utils import init_method_normal, scaled_init_method_normal
 
-try:
-    import nvtx
-except ImportError:
-    pass
+custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
 
 
 def parallel_lm_logits(input_, word_embeddings_weight, parallel_output,
@@ -307,7 +305,7 @@ class Embedding(MegatronModule):
         else:
             return args.shrink_embedding_gradient_alpha
 
-    @nvtx.annotate("Embedding forward", color="violet")
+    @custom_profiler_decorator("Embedding forward", color="violet")
     def forward(self, input_ids, position_ids, tokentype_ids=None):
         # Embeddings.
         words_embeddings = self.word_embeddings(input_ids)
@@ -361,7 +359,7 @@ class Embedding(MegatronModule):
         # Dropout.
         if self.sequence_parallel:
             embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
-            with tensor_parallel.get_cuda_rng_tracker().fork():
+            with tensor_parallel.get_rng_tracker().fork():
                 embeddings = self.embedding_dropout(embeddings)
         else:
             embeddings = self.embedding_dropout(embeddings)

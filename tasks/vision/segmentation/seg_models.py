@@ -2,7 +2,6 @@
 import math
 import einops
 import torch
-import apex
 import torch.nn.functional as F
 from megatron import get_args
 from megatron.model.module import MegatronModule

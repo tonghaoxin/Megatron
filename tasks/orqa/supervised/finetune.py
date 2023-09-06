@@ -14,6 +14,7 @@ from megatron.core import mpu
 from megatron.indexer import IndexBuilder
 from megatron.model.biencoder_model import biencoder_model_provider
 from megatron.utils import average_losses_across_data_parallel_group
+from megatron.accelerator import get_accelerator
 from pretrain_ict import get_group_world_size_rank
 from tasks.finetune_utils import finetune
 from tasks.orqa.supervised.eval_utils import accuracy_func_provider
@@ -25,8 +26,8 @@ def check_and_append_tensor_for_gather(group, rank, world_size, input_):
 
     # gather the size of the first dimension of the tensor from all ranks
     current_length = input_.size()[0]
-    first_dim = torch.tensor([[current_length]], 
-        device=torch.cuda.current_device())
+    first_dim = torch.tensor([[current_length]],
+        device=get_accelerator().current_device())
     input_list = [torch.empty_like(first_dim) for _ in range(world_size)]
     input_list[rank].copy_(first_dim)
     torch.distributed.all_gather(input_list, first_dim, group=group)
@@ -149,10 +150,10 @@ def orqa(Dataset):
             for i in range(world_size):
                 j = i * local_context_size
                 labels.extend(list(range(j, j + local_batch_size)))
-            labels = torch.LongTensor(labels).cuda()
+            labels = get_accelerator().h2d_copy(torch.LongTensor(labels))
             assert len(labels) == global_batch_size
         else:
-            labels = torch.arange(global_batch_size).long().cuda()
+            labels = get_accelerator().h2d_copy(torch.arange(global_batch_size).long())
 
         # Cross-entropy loss.
         softmax_scores = F.log_softmax(retrieval_scores, dim=1)

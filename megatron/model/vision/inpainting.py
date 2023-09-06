@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 i
 import math
-import apex
 import einops
 import torch
 import torch.nn.functional as F
@@ -14,6 +13,9 @@ from megatron.model.vision.vit_backbone import VitBackbone
 from megatron.model.module import MegatronModule
 from megatron.model.vision.mit_backbone import mit_b3
 from megatron.model.vision.utils import resize_
+from megatron.accelerator import get_accelerator
+
+sync_batch_norm = get_accelerator().get_operator('sync_batch_norm')
 
 
 class VitInpaintingModel(MegatronModule):
@@ -105,11 +107,11 @@ class MitInpaintingModel(MegatronModule):
         self.linear_c1 = MLP(input_dim=c1_in_channels, embed_dim=self.embedding_dim)
 
         self.conv_fuse = torch.nn.Conv2d(self.embedding_dim*4, self.embedding_dim, 1, 1, bias=False)
-        self.norm = apex.parallel.SyncBatchNorm(self.embedding_dim)
+        self.norm = sync_batch_norm(self.embedding_dim)
         self.dropout = torch.nn.Dropout2d(0.1)
-        
+
         self.linear_pred = torch.nn.Conv2d(self.embedding_dim, self.flatten_dim, kernel_size=1)
-    
+
     def set_input_tensor(self, input_tensor):
         """See megatron.model.transformer.set_input_tensor()"""
         pass
@@ -120,7 +122,7 @@ class MitInpaintingModel(MegatronModule):
         n, _, h, w = c4.shape
         _c4 = self.linear_c4(c4).permute(0, 2, 1).reshape(n, -1, c4.shape[2], c4.shape[3])
         _c4 = resize(_c4, size=c1.size()[2:], mode='bilinear', align_corners=False)
-    
+
         _c3 = self.linear_c3(c3).permute(0, 2, 1).reshape(n, -1, c3.shape[2], c3.shape[3])
         _c3 = resize(_c3, size=c1.size()[2:], mode='bilinear', align_corners=False)
 
@@ -131,7 +133,7 @@ class MitInpaintingModel(MegatronModule):
 
         _c = torch.cat([_c4, _c3, _c2, _c1], dim=1)
         _c = self.conv_fuse(_c)
- 
+
         x = self.norm(_c)
         x = F.relu(x, inplace=True)
         x = self.dropout(x)

@@ -6,7 +6,7 @@
 import torch
 
 from megatron.core import mpu
-
+from megatron.accelerator import get_accelerator
 
 
 # TODO: use functions from megatron/p2p
@@ -22,8 +22,7 @@ def recv_from_prev_pipeline_rank_(recv_buffer=None):
         for req in reqs:
             req.wait()
         # To protect against race condition when using batch_isend_irecv().
-        torch.cuda.synchronize()
-
+        get_accelerator().synchronize()
 
 
 # TODO: use functions from megatron/p2p
@@ -38,22 +37,19 @@ def send_to_next_pipeline_rank(tensor=None):
         for req in reqs:
             req.wait()
         # To protect against race condition when using batch_isend_irecv().
-        torch.cuda.synchronize()
+        get_accelerator().synchronize()
 
 
-
-def _is_cuda(tensor):
-    """Check if a tensor is not none and is cuda."""
+def _on_accelerator(tensor):
+    """Check if a tensor is not none and is on accelerator."""
     assert tensor is not None
-    assert tensor.is_cuda
+    assert get_accelerator().on_accelerator(tensor)
 
 
-
-def _is_cuda_contiguous(tensor):
-    """Check if a tensor is not none, is cuda, and is contiguous."""
-    _is_cuda(tensor)
-    assert tensor.is_contiguous()
-
+def _on_accelerator_contiguous(tensor):
+    """Check if a tensor is not none, is on accelerator, and is contiguous."""
+    _on_accelerator(tensor)
+    assert get_accelerator().is_contiguous(tensor)
 
 
 def broadcast_from_last_pipeline_stage(size, dtype, tensor=None):
@@ -66,18 +62,17 @@ def broadcast_from_last_pipeline_stage(size, dtype, tensor=None):
         return tensor
 
     if is_last_stage:
-        _is_cuda_contiguous(tensor)
+        _on_accelerator_contiguous(tensor)
     else:
         tensor = torch.empty(size,
                              dtype=dtype,
-                             device=torch.cuda.current_device())
+                             device=get_accelerator().current_device())
     # Get the group and corresponding source rank.
     src = mpu.get_pipeline_model_parallel_last_rank()
     group = mpu.get_pipeline_model_parallel_group()
     torch.distributed.broadcast(tensor, src, group)
 
     return tensor
-
 
 
 def broadcast_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
@@ -92,11 +87,11 @@ def broadcast_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
     # Only first and last stage pipeline stages need to be involved.
     if is_last_stage or is_first_stage:
         if is_last_stage:
-            _is_cuda_contiguous(tensor)
+            _on_accelerator_contiguous(tensor)
         else:
             tensor = torch.empty(size,
                                  dtype=dtype,
-                                 device=torch.cuda.current_device())
+                                 device=get_accelerator().current_device())
         src = mpu.get_pipeline_model_parallel_last_rank()
         group = mpu.get_embedding_group()
         # Broadcast from last stage into the first stage.
@@ -105,7 +100,6 @@ def broadcast_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
         tensor = None
 
     return tensor
-
 
 
 def copy_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
@@ -120,7 +114,7 @@ def copy_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
         return
     # Only first and last stage pipeline stages need to be involved.
     if is_last_stage or is_first_stage:
-        _is_cuda(tensor)
+        _on_accelerator(tensor)
         is_contiguous = tensor.is_contiguous()
         src = mpu.get_pipeline_model_parallel_last_rank()
         group = mpu.get_embedding_group()
@@ -132,13 +126,12 @@ def copy_from_last_to_first_pipeline_stage(size, dtype, tensor=None):
             else:
                 tensor_ = torch.empty(size,
                                       dtype=dtype,
-                                      device=torch.cuda.current_device())
+                                      device=get_accelerator().current_device())
         # Broadcast from last stage into the first stage.
         torch.distributed.broadcast(tensor_, src, group)
         # Update the first stage tensor
         if is_first_stage and not is_contiguous:
             tensor[...] = tensor_
-
 
 
 def broadcast_tensor(size, dtype, tensor=None, rank=0):
@@ -147,16 +140,15 @@ def broadcast_tensor(size, dtype, tensor=None, rank=0):
     """
 
     if torch.distributed.get_rank() == rank:
-        _is_cuda_contiguous(tensor)
+        _on_accelerator_contiguous(tensor)
     else:
         tensor = torch.empty(size,
                              dtype=dtype,
-                             device=torch.cuda.current_device())
+                             device=get_accelerator().current_device())
 
     torch.distributed.broadcast(tensor, rank)
 
     return tensor
-
 
 
 def broadcast_list(size, dtype, list_values=None, rank=0):
@@ -165,17 +157,15 @@ def broadcast_list(size, dtype, list_values=None, rank=0):
     tensor = None
     if torch.distributed.get_rank() == rank:
         tensor = torch.tensor(list_values, dtype=dtype,
-                              device=torch.cuda.current_device())
+                              device=get_accelerator().current_device())
 
     return broadcast_tensor(size, dtype, tensor=tensor, rank=rank)
-
 
 
 def broadcast_int_list(size, int_list=None, rank=0):
     """Broadcast a list of interger values."""
 
     return broadcast_list(size, torch.int64, list_values=int_list, rank=rank)
-
 
 
 def broadcast_float_list(size, float_list=None, rank=0):

@@ -15,6 +15,7 @@ from megatron.model.utils import init_method_normal
 from megatron.model.utils import scaled_init_method_normal
 from .module import MegatronModule
 from .activation_funcs import ACTIVATION_FUNCS
+from megatron.accelerator import get_accelerator
 
 
 def bert_extended_attention_mask(attention_mask):
@@ -199,7 +200,7 @@ class BertModel(MegatronModule):
                 output = torch.zeros(
                     size=(embeddings.shape[0], embeddings.shape[2]),
                     dtype=torch.float32,
-                    device=torch.cuda.current_device())
+                    device=get_accelerator().current_device())
                 for i, (embedding, mask) in enumerate(zip(embeddings, masks)):
                     output[i, :] = torch.mean(embedding[1: mask - 1], dim=0)
 

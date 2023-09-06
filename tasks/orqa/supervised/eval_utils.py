@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from megatron import get_args, print_rank_0
 from megatron.core import mpu
 from megatron.utils import average_losses_across_data_parallel_group
+from megatron.accelerator import get_accelerator
 from tasks.finetune_utils import build_data_loader
 
 def task_collate_fn(batch_data):
@@ -50,20 +51,20 @@ def task_collate_fn(batch_data):
 
 def process_batch(batch):
     """Process batch and produce inputs for the model."""
-    query_tokens = batch['query'].long().cuda()
-    query_mask = (batch['query_mask'] < 0.5).cuda()
-    query_types = batch['query_types'].long().cuda()
-    query_pad_mask = batch['query_pad_mask'].long().cuda()
+    query_tokens = get_accelerator().h2d_copy(batch['query'].long())
+    query_mask = get_accelerator().h2d_copy((batch['query_mask'] < 0.5))
+    query_types = get_accelerator().h2d_copy(batch['query_types'].long())
+    query_pad_mask = get_accelerator().h2d_copy(batch['query_pad_mask'].long())
 
-    context_tokens = batch['context'].long().cuda()
-    context_mask = (batch['context_mask'] < 0.5).cuda()
-    context_types = batch['context_types'].long().cuda()
-    context_pad_mask = batch['context_pad_mask'].long().cuda()
+    context_tokens = get_accelerator().h2d_copy(batch['context'].long())
+    context_mask = get_accelerator().h2d_copy((batch['context_mask'] < 0.5))
+    context_types = get_accelerator().h2d_copy(batch['context_types'].long())
+    context_pad_mask = get_accelerator().h2d_copy(batch['context_pad_mask'].long())
 
     if 'neg_context' in batch:
-        neg_context_tokens = batch['neg_context'].long().cuda()
-        neg_context_mask = (batch['neg_context_mask'] < 0.5).cuda()
-        neg_context_types = batch['neg_context_types'].long().cuda()
+        neg_context_tokens = get_accelerator().h2d_copy(batch['neg_context'].long())
+        neg_context_mask = get_accelerator().h2d_copy((batch['neg_context_mask'] < 0.5))
+        neg_context_types = get_accelerator().h2d_copy(batch['neg_context_types'].long())
     else:
         neg_context_tokens = None
         neg_context_mask = None
@@ -156,7 +157,7 @@ def retrieval_loss(model, dataloader):
                     math.sqrt(args.hidden_size)
 
             local_batch_size = query_logits.shape[0]
-            labels = torch.arange(local_batch_size).long().cuda()
+            labels = get_accelerator().h2d_copy(torch.arange(local_batch_size).long())
 
             softmax_scores = F.softmax(retrieval_scores, dim=1)
             sorted_vals, sorted_indices = torch.topk(softmax_scores,
@@ -164,12 +165,12 @@ def retrieval_loss(model, dataloader):
                                                      sorted=True)
 
             def topk_accuracy(k):
-                return torch.cuda.FloatTensor(
+                return get_accelerator().FloatTensor(
                     [sum([int(labels[i] in sorted_indices[i, :k]) for i in \
                         range(local_batch_size)])])
 
             def get_rank():
-                return torch.cuda.FloatTensor(
+                return get_accelerator().FloatTensor(
                     [sum([torch.nonzero(labels[i] == sorted_indices[i])[0][0] \
                         for i in range(local_batch_size)])])
 

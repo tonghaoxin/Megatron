@@ -8,11 +8,12 @@ from torch.nn.parameter import Parameter
 
 from megatron import get_args
 from megatron.core import mpu, tensor_parallel
+from megatron.accelerator import get_accelerator
 
 
-_FLOAT_TYPES = (torch.FloatTensor, torch.cuda.FloatTensor)
-_HALF_TYPES = (torch.HalfTensor, torch.cuda.HalfTensor)
-_BF16_TYPES = (torch.BFloat16Tensor, torch.cuda.BFloat16Tensor)
+_FLOAT_TYPES = (torch.FloatTensor, get_accelerator().FloatTensor)
+_HALF_TYPES = (torch.HalfTensor, get_accelerator().HalfTensor)
+_BF16_TYPES = (torch.BFloat16Tensor, get_accelerator().BFloat16Tensor)
 
 
 
@@ -109,7 +110,7 @@ class MegatronModule(torch.nn.Module):
         if mpu.is_rank_in_position_embedding_group() and \
                 args.pipeline_model_parallel_split_rank is not None:
             # TODO: Support tokentype embedding.
-            self.language_model.embedding.cuda()
+            get_accelerator().h2d_copy(self.language_model.embedding)
             position_embeddings = self.language_model.embedding.position_embeddings
             torch.distributed.all_reduce(position_embeddings.weight.data,
                                          group=mpu.get_position_embedding_group())

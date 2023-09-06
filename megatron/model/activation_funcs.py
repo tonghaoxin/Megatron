@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from megatron.model.utils import openai_gelu, erf_gelu
+from megatron.accelerator import get_accelerator
 
 
 class _ActivationBaseModule(nn.Module):
@@ -113,6 +114,12 @@ swiglu = SwiGLU()
 openai_gelu = OpenAIGeLU()
 erf_gelu = ErfGeLU()
 squared_relu = SquaredReLU()
+
+
+# interface for swiglu replacement
+custom_swiglu = get_accelerator().get_operator('custom_swiglu')
+if custom_swiglu is not None:
+    swiglu = custom_swiglu
 
 
 ACTIVATION_FUNCS = {
