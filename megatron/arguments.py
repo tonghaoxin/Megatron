@@ -254,6 +254,19 @@ def validate_args(args, defaults={}):
         assert args.DDP_impl == 'local'
         assert args.use_contiguous_buffers_in_local_ddp
 
+    if args.use_zero_optimizer:
+        # if we use the zero optimizer, we should make sure use_distributed_optimizer is off.
+        assert not args.use_distributed_optimizer, \
+            "can only specify one of use-distributed-optimizer and use-zero-optimizer"
+        args.use_contiguous_buffers_in_local_ddp = False
+        if args.rank == 0:
+            print('Disable contiguous grad buffer in DDP, since the optimizer would handle it.', flush=True)
+
+        args.gradient_accumulation_fusion = False
+        if args.rank == 0:
+            print('Disable gradient accumulation fusion, since the optimizer would handle it.', flush=True)
+
+
     # For torch DDP, we do not use contiguous buffer
     if args.DDP_impl == 'torch':
         args.use_contiguous_buffers_in_local_ddp = False
@@ -446,7 +459,8 @@ def validate_args(args, defaults={}):
     if args.sequence_parallel:
         args.async_tensor_model_parallel_allreduce = False
 
-    if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
+    if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" \
+        and not args.use_zero_optimizer:
         if args.sequence_parallel:
             raise RuntimeError(
                 "Using sequence parallelism requires setting the environment variable "
@@ -1203,7 +1217,18 @@ def _add_distributed_args(parser):
                        'transformer layers. (For T5, this flag currently only '
                        'affects the encoder embedding.)')
     group.add_argument('--use-distributed-optimizer', action='store_true',
-                       help='Use distributed optimizer.')
+                       help='Supports ZeRO-1, mutually exclusive with --use-zero-optimizer.')
+    group.add_argument('--use-zero-optimizer', action='store_true',
+                       default=False, help='Supports ZeRO-1, ZeRO-2 and DP gradient overlapping,'
+                       'mutually exclusive with --use-distributed-optimizer.')
+    group.add_argument('--zero-stage',  default=1, type=int,
+                       choices=[1, 2],
+                       help='1=ZeRO-1, 2=ZeRO-2 refer to optimizer state partitioning, '
+                       'and optimizer+gradient state partitioning in ZeroOptimizer.')
+    group.add_argument('--reduce-bucket-size', default=5e8, type=float,
+                       help='Bucket size for reduce in ZeroOptimizer, the unit is the number of parameters')
+    group.add_argument('--last-bucket-split-count', type=int, default=None, help='Number of \
+                       splits to split the last bucket in ZeroOptimizer.')
 
     return parser
 
@@ -1217,6 +1242,8 @@ def _add_validation_args(parser):
     group.add_argument('--eval-interval', type=int, default=1000,
                        help='Interval between running evaluation on '
                        'validation set.')
+    group.add_argument('--verify-grad-order', action='store_true',
+                       default=False, help='Verify the order of grad in each reduced bucket.')
 
     return parser
 

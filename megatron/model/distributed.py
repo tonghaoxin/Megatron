@@ -94,13 +94,18 @@ class DistributedDataParallel(DistributedDataParallelBase):
 
         super(DistributedDataParallel, self).__init__(module)
 
+        args = get_args()
         self.accumulate_allreduce_grads_in_fp32 \
             = accumulate_allreduce_grads_in_fp32
         self.use_contiguous_buffers = use_contiguous_buffers
         # If we are using fp32-accumulate-allreduce explicitly
         # this means we need main grads in a continous buffer.
-        if self.accumulate_allreduce_grads_in_fp32:
+        if self.accumulate_allreduce_grads_in_fp32 \
+          and not args.use_zero_optimizer:
             assert self.use_contiguous_buffers
+        # If we are using zero_optimizer, use_contiguous_buffers must be False
+        if args.use_zero_optimizer:
+            assert not self.use_contiguous_buffers
 
         # ===================================
         # Rest of this part applies only to
@@ -156,19 +161,21 @@ class DistributedDataParallel(DistributedDataParallelBase):
                         type_num_elements[dtype] + param.data.nelement(),
                     )
 
-            # Backward hook.
-            # Accumalation function for the gradients. We need
-            # to store them so they don't go out of scope.
-            self.grad_accs = []
-            # Loop over all the parameters in the model.
-            for param in self.module.parameters():
-                if param.requires_grad:
-                    # Expand so we get access to grad_fn.
-                    param_tmp = param.expand_as(param)
-                    # Get the gradient accumulator functtion.
-                    grad_acc = param_tmp.grad_fn.next_functions[0][0]
-                    grad_acc.register_hook(self._make_param_hook(param))
-                    self.grad_accs.append(grad_acc)
+            # ZeroOptimizer has equivalent contiguous grad buffer
+            if not args.use_zero_optimizer:
+                # Backward hook.
+                # Accumalation function for the gradients. We need
+                # to store them so they don't go out of scope.
+                self.grad_accs = []
+                # Loop over all the parameters in the model.
+                for param in self.module.parameters():
+                    if param.requires_grad:
+                        # Expand so we get access to grad_fn.
+                        param_tmp = param.expand_as(param)
+                        # Get the gradient accumulator functtion.
+                        grad_acc = param_tmp.grad_fn.next_functions[0][0]
+                        grad_acc.register_hook(self._make_param_hook(param))
+                        self.grad_accs.append(grad_acc)
 
 
     def _make_param_hook(self, param):

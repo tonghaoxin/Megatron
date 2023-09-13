@@ -217,10 +217,11 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler, release=Fa
 
     # Collect rng state across data parallel ranks.
     rng_state = get_rng_state()
+    use_distributed_optimizer = args.use_distributed_optimizer or args.use_zero_optimizer
 
     # Checkpoint file names.
     model_checkpoint_name, optim_checkpoint_name = \
-        get_checkpoint_names(args.save, iteration, args.use_distributed_optimizer, release)
+        get_checkpoint_names(args.save, iteration, use_distributed_optimizer, release)
 
     # Collect args, model, RNG.
     model_state_dict = {}
@@ -249,7 +250,7 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler, release=Fa
     if not args.no_save_optim \
        and (not torch.distributed.is_initialized()
             or mpu.get_data_parallel_rank() == 0
-            or args.use_distributed_optimizer):
+            or use_distributed_optimizer):
 
         # Optimizer stuff.
         if optimizer is not None:
@@ -259,7 +260,7 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler, release=Fa
                 opt_param_scheduler.state_dict()
 
     # Save.
-    if args.use_distributed_optimizer:
+    if use_distributed_optimizer:
         # Save model separate from optimizer.
         if model_state_dict:
             ensure_directory_exists(model_checkpoint_name)
@@ -444,10 +445,11 @@ def load_args_from_checkpoint(args, load_arg='load'):
     if load_dir is None:
         print_rank_0('No load directory specified, using provided arguments.')
         return args
+    use_distributed_optimizer = args.use_distributed_optimizer or args.use_zero_optimizer
 
     model_state_dict, optim_state_dict, release = \
         _load_base_checkpoint(load_dir,
-                              use_distributed_optimizer=args.use_distributed_optimizer,
+                              use_distributed_optimizer=use_distributed_optimizer,
                               rank0=True)
 
     # For args we only care about model state dict
@@ -507,10 +509,10 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     load_dir = getattr(args, load_arg)
 
     model = unwrap_model(model)
-
+    use_distributed_optimizer = args.use_distributed_optimizer or args.use_zero_optimizer
     model_state_dict, optim_state_dict, release = \
         _load_base_checkpoint(load_dir,
-                              use_distributed_optimizer=args.use_distributed_optimizer,
+                              use_distributed_optimizer=use_distributed_optimizer,
                               rank0=False)
 
     # Checkpoint not loaded.
@@ -646,10 +648,11 @@ def load_model_checkpoint_for_zero(model, load_arg='load', strict=True):
     load_dir = getattr(args, load_arg)
 
     model = unwrap_model(model)
+    use_distributed_optimizer = args.use_distributed_optimizer or args.use_zero_optimizer
 
     model_state_dict, _, release = \
         _load_base_checkpoint(load_dir,
-                              use_distributed_optimizer=args.use_distributed_optimizer,
+                              use_distributed_optimizer=use_distributed_optimizer,
                               rank0=False)
 
     # Checkpoint not loaded.
@@ -760,11 +763,14 @@ def load_optim_checkpoint_for_zero(optimizer, opt_param_scheduler, load_arg='loa
     """
     args = get_args()
     load_dir = getattr(args, load_arg)
+    use_distributed_optimizer = args.use_distributed_optimizer or args.use_zero_optimizer
 
     _, optim_state_dict, release = \
         _load_base_checkpoint(load_dir,
-                              use_distributed_optimizer=args.use_distributed_optimizer,
+                              use_distributed_optimizer=use_distributed_optimizer,
                               rank0=False)
+    if not optim_state_dict:
+        return
 
     # Optimizer.
     if not release and not args.finetune and not args.no_load_optim:
@@ -812,8 +818,9 @@ def load_biencoder_checkpoint(model, only_query_model=False,
     with open(tracker_filename, 'r') as f:
         iteration = int(f.read().strip())
 
+    use_distributed_optimizer = args.use_distributed_optimizer or args.use_zero_optimizer
     checkpoint_name, _ = get_checkpoint_names(load_path, iteration,
-                                              args.use_distributed_optimizer,
+                                              use_distributed_optimizer,
                                               release=False)
 
     if mpu.get_data_parallel_rank() == 0:

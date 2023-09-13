@@ -373,7 +373,7 @@ def setup_model_and_optimizer(model_provider_func,
     unwrapped_model = unwrap_model(model,
                                    (torchDDP, LocalDDP, Float16Module))
     # FIXME load model checkpoint before create optimizer
-    if args.use_distributed_optimizer:
+    if args.use_distributed_optimizer or args.use_zero_optimizer:
         if args.load is not None:
             timers = get_timers()
             timers('load-model-checkpoint', log_level=0).start(barrier=True)
@@ -386,7 +386,7 @@ def setup_model_and_optimizer(model_provider_func,
     opt_param_scheduler = get_optimizer_param_scheduler(optimizer)
 
     if args.load is not None:
-        if not args.use_distributed_optimizer:
+        if not (args.use_distributed_optimizer or args.use_zero_optimizer):
             timers = get_timers()
             timers('load-checkpoint', log_level=0).start(barrier=True)
             args.iteration = load_checkpoint(model, optimizer, opt_param_scheduler)
@@ -435,6 +435,11 @@ def train_step(forward_step_func, data_iterator,
         barrier=args.barrier_with_L1_time)
     forward_backward_func = get_forward_backward_func()
     fwd_bwd_timers = timers if args.timing_log_level > 1 else None
+    no_sync_func = None
+    optimizer_for_forward_backward_func = None
+    if args.use_zero_optimizer:
+        optimizer_for_forward_backward_func = optimizer
+        no_sync_func = optimizer.no_sync
     losses_reduced = forward_backward_func(
         forward_step_func=forward_step_func,
         data_iterator=data_iterator,
@@ -447,7 +452,9 @@ def train_step(forward_step_func, data_iterator,
         overlap_p2p_comm=args.overlap_p2p_comm,
         batch_p2p_comm=not args.overlap_p2p_comm,
         forward_only=False,
-        timers=fwd_bwd_timers)
+        timers=fwd_bwd_timers,
+        no_sync_func=no_sync_func,
+        optimizer=optimizer_for_forward_backward_func)
     timers('forward-backward').stop()
 
     # Empty unused memory.
@@ -634,6 +641,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
         elapsed_time_per_iteration = elapsed_time / total_iterations
+        token_per_second = int(args.seq_length) \
+            * int(args.global_batch_size) / elapsed_time_per_iteration
         if writer:
             if args.log_timers_to_tensorboard:
                 writer.add_scalar('iteration-time',
@@ -644,6 +653,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             args.consumed_train_samples)
         log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(
             elapsed_time_per_iteration * 1000.0)
+        log_string += ' average overall token/sec : {:.1f} |'.format(
+            token_per_second)
+        log_string += ' average token/sec/GPU : {:.1f} |'.format(
+            token_per_second / args.world_size)
         log_string += ' learning rate: {:.3E} |'.format(learning_rate)
         log_string += ' global batch size: {:5d} |'.format(batch_size)
         for key in total_loss_dict:

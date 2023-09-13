@@ -337,7 +337,6 @@ def get_data_parallel_group():
         'data parallel group is not initialized'
     return _DATA_PARALLEL_GROUP
 
-
 def get_embedding_group():
     """Get the embedding group the caller rank belongs to."""
     assert _EMBEDDING_GROUP is not None, \
