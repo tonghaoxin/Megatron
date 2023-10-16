@@ -6,6 +6,7 @@
 
 from megatron.accelerator.custom_ops.abstract_custom_operator_manager import MegatronCustomOperatorManager
 from megatron.accelerator.custom_ops.cuda_custom_operator_manager import CUDACustomOperatorManager
+from megatron.accelerator.custom_ops.xpu_custom_operator_manager import XPUCustomOperatorManager
 
 def noop_decorator(func):
     """noop_decorator"""

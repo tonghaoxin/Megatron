@@ -3,12 +3,10 @@ import torch
 
 from megatron.accelerator import get_accelerator
 
-FusedRMSNorm_ = get_accelerator().get_operator('fused_rms_norm')
-
 
 class RMSNorm(torch.nn.Module):
     """RMSNorm."""
-    def __init__(self, dim, eps=1e-6, sequence_parallel=False, weigth_empty=False):
+    def __init__(self, dim, eps=1e-6, sequence_parallel=False, weight_empty=False):
         """
         Init method
         Args:
@@ -18,7 +16,7 @@ class RMSNorm(torch.nn.Module):
         """
         super().__init__()
         self.eps = eps
-        if weigth_empty:
+        if weight_empty:
             self.weight = torch.nn.Parameter(torch.empty(dim))
         else:
             self.weight = torch.nn.Parameter(torch.ones(dim))
@@ -54,7 +52,10 @@ class RMSNorm(torch.nn.Module):
         return 'weight shape={}, eps={}'.format(self.weight.size(), self.eps)
 
 
-class FusedRMSNorm(FusedRMSNorm_):
+# interface for RMSNorm
+CustomRMSNorm = get_accelerator().get_operator('custom_rms_norm')
+
+class FusedRMSNorm(CustomRMSNorm):
     """Fused RMS Norm"""
     def __init__(self, normalized_shape, eps=1e-5,
                  elementwise_affine=True,
@@ -68,9 +69,3 @@ class FusedRMSNorm(FusedRMSNorm_):
 
         # set sequence parallelism flag on weight parameters
         setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
-
-
-# interface for rmsnorm replacement
-CustomRMSNorm = get_accelerator().get_operator('custom_rms_norm')
-if CustomRMSNorm is not None:
-    FusedRMSNorm_ = CustomRMSNorm

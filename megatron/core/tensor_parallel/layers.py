@@ -247,6 +247,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
     @custom_fwd
     def forward(ctx, input, weight, bias, gradient_accumulation_fusion,
                 async_grad_allreduce, sequence_parallel):
+        """forward"""
         ctx.save_for_backward(input, weight)
         ctx.use_bias = bias is not None
         ctx.gradient_accumulation_fusion = gradient_accumulation_fusion
@@ -270,11 +271,13 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         else:
             total_input = input
 
-        return custom_fc(ctx, total_input, weight, bias, transpose=True, findmax_opt=ctx.findmax_opt)
+        return custom_fc(ctx, total_input, weight, bias,
+                         transpose=True, findmax_opt=ctx.findmax_opt, is_forward=True)
 
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output):
+        """backward"""
         input, weight = ctx.saved_tensors
         use_bias = ctx.use_bias
 
@@ -296,7 +299,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         else:
             total_input = input
 
-        grad_input = custom_fc(ctx, grad_output, weight, None, transpose=False, findmax_opt=ctx.findmax_opt)
+        grad_input = custom_fc(ctx, grad_output, weight, None,
+                               transpose=False, findmax_opt=ctx.findmax_opt, is_forward=False)
 
         if ctx.sequence_parallel:
             handle.wait()

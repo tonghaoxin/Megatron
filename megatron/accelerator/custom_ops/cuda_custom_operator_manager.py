@@ -45,7 +45,7 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_sync_batch_norm'] = sync_batch_norm_cuda
         self._custom_ops['fused_layer_norm'] = fused_layer_norm_cuda
         self._custom_ops['fast_layer_norm'] = fast_layer_norm_cuda
-        self._custom_ops['fused_rms_norm'] = fused_rms_norm_cuda
+        self._custom_ops['custom_rms_norm'] = fused_rms_norm_cuda
         self._custom_ops['custom_fc'] = self._custom_interface_manager.\
                 get_interface('custom_fc')()
         self._custom_ops['custom_grad_accum'] = self._custom_interface_manager.\

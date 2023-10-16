@@ -173,7 +173,7 @@ class ScaledMaskedSoftmax(torch.autograd.Function):
         return input_grads, None, None
 
     @staticmethod
-    def get_batch_per_block(ctx, sq, sk, b, np):
+    def get_batch_per_block(sq, sk, b, np):
         """get_batch_per_block"""
         global _INTERFACE_INNER_FUNCS
         return _INTERFACE_INNER_FUNCS.get('scaled_masked_softmax', None).get_batch_per_block(sq, sk, b, np)

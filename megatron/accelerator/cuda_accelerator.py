@@ -26,7 +26,6 @@ class CUDAAccelerator(MegatronAccelerator):
 
     def __init__(self):
         """__init__"""
-        self._name = 'cuda'
         self._communication_backend_name = 'nccl'
         self._optimizers = {}
 
@@ -70,9 +69,9 @@ class CUDAAccelerator(MegatronAccelerator):
         """device_count"""
         return torch.cuda.device_count()
 
-    def synchronize(self, device_index=None):
+    def synchronize(self):
         """synchronize"""
-        return torch.cuda.synchronize(device_index)
+        return torch.cuda.synchronize()
 
     # RNG APIs
     def random(self):

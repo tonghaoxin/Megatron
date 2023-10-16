@@ -51,7 +51,7 @@ def get_accelerator():
         accelerator = XPUAccelerator()
     else:
         raise ValueError(
-            f"MEGATRON_ACCELERATOR must be one of {MEGATRON_ACCELERATOR_LIST}.
+            f"MEGATRON_ACCELERATOR must be one of {MEGATRON_ACCELERATOR_LIST}.\
             Value {accelerator_name} is not supported")
 
     _validate_accelerator(accelerator)

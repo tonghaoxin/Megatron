@@ -13,7 +13,6 @@ class MegatronAccelerator(ABC):
 
     def __init__(self):
         """__init__"""
-        self._name = None
         self._communication_backend_name = None
         self._optimizers = None
         self._custom_operator_manager = None
@@ -50,7 +49,7 @@ class MegatronAccelerator(ABC):
         ...
 
     @abc.abstractmethod
-    def synchronize(self, device_index=None):
+    def synchronize(self):
         """synchronize"""
         ...
 

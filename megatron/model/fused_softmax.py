@@ -89,8 +89,12 @@ class FusedScaleMaskSoftmax(nn.Module):
 
     def forward_custom_softmax(self, input, mask):
         """forward_custom_softmax"""
-        scale = self.scale if self.scale is not None else 1.0
-        return self.custom_softmax(input, mask, scale)
+        if self.scaled_masked_softmax_fusion and self.scale is None:
+            # TODO(changtao02): set self.custom_softmax to a list of funcs, including:
+            # scaled_upper_triang_masked_softmax, scaled_masked_softmax, masked_softmax, etc.
+            return self.custom_softmax(input, mask)
+        else:
+            return self.forward_torch_softmax(input, mask)
 
     def forward_fused_softmax(self, input, mask):
         b, np, sq, sk = input.size()
