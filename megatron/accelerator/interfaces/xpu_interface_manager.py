@@ -13,6 +13,16 @@ import torch
 from functools import wraps
 from .abstract_interface_manager import MegatronInterfaceManager
 from .abstract_interface_manager import _INTERFACE_INNER_FUNCS
+from .abstract_interface_manager import _rotate_half_v2
+
+
+def _apply_rope_with_idx(q, k, cos, sin, original=False):
+    """_apply_rope_with_idx"""
+    if original:
+        q, k = _INTERFACE_INNER_FUNCS.get('rotary_with_idx_pos_emb', None)(q, k, cos, sin, "LBHD")
+    else:
+        q, k = (q * cos) + (_rotate_half_v2(q) * sin), (k * cos) + (_rotate_half_v2(k) * sin)
+    return q, k
 
 
 class CustomLayerNormWrapper(object):
@@ -199,10 +209,12 @@ class CustomSoftmaxWrapper(object):
         """__call__"""
         inputs = args[0]
         mask = args[1]
-        scale = args[2]
 
-        mask = torch.cat([mask] * inputs.shape[1], 1)
-        return self.autograd_func.apply(inputs, mask, -1, scale, -10000.0, True)
+        # scale = args[2]
+        # mask = torch.cat([mask] * inputs.shape[1], 1)
+        # return self.autograd_func.apply(inputs, mask, -1, scale, -10000.0, True)
+
+        return self.autograd_func.apply(inputs, mask)
 
 
 class CustomSwiGLUWrapper(object):
@@ -221,8 +233,8 @@ class CustomSwiGLUWrapper(object):
         return self.swiglu(x)
 
 
-class CustomRoPEWrapper(object):
-    """CustomRoPE wrapper"""
+class CustomApplyRoPEWrapper(object):
+    """CustomApplyRoPE wrapper"""
 
     def __init__(self, rope_func):
         """__init__"""
@@ -230,7 +242,7 @@ class CustomRoPEWrapper(object):
 
     def __call__(self, *args, **kwargs):
         """__call__"""
-        return self.rope_func.apply(*args)
+        return self.rope_func(*args, **kwargs)
 
 
 class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
@@ -257,11 +269,41 @@ class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
         return grad_q, None, None
 
 
+class RotaryPositionalEmbeddingWithFreqsFunction(torch.autograd.Function):
+    """RotaryPositionalEmbeddingWithFreqsFunction"""
+
+    @staticmethod
+    def forward(ctx, t, freqs):
+        """forward"""
+        global _INTERFACE_INNER_FUNCS
+        if True:
+            t_ = t.contiguous()
+            freqs_ = freqs.contiguous()
+            output = t_.new_empty(t_.shape)
+            _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_forward', None)(t_, freqs_, out = output)
+            ctx.freqs = freqs_
+        else:
+            output = t.new_empty(t.shape)
+            _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_forward', None)(t, freqs, out = output)
+            ctx.freqs = freqs
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """backward"""
+        global _INTERFACE_INNER_FUNCS
+        freqs_ = ctx.freqs
+        grad_t = grad_output.new_empty(grad_output.shape)
+        _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_backward', None)(grad_output, freqs_, out = grad_t)
+        return grad_t, None
+
+
 class XPUInterfaceManager(MegatronInterfaceManager):
     """XPUInterfaceManager"""
 
     def __init__(self):
         """__init__"""
+        global _INTERFACE_INNER_FUNCS
         self._custom_interfaces = {}
 
         self._custom_interfaces['custom_layer_norm'] = CustomLayerNormWrapper
@@ -273,7 +315,12 @@ class XPUInterfaceManager(MegatronInterfaceManager):
         self._custom_interfaces['custom_profiler_decorator'] = CustomProfilerDecoratorWrapper
         self._custom_interfaces['custom_softmax'] = CustomSoftmaxWrapper
         self._custom_interfaces['custom_swiglu'] = CustomSwiGLUWrapper
-        self._custom_interfaces['custom_rope'] = CustomRoPEWrapper(RotaryPositionalEmbeddingFunction)
+        self._custom_interfaces['custom_apply_rope_with_freqs'] = \
+                CustomApplyRoPEWrapper(RotaryPositionalEmbeddingWithFreqsFunction.apply)
+        self._custom_interfaces['custom_apply_rope_no_freqs'] = \
+                CustomApplyRoPEWrapper(RotaryPositionalEmbeddingFunction.apply)
+        self._custom_interfaces['custom_apply_rope_with_idx'] = \
+                CustomApplyRoPEWrapper(_apply_rope_with_idx)
 
     def set_inner_func(self, interface_name, inner_func):
         """set_inner_func"""

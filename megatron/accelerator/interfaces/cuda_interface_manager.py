@@ -11,6 +11,32 @@ import torch
 
 from .abstract_interface_manager import MegatronInterfaceManager
 from .abstract_interface_manager import _INTERFACE_INNER_FUNCS
+from .abstract_interface_manager import _rotate_half_v1, _rotate_half_v2
+
+
+def _apply_rope_with_freqs(t, freqs):
+    """_apply_rope_with_freqs"""
+    t = (t * freqs.cos()) + (_rotate_half_v1(t) * freqs.sin())
+    return t
+
+
+def _apply_rope_with_idx(q, k, cos, sin, original=False):
+    """_apply_rope_with_idx"""
+    if original:
+        q = q.reshape(q.size(0), -1, q.size(2), q.size(3) // 2, 2)
+        q = torch.cat([q[..., 0], q[..., 1]], dim=-1)
+        k = k.reshape(k.size(0), -1, k.size(2), k.size(3) // 2, 2)
+        k = torch.cat([k[..., 0], k[..., 1]], dim=-1)
+        q, k = (q * cos) + (_rotate_half_v2(q) * sin), (k * cos) + (_rotate_half_v2(k) * sin)
+        s1, s2, s3, s4 = q.size(0), q.size(1), q.size(2), q.size(3)
+        k1, k2, k3, k4 = k.size(0), k.size(1), k.size(2), k.size(3)
+        q = torch.stack(torch.chunk(q, 2, -1), dim=-1)
+        q = q.reshape(s1, s2, s3, s4)
+        k = torch.stack(torch.chunk(k, 2, -1), dim=-1)
+        k = k.reshape(k1, k2, k3, k4)
+    else:
+        q, k = (q * cos) + (_rotate_half_v2(q) * sin), (k * cos) + (_rotate_half_v2(k) * sin)
+    return q, k
 
 
 class CustomFCWrapper(object):
@@ -97,8 +123,8 @@ class CustomSoftmaxWrapper(object):
         return self.autograd_func.get_batch_per_block(sq, sk, b, np)
 
 
-class CustomRoPEWrapper(object):
-    """CustomRoPE wrapper"""
+class CustomApplyRoPEWrapper(object):
+    """CustomApplyRoPE wrapper"""
 
     def __init__(self, rope_func):
         """__init__"""
@@ -106,7 +132,7 @@ class CustomRoPEWrapper(object):
 
     def __call__(self, *args, **kwargs):
         """__call__"""
-        return self.rope_func.apply(*args)
+        return self.rope_func(*args, **kwargs)
 
 
 class ScaledUpperTriangMaskedSoftmax(torch.autograd.Function):
@@ -220,7 +246,7 @@ class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
         q_ = q.contiguous()
         cos_ = cos.contiguous()
         sin_ = sin.contiguous()
-        output = _INTERFACE_INNER_FUNCS.get('rotary_positional_embedding', None).forward(
+        output = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).forward(
             *q.shape, q_, cos_, sin_
         )
         ctx.save_for_backward(cos_, sin_)
@@ -232,7 +258,7 @@ class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
         """backward"""
         global _INTERFACE_INNER_FUNCS
         cos_, sin_ = ctx.saved_tensors
-        grad_q = _INTERFACE_INNER_FUNCS.get('rotary_positional_embedding', None).backward(
+        grad_q = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).backward(
             *grad_output.shape, grad_output, cos_, sin_
         )
 
@@ -254,7 +280,12 @@ class CUDAInterfaceManager(MegatronInterfaceManager):
                 CustomSoftmaxWrapper(ScaledUpperTriangMaskedSoftmax)
         self._custom_interfaces['custom_scaled_masked_softmax'] = CustomSoftmaxWrapper(ScaledMaskedSoftmax)
         self._custom_interfaces['custom_scaled_softmax'] = CustomSoftmaxWrapper(ScaledSoftmax)
-        self._custom_interfaces['custom_rope'] = CustomRoPEWrapper(RotaryPositionalEmbeddingFunction)
+        self._custom_interfaces['custom_apply_rope_with_freqs'] = \
+                CustomApplyRoPEWrapper(_apply_rope_with_freqs)
+        self._custom_interfaces['custom_apply_rope_no_freqs'] = \
+                CustomApplyRoPEWrapper(RotaryPositionalEmbeddingFunction.apply)
+        self._custom_interfaces['custom_apply_rope_with_idx'] = \
+                CustomApplyRoPEWrapper(_apply_rope_with_idx)
 
     def set_inner_func(self, interface_name, inner_func):
         """set_inner_func"""

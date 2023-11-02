@@ -13,10 +13,25 @@ import torch.nn.functional as F
 from megatron.accelerator import get_accelerator
 
 custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
+custom_apply_rope_with_freqs = None
+custom_apply_rope_no_freqs = None
+custom_apply_rope_with_idx = None
+
 
 __all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds',
            'apply_rotary_pos_emb', 'apply_rotary_pos_emb_fused',
            'apply_rotary_pos_emb_index', 'apply_rotary_pos_emb_index_fused']
+
+def update_apply_rope_func():
+    """update_apply_rope_func"""
+    global custom_apply_rope_with_freqs
+    global custom_apply_rope_no_freqs
+    global custom_apply_rope_with_idx
+
+    custom_apply_rope_with_freqs = get_accelerator().get_operator('custom_apply_rope_with_freqs')
+    custom_apply_rope_no_freqs = get_accelerator().get_operator('custom_apply_rope_no_freqs')
+    custom_apply_rope_with_idx = get_accelerator().get_operator('custom_apply_rope_with_idx')
+
 
 class RotaryEmbedding(nn.Module):
     """
@@ -24,15 +39,18 @@ class RotaryEmbedding(nn.Module):
     """
 
     def __init__(self, dim, seq_len_interpolation_factor=1):
+        """__init__"""
         super().__init__()
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
         inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer('inv_freq', inv_freq)
         if importlib.util.find_spec('einops') is None:
             raise RuntimeError("einops is required for Rotary Embedding")
+        update_apply_rope_func()
 
     @custom_profiler_decorator("RotaryEmbedding forward", color="indigo")
     def forward(self, max_seq_len, offset=0):
+        """forward"""
         seq = torch.arange(max_seq_len, device=self.inv_freq.device) + offset
         freqs = einsum('i , j -> i j', seq.type_as(self.inv_freq) / self.seq_len_interpolation_factor, self.inv_freq)
         # first part even vector components, second part odd vector components,
@@ -79,6 +97,7 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
             self.sin_cached = None
         self.precision = precision
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
+        update_apply_rope_func()
 
     @custom_profiler_decorator("RotaryEmbeddingWithPositionIds forward", color="indigo")
     def forward(self, x, seq_dim=1, seq_len=None):
@@ -111,24 +130,6 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
             self.cos_cached, self.sin_cached = cos_cached, sin_cached
         return self.cos_cached[:seq_len, ...], self.sin_cached[:seq_len, ...]
 
-def _rotate_half(x):
-    """
-    change sign so the last dimension becomes [-odd, +even]
-    """
-    from einops import rearrange
-    x = rearrange(x, '... (j d) -> ... j d', j=2)
-    x1, x2 = x.unbind(dim=-2)
-    return torch.cat((-x2, x1), dim=-1)
-
-
-def rotate_half(x):
-    """
-    another version of _rotate_half
-    """
-    x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
-    # dim=-1 triggers a bug in earlier torch versions
-    return torch.cat((-x2, x1), dim=x1.ndim - 1)
-
 
 def apply_rotary_pos_emb(t, freqs):
     """
@@ -142,7 +143,7 @@ def apply_rotary_pos_emb(t, freqs):
 
     # first part is cosine component
     # second part is sine component, need to change signs with _rotate_half method
-    t = (t * freqs.cos()) + (_rotate_half(t) * freqs.sin())
+    t = custom_apply_rope_with_freqs(t, freqs)
     return torch.cat((t, t_pass), dim=-1)
 
 
@@ -150,13 +151,11 @@ def apply_rotary_pos_emb_fused(t, freqs):
     """
     Fused RoPE function
     """
-    custom_rope = get_accelerator().get_operator('custom_rope')
-
     rot_dim = freqs.shape[-1]
     # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
     t, t_pass = t[..., :rot_dim], t[..., rot_dim:]
 
-    t = custom_rope(t, freqs.cos(), freqs.sin())
+    t = custom_apply_rope_no_freqs(t, freqs.cos(), freqs.sin())
     return torch.cat((t, t_pass), dim=-1)
 
 
@@ -168,20 +167,9 @@ def apply_rotary_pos_emb_index(q, k, cos, sin, position_id, original=False):
     # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, 1, hn] -> [sq, b, hn]
     cos, sin = F.embedding(position_id, cos.squeeze()).unsqueeze(2), \
                F.embedding(position_id, sin.squeeze()).unsqueeze(2)
-    if original:
-        q = q.reshape(q.size(0), -1, q.size(2), q.size(3)//2, 2)
-        q = torch.cat([q[...,0], q[...,1]], dim=-1)
-        k = k.reshape(k.size(0), -1, k.size(2), k.size(3)//2, 2)
-        k = torch.cat([k[...,0], k[...,1]], dim=-1)
-        q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
-        s1, s2, s3, s4 = q.size(0), q.size(1), q.size(2), q.size(3)
-        k1, k2, k3, k4 = k.size(0), k.size(1), k.size(2), k.size(3)
-        q = torch.stack(torch.chunk(q, 2, -1), dim=-1)
-        q = q.reshape(s1, s2, s3, s4)
-        k = torch.stack(torch.chunk(k, 2, -1), dim=-1)
-        k = k.reshape(k1, k2, k3, k4)
-    else:
-        q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+
+    q, k =  custom_apply_rope_with_idx(q, k, cos, sin, original = original)
+
     return q, k
 
 
@@ -194,6 +182,6 @@ def apply_rotary_pos_emb_index_fused(q, k, cos, sin, position_id):
     # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, hn] -> [sq, b, 1, hn]
     cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(2), \
                F.embedding(position_id, sin.squeeze(1)).unsqueeze(2)
-    q = custom_rope(q, cos, sin)
-    k = custom_rope(k, cos, sin)
+    q = custom_apply_rope_no_freqs(q, cos, sin)
+    k = custom_apply_rope_no_freqs(k, cos, sin)
     return q, k

@@ -89,7 +89,7 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
         )
 
         self._custom_interface_manager.set_inner_func(
-            'rotary_positional_embedding',
+            'rotary_no_freqs_pos_emb',
             rotary_positional_embedding_cuda
         )
 
@@ -99,8 +99,12 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
                 get_interface('custom_scaled_masked_softmax')
         self._custom_ops['scaled_softmax'] = self._custom_interface_manager.\
                 get_interface('custom_scaled_softmax')
-        self._custom_ops['custom_rope'] = self._custom_interface_manager.\
-                get_interface('custom_rope')
+        self._custom_ops['custom_apply_rope_with_freqs'] = self._custom_interface_manager.\
+                get_interface('custom_apply_rope_with_freqs')
+        self._custom_ops['custom_apply_rope_no_freqs'] = self._custom_interface_manager.\
+                get_interface('custom_apply_rope_no_freqs')
+        self._custom_ops['custom_apply_rope_with_idx'] = self._custom_interface_manager.\
+                get_interface('custom_apply_rope_with_idx')
         self._custom_ops['custom_parallel_attention'] = self._custom_interface_manager.\
                 get_interface('custom_parallel_attention')(parallel_attention)
 
