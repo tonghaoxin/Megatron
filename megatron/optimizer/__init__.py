@@ -16,17 +16,23 @@ SGD = get_accelerator().get_optimizer('sgd')
 def get_param_groups(modules,
                      no_weight_decay_cond,
                      scale_lr_cond,
-                     lr_mult):
+                     lr_mult,
+                     use_chunked_param_groups=False):
     """creates param groups based on weight decay condition (regularized vs non regularized)
-       and learning rate scale condition (args.lr vs lr_mult * args.lr)
+       , learning rate scale condition (args.lr vs lr_mult * args.lr) and model chunks.
        scale_lr_cond is used during finetuning where head of the network requires a scaled
        version of the base learning rate.
     """
-    wd_no_scale_lr = []
-    wd_scale_lr = []
-    no_wd_no_scale_lr = []
-    no_wd_scale_lr = []
-    for module in modules:
+
+    def navigate_module(module):
+        """navigate_module"""
+        wd_no_scale_lr = []
+        wd_scale_lr = []
+        no_wd_no_scale_lr = []
+        no_wd_scale_lr = []
+
+        params = {}
+
         for name, param in module.named_parameters():
             if not param.requires_grad:
                 continue
@@ -51,15 +57,52 @@ def get_param_groups(modules,
             else:
                 no_wd_scale_lr.append(param)
 
+        params['wd_no_scale_lr'] = wd_no_scale_lr
+        params['wd_scale_lr'] = wd_scale_lr
+        params['no_wd_no_scale_lr'] = no_wd_no_scale_lr
+        params['no_wd_scale_lr'] = no_wd_scale_lr
+
+        return params
+
     param_groups = []
-    if len(wd_no_scale_lr):
-        param_groups.append({'params': wd_no_scale_lr, 'wd_mult': 1.0, 'lr_mult': 1.0})
-    if len(wd_scale_lr):
-        param_groups.append({'params': wd_scale_lr, 'wd_mult': 1.0, 'lr_mult': lr_mult})
-    if len(no_wd_no_scale_lr):
-        param_groups.append({'params': no_wd_no_scale_lr, 'wd_mult': 0.0, 'lr_mult': 1.0})
-    if len(no_wd_scale_lr):
-        param_groups.append({'params': no_wd_scale_lr, 'wd_mult': 0.0, 'lr_mult': lr_mult})
+
+    if use_chunked_param_groups:
+        for i in range(len(modules)):
+            module = modules[i]
+            params = navigate_module(module)
+
+            if len(params['wd_no_scale_lr']):
+                param_groups.append({'params': params['wd_no_scale_lr'],
+                                     'wd_mult': 1.0,
+                                     'lr_mult': 1.0,
+                                     'model_chunk_id': i})
+            if len(params['wd_scale_lr']):
+                param_groups.append({'params': params['wd_scale_lr'],
+                                     'wd_mult': 1.0,
+                                     'lr_mult': lr_mult,
+                                     'model_chunk_id': i})
+            if len(params['no_wd_no_scale_lr']):
+                param_groups.append({'params': params['no_wd_no_scale_lr'],
+                                     'wd_mult': 0.0,
+                                     'lr_mult': 1.0,
+                                     'model_chunk_id': i})
+            if len(params['no_wd_scale_lr']):
+                param_groups.append({'params': params['no_wd_scale_lr'],
+                                     'wd_mult': 0.0,
+                                     'lr_mult': lr_mult,
+                                     'model_chunk_id': i})
+    else:
+        for module in modules:
+            params = navigate_module(module)
+
+            if len(params['wd_no_scale_lr']):
+                param_groups.append({'params': params['wd_no_scale_lr'], 'wd_mult': 1.0, 'lr_mult': 1.0})
+            if len(params['wd_scale_lr']):
+                param_groups.append({'params': params['wd_scale_lr'], 'wd_mult': 1.0, 'lr_mult': lr_mult})
+            if len(params['no_wd_no_scale_lr']):
+                param_groups.append({'params': params['no_wd_no_scale_lr'], 'wd_mult': 0.0, 'lr_mult': 1.0})
+            if len(params['no_wd_scale_lr']):
+                param_groups.append({'params': params['no_wd_scale_lr'], 'wd_mult': 0.0, 'lr_mult': lr_mult})
 
     return param_groups
 
@@ -67,13 +110,15 @@ def get_megatron_optimizer(model,
                            no_weight_decay_cond=None,
                            scale_lr_cond=None,
                            lr_mult=1.0):
+    """get_megatron_optimizer"""
     args = get_args()
 
     # Base optimizer.
     param_groups = get_param_groups(model,
                                     no_weight_decay_cond,
                                     scale_lr_cond,
-                                    lr_mult)
+                                    lr_mult,
+                                    args.use_chunked_param_groups)
 
     if args.optimizer == 'adam':
         optimizer = Adam(param_groups,
@@ -142,7 +187,8 @@ def get_megatron_optimizer(model,
                 params_dtype=args.params_dtype,
                 grad_scaler=grad_scaler,
                 models=model,
-                zero_stage=args.zero_stage
+                zero_stage=args.zero_stage,
+                overlap_param=args.overlap_param,
             )
         else:
             opt_ty = DistributedOptimizer \

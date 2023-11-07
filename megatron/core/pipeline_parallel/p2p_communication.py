@@ -305,7 +305,8 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
             _communicate_shapes(tensor_send_next,
                                 tensor_send_prev,
                                 recv_prev,
-                                recv_next)
+                                recv_next,
+                                use_ring_exchange_p2p)
 
     if recv_prev:
         if dtype is None:
@@ -366,6 +367,7 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
 def recv_forward(tensor_shape: Shape,
                  dtype: torch.dtype,
                  batch_p2p_comm: bool = True,
+                 variable_seq_lengths : bool = False,
                  timers: Callable = None) -> torch.Tensor:
     """ Receive tensor from previous rank in pipeline (forward receive).
 
@@ -385,6 +387,7 @@ def recv_forward(tensor_shape: Shape,
             recv_next=False,
             tensor_shape=tensor_shape,
             batch_p2p_comm=batch_p2p_comm,
+            variable_seq_lengths=variable_seq_lengths,
             dtype=dtype)
         if timers is not None:
             timers('forward-recv').stop()
@@ -394,6 +397,7 @@ def recv_forward(tensor_shape: Shape,
 def recv_backward(tensor_shape: Shape,
                   dtype: torch.dtype,
                   batch_p2p_comm: bool = True,
+                  variable_seq_lengths: bool = False,
                   timers: Callable = None) -> torch.Tensor:
     """Receive tensor from next rank in pipeline (backward receive).
 
@@ -411,6 +415,7 @@ def recv_backward(tensor_shape: Shape,
             recv_next=True,
             tensor_shape=tensor_shape,
             batch_p2p_comm=batch_p2p_comm,
+            variable_seq_lengths=variable_seq_lengths,
             dtype=dtype)
         if timers is not None:
             timers('backward-recv').stop()
@@ -419,6 +424,7 @@ def recv_backward(tensor_shape: Shape,
 
 def send_forward(output_tensor: torch.Tensor,
                  batch_p2p_comm: bool = True,
+                 variable_seq_lengths: bool = False,
                  timers: Callable = None) -> None:
     """Send tensor to next rank in pipeline (forward send).
 
@@ -435,6 +441,7 @@ def send_forward(output_tensor: torch.Tensor,
             recv_next=False,
             tensor_shape=None,
             batch_p2p_comm=batch_p2p_comm,
+            variable_seq_lengths=variable_seq_lengths,
             dtype=None)
         if timers is not None:
             timers('forward-send').stop()
@@ -442,6 +449,7 @@ def send_forward(output_tensor: torch.Tensor,
 
 def send_backward(input_tensor_grad: torch.Tensor,
                   batch_p2p_comm: bool = True,
+                  variable_seq_lengths: bool = False,
                   timers: Callable = None) -> None:
     """Send tensor to previous rank in pipeline (backward send).
 
@@ -457,6 +465,7 @@ def send_backward(input_tensor_grad: torch.Tensor,
             recv_next=False,
             tensor_shape=None,
             batch_p2p_comm=batch_p2p_comm,
+            variable_seq_lengths=variable_seq_lengths,
             dtype=None)
         if timers is not None:
             timers('backward-send').stop()
@@ -466,6 +475,7 @@ def send_forward_recv_backward(output_tensor: torch.Tensor,
                                tensor_shape: Shape,
                                dtype: torch.dtype,
                                batch_p2p_comm: bool = True,
+                               variable_seq_lengths: bool = False,
                                timers: Callable = None) -> torch.Tensor:
     """Batched send and recv with next rank in pipeline.
 
@@ -483,6 +493,7 @@ def send_forward_recv_backward(output_tensor: torch.Tensor,
             recv_next=True,
             tensor_shape=tensor_shape,
             batch_p2p_comm=batch_p2p_comm,
+            variable_seq_lengths=variable_seq_lengths,
             dtype=dtype)
         if timers is not None:
             timers('forward-send-backward-recv').stop()
@@ -493,6 +504,7 @@ def send_backward_recv_forward(input_tensor_grad: torch.Tensor,
                                tensor_shape: Shape,
                                dtype: torch.dtype,
                                batch_p2p_comm: bool = True,
+                               variable_seq_lengths: bool = False,
                                timers: Callable = None) -> torch.Tensor:
     """Batched send and recv with previous rank in pipeline.
 
@@ -510,6 +522,7 @@ def send_backward_recv_forward(input_tensor_grad: torch.Tensor,
             recv_next=False,
             tensor_shape=tensor_shape,
             batch_p2p_comm=batch_p2p_comm,
+            variable_seq_lengths=variable_seq_lengths,
             dtype=dtype)
         if timers is not None:
             timers('backward-send-forward-recv').stop()
@@ -522,6 +535,7 @@ def send_forward_recv_forward(output_tensor: torch.Tensor,
                               dtype: torch.dtype,
                               batch_p2p_comm: bool = True,
                               overlap_p2p_comm: bool = False,
+                              variable_seq_lengths: bool = False,
                               timers: Callable = None) -> torch.Tensor:
     """Batched recv from previous rank and send to next rank in pipeline.
 
@@ -537,6 +551,7 @@ def send_forward_recv_forward(output_tensor: torch.Tensor,
         tensor_shape=tensor_shape,
         batch_p2p_comm=batch_p2p_comm,
         wait_on_reqs=(not overlap_p2p_comm),
+        variable_seq_lengths=variable_seq_lengths,
         dtype=dtype)
     if timers is not None:
         timers('forward-send-forward-recv').stop()
@@ -551,6 +566,7 @@ def send_backward_recv_backward(input_tensor_grad: torch.Tensor,
                                 dtype: torch.dtype,
                                 batch_p2p_comm: bool = True,
                                 overlap_p2p_comm: bool = False,
+                                variable_seq_lengths: bool = False,
                                 timers: Callable = None) -> torch.Tensor:
     """Batched recv from next rank and send to previous rank in pipeline.
 
@@ -566,6 +582,7 @@ def send_backward_recv_backward(input_tensor_grad: torch.Tensor,
         tensor_shape=tensor_shape,
         batch_p2p_comm=batch_p2p_comm,
         wait_on_reqs=(not overlap_p2p_comm),
+        variable_seq_lengths=variable_seq_lengths,
         dtype=dtype)
     if timers is not None:
         timers('backward-send-backward-recv').stop()
@@ -582,6 +599,7 @@ def send_forward_backward_recv_forward_backward(
         tensor_shape: Shape,
         dtype: torch.dtype,
         batch_p2p_comm: bool = True,
+        variable_seq_lengths: bool = False,
         timers: Callable = None) -> Tuple[torch.Tensor, torch.Tensor]:
     """Batched send and recv with previous and next ranks in pipeline.
 
@@ -597,6 +615,7 @@ def send_forward_backward_recv_forward_backward(
         recv_next=recv_next,
         tensor_shape=tensor_shape,
         batch_p2p_comm=batch_p2p_comm,
+        variable_seq_lengths=variable_seq_lengths,
         dtype=dtype)
     if timers is not None:
         timers('forward-backward-send-forward-backward-recv').stop()

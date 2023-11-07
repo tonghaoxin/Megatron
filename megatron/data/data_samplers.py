@@ -11,10 +11,11 @@ from megatron import get_args
 from megatron.core import mpu
 from megatron.global_vars import get_tokenizer
 from transformers import DataCollatorForSeq2Seq, PreTrainedTokenizer, BatchEncoding
-from transformers.utils import is_tf_tensor, is_torch_tensor, to_py_obj
+from transformers.utils import PaddingStrategy
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from .collator import ConstructBlockStrategy
 from dataclasses import dataclass
-from typing import Dict, Sequence, Optional, Any, Mapping
+from typing import Dict, Sequence, Optional, Any, Mapping, Union
 from torch.utils.data.dataloader import default_collate
 
 
@@ -29,13 +30,21 @@ def build_pretraining_data_loader(dataset, consumed_samples):
 
     data_collator = None
 
-    if args.seq2seq_data_collator or args.sft_collator:
+    if args.seq2seq_data_collator:
         data_collator = DataCollatorForSeq2Seq(
             get_tokenizer(),
             model=None,
             label_pad_token_id=-100,
             pad_to_multiple_of=None,
             padding=False
+        )
+    elif args.sft_collator:
+        data_collator = DataCollatorForSupervisedDataset(
+            tokenizer=get_tokenizer(),
+            model=None,
+            label_pad_token_id=-100,
+            pad_to_multiple_of=None,
+            padding=True if args.variable_seq_lengths else False
         )
     elif args.custom_collator:
         data_collator = my_collate
@@ -89,58 +98,60 @@ def build_pretraining_data_loader(dataset, consumed_samples):
 
 
 @dataclass
-class CustomDataCollator:
+class DataCollatorForSupervisedDataset:
     """
     Data collator that will dynamically pad the inputs received, as well as the labels.
     """
+    tokenizer: PreTrainedTokenizerBase
     model: Optional[Any] = None
+    padding: Union[bool, str, PaddingStrategy] = True
     max_length: Optional[int] = None
     pad_to_multiple_of: Optional[int] = None
     label_pad_token_id: int = -100
     return_tensors: str = "pt"
+    collator: object = None
+
+    def __post_init__(self):
+        """__post_init__"""
+        self.collator = DataCollatorForSeq2Seq(
+            self.tokenizer,
+            model=self.model,
+            label_pad_token_id=self.label_pad_token_id,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            padding=self.padding
+        )
 
     def __call__(self, features, return_tensors=None):
+        """__call__"""
+        args = get_args()
         if return_tensors is None:
             return_tensors = self.return_tensors
-        if isinstance(features, (list, tuple)) and isinstance(features[0], Mapping):
-            features = {key: [example[key] for example in features] for key in features[0].keys()}
-
-        batch_outputs = {}
-        required_input = features['text']
-        first_element = required_input[0]
-        if isinstance(first_element, (list, tuple)):
-            # first_element might be an empty list/tuple in some edge cases so we grab the first non empty element.
-            for item in required_input:
-                if len(item) != 0:
-                    first_element = item[0]
-                    break
-        # At this state, if `first_element` is still a list/tuple, it's an empty one so there is nothing to do.
-        if not isinstance(first_element, (int, list, tuple)):
-            if is_tf_tensor(first_element):
-                return_tensors = "tf" if return_tensors is None else return_tensors
-            elif is_torch_tensor(first_element):
-                return_tensors = "pt" if return_tensors is None else return_tensors
-            elif isinstance(first_element, np.ndarray):
-                return_tensors = "np" if return_tensors is None else return_tensors
-            else:
-                raise ValueError(
-                    f"type of {first_element} unknown: {type(first_element)}. "
-                    "Should be one of a python, numpy, pytorch or tensorflow object."
+        loss_mask = [feature["loss_mask"] for feature in features] if "loss_mask" in features[0].keys() else None
+        if loss_mask is not None and args.variable_seq_lengths:
+            max_loss_length = max(len(l) for l in loss_mask)
+            if self.pad_to_multiple_of is not None:
+                max_loss_length = (
+                    (max_loss_length + self.pad_to_multiple_of - 1)
+                    // self.pad_to_multiple_of
+                    * self.pad_to_multiple_of
                 )
 
-            for key, value in features.items():
-                features[key] = to_py_obj(value)
+            padding_side = self.tokenizer.padding_side
+            for feature in features:
+                if len(feature["loss_mask"]) < max_loss_length:
+                    remainder = [0] * (max_loss_length - len(feature["loss_mask"]))
+                    if isinstance(feature["loss_mask"], list):
+                        if padding_side == "right":
+                            feature["loss_mask"] += remainder
+                        elif padding_side == "left":
+                            feature["loss_mask"] = remainder + feature["loss_mask"]
+                    else:
+                        if padding_side == "right":
+                            feature["loss_mask"] = np.concatenate([feature["loss_mask"], remainder]).astype(np.int64)
+                        else:
+                            feature["loss_mask"] = np.concatenate([remainder, feature["loss_mask"]]).astype(np.int64)
 
-        if required_input and not isinstance(required_input[0], (list, tuple)):
-            return BatchEncoding(features, tensor_type=return_tensors)
-        batch_size = required_input.shape[1]
-        for i in range(batch_size):
-            outputs = {k: v[i] for k, v in features.items()}
-            for key, value in outputs.items():
-                if key not in batch_outputs:
-                    batch_outputs[key] = []
-                batch_outputs[key].append(value)
-        return BatchEncoding(batch_outputs, tensor_type=return_tensors)
+        return self.collator(features, return_tensors)
 
 
 def my_collate(batch):

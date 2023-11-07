@@ -7,6 +7,7 @@ import torch
 
 from megatron import get_args
 from megatron.core import tensor_parallel
+from megatron.utils import debug
 from .module import MegatronModule
 
 from .enums import AttnMaskType
@@ -31,12 +32,15 @@ def post_language_model_processing(lm_output, labels, logit_weights,
         loss:
     """
 
+    args = get_args()
     # Output. Format [s b h]
     output = parallel_lm_logits(
         lm_output,
         logit_weights,
         parallel_output)
-
+    if args.enable_debug:
+        debug(dict(__class__=dict(__name__='parallel_lm_logits')), "parallel_lm_logits output",
+              parallel_lm_logits_output=output, logits_shape=output.shape)
     if labels is None:
         # [s b h] => [b s h]
         return output.transpose(0, 1).contiguous()
@@ -86,11 +90,12 @@ class LLaMAModel(MegatronModule):
         self.post_process = post_process
         self.fp16_lm_cross_entropy = args.fp16_lm_cross_entropy
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
+        self.attn_mask_type = AttnMaskType.causal if not args.attn_mask_pad else AttnMaskType.padding
 
         self.language_model, self._language_model_key = get_language_model(
             num_tokentypes=num_tokentypes,
             add_pooler=False,
-            encoder_attn_mask_type=AttnMaskType.causal,
+            encoder_attn_mask_type=self.attn_mask_type,
             init_method=init_method_normal(args.init_method_std),
             scaled_init_method=scaled_init_method_normal(args.init_method_std,
                                                          args.num_layers),

@@ -13,6 +13,7 @@ import types
 from megatron.global_vars import set_retro_args, get_retro_args
 from megatron.accelerator import get_accelerator
 from tools.retro.utils import get_args_path as get_retro_args_path
+from megatron.arguments_utils import extract_group_args, parse_group_args_to_dict
 
 
 def parse_args(extra_args_provider=None, ignore_unknown_args=False):
@@ -103,10 +104,14 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     # Args from environment
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
+    # Parse group args into dict
+    args = parse_group_args_to_dict(args)
 
     return args
 
+
 def validate_args(args, defaults={}):
+    """validate_args"""
     # Tensor model parallel size.
     args.tensor_model_parallel_size = min(
         args.tensor_model_parallel_size, args.world_size)
@@ -255,6 +260,14 @@ def validate_args(args, defaults={}):
         assert args.DDP_impl == 'local'
         assert args.use_contiguous_buffers_in_local_ddp
 
+    if args.use_chunk:
+        assert args.use_distributed_optimizer, \
+            "use-distributed-optimizer is needed for use-chunk."
+
+    if args.cpu_offload:
+        assert args.use_chunk, \
+            "use-chunk is needed for cpu-offload."
+
     if args.use_zero_optimizer:
         # if we use the zero optimizer, we should make sure use_distributed_optimizer is off.
         assert not args.use_distributed_optimizer, \
@@ -284,7 +297,7 @@ def validate_args(args, defaults={}):
     # across batches/microbatches. Due to additional communication overhead
     # during pipeline parallelism, it should not be set if sequence length
     # is constant during training.
-    args.variable_seq_lengths = False
+    # args.variable_seq_lengths = False
 
     # Iteration-based training.
     if args.train_iters:
@@ -524,10 +537,12 @@ def _print_args(title, args):
 
 
 def _check_arg_is_not_none(args, arg):
+    """_check_arg_is_not_none"""
     assert getattr(args, arg) is not None, '{} argument is None'.format(arg)
 
 
 def _add_transformer_engine_args(parser):
+    """_add_transformer_engine_args"""
     group = parser.add_argument_group(title='Transformer-Engine')
 
     group.add_argument('--fp8-e4m3', action='store_true',
@@ -555,6 +570,7 @@ def _add_transformer_engine_args(parser):
     return parser
 
 def _add_inference_args(parser):
+    """_add_inference_args"""
     group = parser.add_argument_group(title='inference')
 
     group.add_argument('--inference-batch-times-seqlen-threshold',
@@ -580,6 +596,7 @@ def _add_inference_args(parser):
 
 
 def _add_retro_args(parser):
+    """_add_retro_args"""
     group = parser.add_argument_group(title='retro')
 
     group.add_argument('--retro-workdir', default=None,
@@ -624,6 +641,7 @@ def _add_retro_args(parser):
 
 
 def _add_network_size_args(parser):
+    """_add_network_size_args"""
     group = parser.add_argument_group(title='network size')
 
     group.add_argument('--num-layers', type=int, default=None,
@@ -728,6 +746,7 @@ def _add_network_size_args(parser):
 
 
 def _add_logging_args(parser):
+    """_add_logging_args"""
     group = parser.add_argument_group(title='logging')
 
     group.add_argument('--log-params-norm', action='store_true',
@@ -793,6 +812,7 @@ def _add_logging_args(parser):
 
 
 def _add_regularization_args(parser):
+    """_add_regularization_args"""
     group = parser.add_argument_group(title='regularization')
 
     group.add_argument('--attention-dropout', type=float, default=0.1,
@@ -836,6 +856,7 @@ def _add_regularization_args(parser):
 
 
 def _add_training_args(parser):
+    """_add_training_args"""
     group = parser.add_argument_group(title='training')
 
     group.add_argument('--micro-batch-size', type=int, default=None,
@@ -956,6 +977,9 @@ def _add_training_args(parser):
     group.add_argument('--use-flash-attn', action='store_true',
                        help='use FlashAttention implementation of attention. '
                        'https://arxiv.org/abs/2205.14135')
+    group.add_argument('--attn-mask-pad', action='store_true', help='use attention mask to mask'
+                       ' padding of inputs',
+                       dest='attn_mask_pad')
     group.add_argument('--disable-bias-linear', action='store_false',
                        help='Disable bias in the linear layers',
                        dest='add_bias_linear')
@@ -1015,10 +1039,22 @@ def _add_training_args(parser):
                        help='Use memory saving strategies for several ops')
     group.add_argument('--findmax-opt', action='store_true', default=False,
                         help='open findmax optimization in fc/mm during training')
+    group.add_argument('--use-chunk', action='store_true',
+                       help='Use chunk for fp32 param and grad in optiimizer. '
+                       'It is only used when use-distributed-optimizer. '
+                       'Then argment cpu-offload and cpu-offload-pin-memory are used in Chunk, '
+                       'they will be used when creating Tensor in Chunk')
+    group.add_argument('--cpu-offload', action='store_true',
+                       help='Use cpu offload in optimizer')
+    group.add_argument('--cpu-offload-pin-memory', action='store_true',
+                       help='Use pinned memory for optimizer')
+    group.add_argument('--cpu-offload-percent', type=float, default=1.0,
+                       help='Percent of the parameters computed in cpu for optimizer.')
     return parser
 
 
 def _add_initialization_args(parser):
+    """_add_initialization_args"""
     group = parser.add_argument_group(title='initialization')
 
     group.add_argument('--seed', type=int, default=1234,
@@ -1039,6 +1075,7 @@ def _add_initialization_args(parser):
 
 
 def _add_learning_rate_args(parser):
+    """_add_learning_rate_args"""
     group = parser.add_argument_group(title='learning rate')
 
     group.add_argument('--lr', type=float, default=None,
@@ -1085,6 +1122,7 @@ def _add_learning_rate_args(parser):
 
 
 def _add_checkpointing_args(parser):
+    """_add_checkpointing_args"""
     group = parser.add_argument_group(title='checkpointing')
 
     group.add_argument('--save', type=str, default=None,
@@ -1117,11 +1155,15 @@ def _add_checkpointing_args(parser):
                        help="If '--load' is set, but checkpoint is not found "
                        "(e.g., path typo), then exit instead of random "
                        "initialization.")
+    group.add_argument('--enable-accelerate-checkpoint', action='store_true', help='enable asynchronous checkpoint,'
+                       'save checkpoint to memory, backend thread will save it '
+                       'to storage asynchronously.' )
 
     return parser
 
 
 def _add_mixed_precision_args(parser):
+    """_add_mixed_precision_args"""
     group = parser.add_argument_group(title='mixed precision')
 
     group.add_argument('--fp16', action='store_true',
@@ -1160,6 +1202,7 @@ def _add_mixed_precision_args(parser):
 
 
 def _add_distributed_args(parser):
+    """_add_distributed_args"""
     group = parser.add_argument_group(title='distributed')
 
     group.add_argument('--tensor-model-parallel-size', type=int, default=1,
@@ -1237,15 +1280,22 @@ def _add_distributed_args(parser):
                        choices=[1, 2],
                        help='1=ZeRO-1, 2=ZeRO-2 refer to optimizer state partitioning, '
                        'and optimizer+gradient state partitioning in ZeroOptimizer.')
-    group.add_argument('--reduce-bucket-size', default=5e8, type=float,
-                       help='Bucket size for reduce in ZeroOptimizer, the unit is the number of parameters')
+    group.add_argument('--reduce-bucket-size', default=5e4, type=int,
+                       help='Bucket size for reduce in ZeroOptimizer, the unit is the number of elements')
     group.add_argument('--last-bucket-split-count', type=int, default=None, help='Number of \
                        splits to split the last bucket in ZeroOptimizer.')
+    group.add_argument('--overlap-param', action='store_true',
+                       default=False, help='Supports ZeRO-1, ZeRO-2 and DP param overlapping,'
+                       'work with --use-zero-optimizer.')
+    group.add_argument('--use-chunked-param-groups', action='store_true',
+                       default=False, help='Supports ZeRO-1, ZeRO-2 and DP overlapping '
+                       'with interleaved pipeline scheduler, work with --use-zero-optimizer.')
 
     return parser
 
 
 def _add_validation_args(parser):
+    """_add_validation_args"""
     group = parser.add_argument_group(title='validation')
 
     group.add_argument('--eval-iters', type=int, default=100,
@@ -1260,7 +1310,9 @@ def _add_validation_args(parser):
     return parser
 
 
+@extract_group_args("data_args")
 def _add_data_args(parser):
+    """_add_data_args"""
     group = parser.add_argument_group(title='data and dataloader')
 
     group.add_argument('--data-name', type=str, default=None,
@@ -1307,6 +1359,8 @@ def _add_data_args(parser):
                             'They are used for span masking in the T5 model')
     group.add_argument('--seq-length', type=int, default=None,
                        help='Maximum sequence length to process.')
+    group.add_argument('--variable-seq-lengths', action='store_true',
+                       help='Support for variable sequence lengths across microbatches')
     group.add_argument('--encoder-seq-length', type=int, default=None,
                        help='Maximum encoder sequence length to process.'
                        'This should be exclusive of --seq-length')
@@ -1368,12 +1422,16 @@ def _add_data_args(parser):
                        help='Use Data Collator For Seq2Seq')
 
     group.add_argument('--sft-collator', action='store_true', help='Use data collector for sft')
+    group.add_argument('--enable-prep-data', action='store_true', help='enable to load preprocess sft data')
+    group.add_argument('--sft-data-template', type=str, default='alpaca', help='sft data template')
+    group.add_argument('--sft-dataset-name', type=str, default='alpaca_en', help='sft dataset name')
     group.add_argument('--custom-collator', action='store_true', help='Use data collector for sft')
 
     return parser
 
 
 def _add_autoresume_args(parser):
+    """_add_autoresume_args"""
     group = parser.add_argument_group(title='autoresume')
 
     group.add_argument('--adlr-autoresume', action='store_true',
@@ -1386,6 +1444,7 @@ def _add_autoresume_args(parser):
 
 
 def _add_biencoder_args(parser):
+    """_add_biencoder_args"""
     group = parser.add_argument_group(title='biencoder')
 
     # network size
@@ -1443,6 +1502,7 @@ def _add_biencoder_args(parser):
 
 
 def _add_vision_args(parser):
+    """_add_vision_args"""
     group = parser.add_argument_group(title="vision")
 
     # general vision arguements
@@ -1514,6 +1574,7 @@ def _add_vision_args(parser):
     return parser
 
 def _add_glm_args(parser):
+    """_add_glm_args"""
     group = parser.add_argument_group("GLM", "GLM configurations")
     group.add_argument("--gpt-prob", type=float, default=0.0)
     # group.add_argument("--mask-ratio", type=float, default=0.15)
@@ -1545,6 +1606,7 @@ def _add_glm_args(parser):
     return parser
 
 def _add_blocklm_args(parser):
+    """_add_blocklm_args"""
     group = parser.add_argument_group("GLM", "block lm configurations")
     group.add_argument('--block-lm', action='store_true', help="whether use the BlockLM pre-training")
     group.add_argument('--masked-lm', action='store_true', help='whether to use the mlm objective')
@@ -1573,6 +1635,7 @@ def _add_blocklm_args(parser):
     return parser
 
 def _add_chatglm_args(parser):
+    """_add_chatglm_args"""
     group = parser.add_argument_group("CHATGLM", "Chat-GLM configurations")
     group.add_argument("--prompt-resource-name", type=str, default="content",
                        help='dataset file question key in per line')
@@ -1588,6 +1651,7 @@ def _add_chatglm_args(parser):
     return parser
 
 def _add_finetune_config_args(parser):
+    """_add_finetune_config_args"""
     group = parser.add_argument_group('finetune', 'finetune configurations')
     group.add_argument('--task', type=str, help='Task name.')
     group.add_argument('--load-pretrained', type=str, help="Load pretrained model", default=None)

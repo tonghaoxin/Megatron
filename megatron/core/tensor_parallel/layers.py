@@ -28,8 +28,10 @@ from megatron.core.parallel_state import (
     get_tensor_model_parallel_world_size,
     get_tensor_model_parallel_group,
     get_global_memory_buffer,
+    get_pipeline_model_parallel_rank,
+    get_data_parallel_rank,
 )
-
+from random import random
 from megatron import get_args
 from .mappings import (
     copy_to_tensor_model_parallel_region,
@@ -152,6 +154,46 @@ def xavier_normal_tensor_parallel_(tensor, gain=1., tp_degree=1, partition_dim=N
     return torch.nn.init._no_grad_normal_(tensor, 0, std)
 
 
+def print_rank(message):
+    """ print only on debug rank."""
+    args = get_args()
+    tp = get_tensor_model_parallel_rank()
+    pp = get_pipeline_model_parallel_rank()
+    dp = get_data_parallel_rank()
+    if tp in args.debug_tp_list \
+            and pp in args.debug_pp_list \
+            and dp in args.debug_dp_list:
+        print(message, flush=True)
+
+
+def debug(module, stage, **kwargs):
+    """
+        output:
+
+        ........ 【layer_number】 module_name, shape, value, save_path
+    """
+    args = get_args()
+    title = "........ "
+    if hasattr(module, 'layer_number'):
+        if module.layer_number in args.debug_layer_list:
+            title += f"【{module.layer_number}】"
+        else:
+            return
+    title += f"{module.__class__.__name__}, {stage}, "
+
+    for k, v in kwargs.items():
+        if not isinstance(v, torch.Tensor):
+            msg = f"{k} {v}"
+        else:
+            t = torch.flatten(v)
+            msg = f"{k} {v.shape}, [{t[0]}, ..., {t[-1]}]"
+            if args.debug_save_path is not None:
+                filename = os.path.join(args.debug_save_path, f"{k}_{random()}.pt")
+                torch.save(v.cpu(), filename)
+                msg += ", save to: " + filename
+        print_rank(title + msg)
+
+
 class VocabParallelEmbedding(torch.nn.Module):
     """Embedding parallelized in the vocabulary dimension.
 
@@ -248,13 +290,14 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
     def forward(ctx, input, weight, bias, gradient_accumulation_fusion,
                 async_grad_allreduce, sequence_parallel):
         """forward"""
+        args = get_args()
         ctx.save_for_backward(input, weight)
         ctx.use_bias = bias is not None
         ctx.gradient_accumulation_fusion = gradient_accumulation_fusion
         ctx.async_grad_allreduce = async_grad_allreduce
         ctx.sequence_parallel = sequence_parallel
-        ctx.findmax_opt = get_args().findmax_opt
-        ctx.use_contiguous_buffers = get_args().use_contiguous_buffers_in_local_ddp
+        ctx.findmax_opt = args.findmax_opt
+        ctx.use_contiguous_buffers = args.use_contiguous_buffers_in_local_ddp
 
         if sequence_parallel:
             world_size = get_tensor_model_parallel_world_size()
@@ -271,8 +314,18 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         else:
             total_input = input
 
-        return custom_fc(ctx, total_input, weight, bias,
-                         transpose=True, findmax_opt=ctx.findmax_opt, is_forward=True)
+        output = custom_fc(ctx, total_input, weight, bias,
+                           transpose=True, findmax_opt=ctx.findmax_opt,
+                           is_forward=True)
+
+        if args.enable_debug:
+            debug(dict(__class__=dict(__name__='LinearWithGradAccumulationAndAsyncCommunication')),
+                  "torch_matmul output",
+                  total_input=total_input, total_input_shape=total_input.shape,
+                  weight=weight, weight_shape=weight.shape,
+                  torch_matmul_output=output, torch_matmul_output_shape=output.shape)
+
+        return output
 
     @staticmethod
     @custom_bwd
@@ -640,7 +693,10 @@ class RowParallelLinear(torch.nn.Module):
                  gradient_accumulation_fusion=False,
                  sequence_parallel_enabled: bool = False,
                  ):
+        """__init__"""
+        args = get_args()
         super(RowParallelLinear, self).__init__()
+        self.enable_debug = args.enable_debug
 
         # Keep input parameters
         self.input_size = input_size
@@ -718,18 +774,26 @@ class RowParallelLinear(torch.nn.Module):
             async_grad_allreduce=False,
             sequence_parallel_enabled=False,
         )
+        if self.enable_debug:
+            debug(self, "RowParallelLinear || after linear_with_grad_accumulation_and_async_allreduce",
+                  output_parallel=output_parallel, output_parallel_shape=output_parallel.shape)
 
         # All-reduce across all the partitions.
         if self.sequence_parallel_enabled:
             output_ = reduce_scatter_to_sequence_parallel_region(output_parallel)
         else:
             output_ = reduce_from_tensor_model_parallel_region(output_parallel)
+            if self.enable_debug:
+                debug(self, "RowParallelLinear || after reduce_from_tensor_model_parallel_region",
+                      output_=output_, output_shape=output_.shape)
         if not self.skip_bias_add:
             output = output_ + self.bias if self.bias is not None else output_
             output_bias = None
         else:
             output = output_
             output_bias = self.bias
+            if self.enable_debug:
+                debug(self, "RowParallelLinear || after output_bias", output_bias=output_bias)
         return output, output_bias
 
 

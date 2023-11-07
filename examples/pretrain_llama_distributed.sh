@@ -3,6 +3,7 @@
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 DATA_PATH=${ROOT_DIR}/../data/llama_00_text_document
 CHECKPOINT_PATH=${ROOT_DIR}/../checkpoints/
+NSYS_PATH=${ROOT_DIR}/../nsys/
 # VOCAB_FILE=${ROOT_DIR}/../data/gpt2-vocab.json
 # MERGE_FILE=${ROOT_DIR}/../data/gpt2-merges.txt
 
@@ -20,6 +21,16 @@ export NCCL_SOCKET_IFNAME=eth0
 export NCCL_IB_HCA=mlx5
 export NCCL_IB_GID_INDEX=3
 
+NSYS_ARGS="nsys profile \
+           --trace=cuda,nvtx,osrt \
+           --gpu-metrics-device=0,1,2,3,4,5,6,7 \
+           --gpu-metrics-frequency=20000 \
+           --gpu-metrics-set=ga100 \
+           --delay=30 \
+           --duration=30 \
+           --force-overwrite true \
+           -o $NSYS_PATH/node_$NODE_RANK"
+
 DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --nnodes $NNODES
                   --node_rank $NODE_RANK
@@ -35,16 +46,19 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --micro-batch-size 1 \
                --global-batch-size 128 \
                --seq-length 1024 \
-               --max-position-embeddings 2048 \
-               --lr 0.0003 \
+               --max-position-embeddings 1024 \
+               --lr 1.0e-5 \
                --min-lr 1.0e-5 \
                --clip-grad 1.0 \
-               --weight-decay 1e-2 \
+               --optimizer adam \
+               --adam-beta1 0.9 \
+               --adam-beta2 0.95 \
+               --weight-decay 0.1 \
+               --adam-eps 1e-08 \
                --train-iters 500000 \
                --lr-decay-iters 320000 \
                --lr-decay-style cosine \
                --lr-warmup-fraction .01 \
-               --recompute-method uniform \
                --no-async-tensor-model-parallel-allreduce \
                --tokenizer-type LLaMASentencePieceTokenizer \
                --tokenizer-model $ROOT_DIR/../download/tokenizer.model \
@@ -57,14 +71,19 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --disable-bias-linear \
                --attention-dropout 0 \
                --hidden-dropout 0 \
-               --use-distributed-optimizer \
-               --use-flash-attn \
+               --embedding-dropout 0 \
                --untie-embeddings-and-output-weights \
                --initial-loss-scale 16 \
+               --use-flash-attn \
+               --use-distributed-optimizer \
                --fp16"
                # --use-zero-optimizer \
-               # --no-contiguous-buffers-in-local-ddp \
+               # --overlap-param \
+               # --reduce-bucket-size 50000000 \
+               # --num-layers-per-virtual-pipeline-stage 4 \
+               # --overlap-p2p-communication \
                # --no-gradient-accumulation-fusion \
+               # --no-contiguous-buffers-in-local-ddp \
                # --use-alibi-position-embeddings \
                # --sequence-parallel
 
@@ -179,8 +198,8 @@ OTHER_ARGS="--data-path $DATA_PATH \
             --data-impl mmap \
             --split 949,50,1 \
             --distributed-backend nccl"
-            # --save $CHECKPOINT_PATH \
             # --load $CHECKPOINT_PATH \
+            # --save $CHECKPOINT_PATH \
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \
@@ -188,3 +207,4 @@ PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        $LLAMA_7B_ARGS \
        $OUTPUT_ARGS \
        $OTHER_ARGS
+       # $NSYS_ARGS \

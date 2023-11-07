@@ -103,8 +103,10 @@ class ParallelMLP(MegatronModule):
     """
 
     def __init__(self, init_method, output_layer_init_method):
+        """__init__"""
         super(ParallelMLP, self).__init__()
         args = get_args()
+        self.enable_debug = args.enable_debug
 
         if args.deepnorm:
             world_size = mpu.get_tensor_model_parallel_world_size()
@@ -166,9 +168,15 @@ class ParallelMLP(MegatronModule):
 
     @custom_profiler_decorator("ParallelMLP forward", color="teal")
     def forward(self, hidden_states):
-
+        """forward"""
         # [s, b, 4hp]
+        if self.enable_debug:
+            debug(self, "before dense_h_to_4h", hidden_states=hidden_states, hidden_states_shape=hidden_states.shape)
+
         intermediate_parallel, bias_parallel = self.dense_h_to_4h(hidden_states)
+
+        if self.enable_debug:
+            debug(self, "after dense_h_to_4h", intermediate_parallel=intermediate_parallel, bias_parallel=bias_parallel)
 
         if self.bias_gelu_fusion:
             assert self.add_bias is True
@@ -178,9 +186,13 @@ class ParallelMLP(MegatronModule):
             if bias_parallel is not None:
                 intermediate_parallel = intermediate_parallel + bias_parallel
             intermediate_parallel = self.activation_func(intermediate_parallel)
+            if self.enable_debug:
+                debug(self, "after activation_func", intermediate_parallel=intermediate_parallel)
 
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
+        if self.enable_debug:
+            debug(self, "after dense_4h_to_h", output=output, output_bias=output_bias)
         return output, output_bias
 
 class SwitchMLP(MegatronModule):
@@ -1074,7 +1086,7 @@ class ParallelTransformerLayer(MegatronModule):
                 encoder_output=None, enc_dec_attn_mask=None,
                 rotary_pos_emb=None, position_ids=None,
                 inference_params=None):
-
+        """forward"""
         # hidden_states: [s, b, h]
 
         # Layer norm at the beginning of the transformer layer.
@@ -1195,6 +1207,9 @@ class ParallelTransformerLayer(MegatronModule):
                                               p=self.hidden_dropout,
                                               training=self.training)
             output = residual + self.drop_path(out)
+
+        if self.enable_debug:
+            debug(self, "ParallelTransformerLayer output", ParallelTransformerLayer_output=output)
 
         return output
 
@@ -1643,6 +1658,7 @@ class ParallelTransformer(MegatronModule):
                 encoder_output=None, enc_dec_attn_mask=None,
                 inference_params=None, rotary_pos_emb=None,
                 position_ids=None):
+        """forward"""
         # hidden_states: [s, b, h]
 
         # Checks.
@@ -1731,6 +1747,8 @@ class ParallelTransformer(MegatronModule):
                 if torch.is_grad_enabled() and self.training:
                     self.microbatch_count += 1
 
+        if self.enable_debug:
+            debug(self, "ParallelTransformer before final_layer_norm", input_hidden_states=hidden_states)
         # Final layer norm.
         if self.post_process and self.post_layer_norm:
             hidden_states = self.final_layernorm(hidden_states)

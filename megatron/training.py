@@ -23,8 +23,11 @@ from megatron import update_num_microbatches
 from megatron.core import mpu, tensor_parallel
 from megatron import print_rank_0
 from megatron import print_rank_last
-from megatron.checkpointing import load_checkpoint, load_model_checkpoint_for_zero, load_optim_checkpoint_for_zero
-from megatron.checkpointing import save_checkpoint
+from megatron.checkpoint_manager import (load_megatron_model_for_zero as load_model_checkpoint_for_zero,
+                                         load_megatron_optim_for_zero as load_optim_checkpoint_for_zero,
+                                         load_checkpoint_for_megatron as load_checkpoint,
+                                         save_checkpoint_for_megatron as save_checkpoint,
+                                         finish_checkpoint_process)
 from megatron.model import Float16Module
 from megatron.model import GPTModel
 from megatron.core.enums import ModelType
@@ -166,6 +169,8 @@ def pretrain(train_valid_test_dataset_provider,
 
     if args.save and iteration != 0:
         save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
+
+    finish_checkpoint_process()
 
     if args.do_test:
         # Run on test data.
@@ -437,10 +442,12 @@ def train_step(forward_step_func, data_iterator,
     forward_backward_func = get_forward_backward_func()
     fwd_bwd_timers = timers if args.timing_log_level > 1 else None
     no_sync_func = None
-    optimizer_for_forward_backward_func = None
+    schedule_prologue_func = None
+    schedule_epilogue_func = None
     if args.use_zero_optimizer:
-        optimizer_for_forward_backward_func = optimizer
         no_sync_func = optimizer.no_sync
+        schedule_prologue_func = optimizer.forward_prologue
+        schedule_epilogue_func = optimizer.backward_epilogue
     losses_reduced = forward_backward_func(
         forward_step_func=forward_step_func,
         data_iterator=data_iterator,
@@ -452,10 +459,12 @@ def train_step(forward_step_func, data_iterator,
         sequence_parallel=args.sequence_parallel,
         overlap_p2p_comm=args.overlap_p2p_comm,
         batch_p2p_comm=args.batch_p2p_comm,
+        variable_seq_lengths=args.variable_seq_lengths,
         forward_only=False,
         timers=fwd_bwd_timers,
         no_sync_func=no_sync_func,
-        optimizer=optimizer_for_forward_backward_func)
+        schedule_prologue_func=schedule_prologue_func,
+        schedule_epilogue_func=schedule_epilogue_func)
     timers('forward-backward').stop()
 
     # Empty unused memory.
@@ -505,7 +514,15 @@ def train_step(forward_step_func, data_iterator,
         loss_reduced = {}
         for key in losses_reduced[0]:
             losses_reduced_for_key = [x[key] for x in losses_reduced]
-            loss_reduced[key] = sum(losses_reduced_for_key) / len(losses_reduced_for_key)
+            curation_losses = []
+            for i, losses_for_key in enumerate(losses_reduced_for_key):
+                if torch.isnan(losses_for_key) or torch.isinf(losses_for_key):
+                    if len(curation_losses) != 0:
+                        loss_cor = sum(curation_losses) / len(curation_losses)
+                        curation_losses.append(loss_cor)
+                else:
+                    curation_losses.append(losses_for_key)
+            loss_reduced[key] = sum(curation_losses) / len(curation_losses)
         return loss_reduced, skipped_iter, grad_norm, num_zeros_in_grad
     return {}, skipped_iter, grad_norm, num_zeros_in_grad
 
@@ -900,6 +917,7 @@ def evaluate(forward_step_func,
                 dtype=args.params_dtype,
                 tensor_shape=(args.seq_length, args.micro_batch_size, args.hidden_size),
                 sequence_parallel=args.sequence_parallel,
+                variable_seq_lengths=args.variable_seq_lengths,
                 forward_only=True,
                 timers=None)
 

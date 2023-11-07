@@ -1,0 +1,7 @@
+transformers==4.28.1
+einops==0.6.0
+pre-commit==3.2.2
+accelerate
+sentencepiece==0.1.98
+flash-attn==1.0.2
+datasets==2.11.0

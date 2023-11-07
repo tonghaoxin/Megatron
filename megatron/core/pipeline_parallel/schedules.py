@@ -114,15 +114,18 @@ def get_forward_backward_func():
         model is an instance of torch.nn.DistributedDataParallel, the
         default is to use torch.nn.DistributedDataParallel.no_sync.
 
-    grad_sync_func (optional): Function that launches asynchronous
-        gradient reductions (e.g. distributed optimizer gradient
-        reduce-scatters). The function should take one argument: an
-        iterable of parameters whose gradients are to be synchronized.
-
     param_sync_func (optional): Function that launches asynchronous
         parameter synchronizations (e.g. distributed optimizer
         parameter all-gathers). The function should take one argument:
         an iterable of parameters to be synchronized.
+
+    schedule_prologue_func (optional): Function that executes custom
+        tasks at the beginning of the scheduling process. The function should take
+        no argument.
+
+    schedule_epilogue_func (optional): Function that executes custom
+        tasks at the end of the scheduling process. The function should take
+        an argument: model_chunk_id.
 
     """
     pipeline_model_parallel_size = parallel_state.get_pipeline_model_parallel_world_size()
@@ -302,6 +305,8 @@ def backward_step(grad_scaler, input_tensor, output_tensor,
                 input_tensor_grad.append(None)
             else:
                 input_tensor_grad.append(x.grad)
+    # print(f"input_tensor_grad is {input_tensor_grad}")
+    # print(f"input_tensor_grad[-1] grad_fn = {input_tensor_grad[-1].grad_fn}")
 
     # Handle single skip connection if it exists (encoder_hidden_state in
     # model with encoder and decoder).
@@ -331,15 +336,16 @@ def forward_backward_no_pipelining(*,
                                    sequence_parallel: bool = False, # unused
                                    overlap_p2p_comm: bool = False, # unused
                                    batch_p2p_comm: bool = True, # unused
+                                   variable_seq_lengths: bool = False,
                                    forward_only: bool = False,
                                    timers: Callable = None,
                                    collect_non_loss_data: bool = False,
                                    enable_autocast: bool = False,
                                    deallocate_pipeline_outputs: bool = False,
                                    no_sync_func: Optional[Callable] = None,
-                                   grad_sync_func: Optional[Callable] = None, # unused
                                    param_sync_func: Optional[Callable] = None, # unused
-                                   optimizer=None):
+                                   schedule_prologue_func: Optional[Callable] = None,
+                                   schedule_epilogue_func: Optional[Callable] = None):
     """Run forward and backward passes with no pipeline parallelism
     (no inter-stage communication).
 
@@ -348,6 +354,8 @@ def forward_backward_no_pipelining(*,
 
     See get_forward_backward_func() for argument details
     """
+    if schedule_prologue_func is not None:
+        schedule_prologue_func()
 
     if isinstance(model, list):
         assert len(model) == 1, \
@@ -375,8 +383,8 @@ def forward_backward_no_pipelining(*,
             if not forward_only:
                 backward_step(grad_scaler, input_tensor, output_tensor,
                               output_tensor_grad, model_type, timers, deallocate_pipeline_outputs)
-                if optimizer is not None:
-                    optimizer.backward_epilogue()
+                if schedule_epilogue_func is not None:
+                    schedule_epilogue_func()
 
     # Run computation for last microbatch out of context handler (want to
     # synchronize gradients).
@@ -387,8 +395,9 @@ def forward_backward_no_pipelining(*,
     if not forward_only:
         backward_step(grad_scaler, input_tensor, output_tensor,
                       output_tensor_grad, model_type, timers, deallocate_pipeline_outputs)
-        if optimizer is not None:
-            optimizer.backward_epilogue()
+        if schedule_epilogue_func is not None:
+            schedule_epilogue_func()
+
     return forward_data_store
 
 
@@ -404,20 +413,24 @@ def forward_backward_pipelining_with_interleaving(*,
                                                   sequence_parallel: bool = False,
                                                   overlap_p2p_comm: bool = False,
                                                   batch_p2p_comm: bool = True,
+                                                  variable_seq_lengths: bool = False,
                                                   forward_only: bool = False,
                                                   timers: Callable = None,
                                                   collect_non_loss_data: bool = False,
                                                   enable_autocast: bool = False,
                                                   deallocate_pipeline_outputs: bool = False,
                                                   no_sync_func: Optional[Callable] = None,
-                                                  grad_sync_func: Optional[Callable] = None,
                                                   param_sync_func: Optional[Callable] = None,
-                                                  optimizer=None
-                                                  ):
+                                                  schedule_prologue_func: Optional[Callable] = None,
+                                                  schedule_epilogue_func: Optional[Callable] = None):
     """Run interleaved 1F1B schedule (model split into model chunks), with
     communication between pipeline stages as needed.
 
     Returns dictionary with losses if the last stage, empty dict otherwise."""
+
+    if schedule_prologue_func is not None:
+        schedule_prologue_func()
+
     assert isinstance(model, list), \
         "interleaved pipeline parallelism expected model chunking"
     assert all(isinstance(chunk, torch.nn.Module) for chunk in model), \
@@ -559,12 +572,13 @@ def forward_backward_pipelining_with_interleaving(*,
         # To reduce idling from mismatched microbatch times, we launch
         # asynchronous communication at the same time across the
         # pipeline-parallel group.
-        if param_sync_func is not None:
-            param_sync_microbatch_id = microbatch_id + pipeline_parallel_rank
-            if param_sync_microbatch_id < num_microbatches and is_first_microbatch_for_model_chunk(param_sync_microbatch_id):
-                param_sync_chunk_id = get_model_chunk_id(param_sync_microbatch_id, forward=True) + 1
-                if 1 < param_sync_chunk_id < num_model_chunks:
-                    param_sync_func(model[param_sync_chunk_id].parameters())
+        # if param_sync_func is not None:
+        #     param_sync_microbatch_id = microbatch_id + pipeline_parallel_rank
+        #     if param_sync_microbatch_id < num_microbatches and \
+        #        is_first_microbatch_for_model_chunk(param_sync_microbatch_id):
+        #         param_sync_chunk_id = get_model_chunk_id(param_sync_microbatch_id, forward=True) + 1
+        #         if 1 < param_sync_chunk_id < num_model_chunks:
+        #             param_sync_func(model[param_sync_chunk_id].parameters())
 
         # forward step
         if parallel_state.is_pipeline_first_stage():
@@ -599,7 +613,7 @@ def forward_backward_pipelining_with_interleaving(*,
         parallel_state.set_virtual_pipeline_model_parallel_rank(model_chunk_id)
 
         # launch grad synchronization (default)
-        if grad_sync_func is None and is_last_microbatch_for_model_chunk(microbatch_id):
+        if is_last_microbatch_for_model_chunk(microbatch_id):
             enable_grad_sync()
             synchronized_model_chunks.add(model_chunk_id)
 
@@ -618,19 +632,11 @@ def forward_backward_pipelining_with_interleaving(*,
                           timers,
                           deallocate_pipeline_outputs)
 
-        # launch grad synchronization (custom grad sync)
-        # Note: Asynchronous communication tends to slow down compute.
-        # To reduce idling from mismatched microbatch times, we launch
-        # asynchronous communication at the same time across the
-        # pipeline-parallel group.
-        if grad_sync_func is not None:
-            grad_sync_microbatch_id = microbatch_id - pipeline_parallel_rank
-            if grad_sync_microbatch_id >= 0 and is_last_microbatch_for_model_chunk(grad_sync_microbatch_id):
-                grad_sync_chunk_id = get_model_chunk_id(grad_sync_microbatch_id, forward=False)
-                enable_grad_sync()
-                grad_sync_func(model[grad_sync_chunk_id].parameters())
-                synchronized_model_chunks.add(grad_sync_chunk_id)
-        disable_grad_sync()
+        if schedule_epilogue_func is not None:
+            schedule_epilogue_func(model_chunk_id)
+
+        if is_last_microbatch_for_model_chunk(microbatch_id):
+            disable_grad_sync()
 
         return input_tensor_grad
 
@@ -640,6 +646,7 @@ def forward_backward_pipelining_with_interleaving(*,
         p2p_communication.recv_forward(tensor_shape,
                                        dtype=dtype,
                                        batch_p2p_comm=batch_p2p_comm,
+                                       variable_seq_lengths=variable_seq_lengths,
                                        timers=timers))
 
     fwd_wait_handles = None
@@ -682,6 +689,7 @@ def forward_backward_pipelining_with_interleaving(*,
                         tensor_shape=tensor_shape,
                         dtype=dtype,
                         batch_p2p_comm=batch_p2p_comm,
+                        variable_seq_lengths=variable_seq_lengths,
                         timers=timers)
                 output_tensor_grads[num_model_chunks-1].append(output_tensor_grad)
             else:
@@ -691,6 +699,7 @@ def forward_backward_pipelining_with_interleaving(*,
                         tensor_shape=tensor_shape,
                         dtype=dtype,
                         batch_p2p_comm=batch_p2p_comm,
+                        variable_seq_lengths=variable_seq_lengths,
                         timers=timers)
             input_tensors[next_forward_model_chunk_id].append(input_tensor)
         else:
@@ -700,6 +709,7 @@ def forward_backward_pipelining_with_interleaving(*,
                     tensor_shape=tensor_shape,
                     dtype=dtype,
                     batch_p2p_comm=batch_p2p_comm,
+                    variable_seq_lengths=variable_seq_lengths,
                     timers=timers,
                     overlap_p2p_comm=True)
 
@@ -714,6 +724,7 @@ def forward_backward_pipelining_with_interleaving(*,
                     input_tensor_grad, recv_next=recv_next,
                     tensor_shape=tensor_shape,
                     batch_p2p_comm=batch_p2p_comm,
+                    variable_seq_lengths=variable_seq_lengths,
                     dtype=dtype,
                     timers=timers,
                     overlap_p2p_comm=True)
@@ -773,6 +784,7 @@ def forward_backward_pipelining_with_interleaving(*,
                     tensor_shape=tensor_shape,
                     dtype=dtype,
                     batch_p2p_comm=batch_p2p_comm,
+                    variable_seq_lengths=variable_seq_lengths,
                     timers=timers,
                     overlap_p2p_comm=True)
             # assert fwd_wait_handles is not None
@@ -812,6 +824,7 @@ def forward_backward_pipelining_with_interleaving(*,
                 tensor_shape=tensor_shape,
                 dtype=dtype,
                 batch_p2p_comm=batch_p2p_comm,
+                variable_seq_lengths=variable_seq_lengths,
                 timers=timers,
                 overlap_p2p_comm=True)
 
@@ -876,6 +889,7 @@ def forward_backward_pipelining_with_interleaving(*,
                     tensor_shape=tensor_shape,
                     dtype=dtype,
                     batch_p2p_comm=batch_p2p_comm,
+                    variable_seq_lengths=variable_seq_lengths,
                     timers=timers)
             deallocate_output_tensor(output_tensor, deallocate_pipeline_outputs)
 
@@ -900,6 +914,7 @@ def forward_backward_pipelining_with_interleaving(*,
                 p2p_communication.recv_backward(tensor_shape,
                                                 dtype=dtype,
                                                 batch_p2p_comm=batch_p2p_comm,
+                                                variable_seq_lengths=variable_seq_lengths,
                                                 timers=timers))
         for k in range(num_microbatches_remaining, total_num_microbatches):
             input_tensor_grad = backward_step_helper(k)
@@ -916,19 +931,8 @@ def forward_backward_pipelining_with_interleaving(*,
                     tensor_shape=tensor_shape,
                     dtype=dtype,
                     batch_p2p_comm=batch_p2p_comm,
+                    variable_seq_lengths=variable_seq_lengths,
                     timers=timers))
-
-    # Launch any remaining grad reductions
-    enable_grad_sync()
-    if grad_sync_func is not None:
-        params = []
-        for model_chunk_id in range(num_model_chunks):
-            if model_chunk_id not in synchronized_model_chunks:
-                params.extend(model[model_chunk_id].parameters())
-                synchronized_model_chunks.add(model_chunk_id)
-        if params:
-            grad_sync_func(params)
-
     return forward_data_store
 
 def get_tensor_shapes(*,
@@ -971,47 +975,54 @@ def get_tensor_shapes(*,
 
 
 
-def recv_forward(tensor_shapes, dtype, timers):
+def recv_forward(tensor_shapes, dtype, variable_seq_lengths, timers):
+    """recv forward"""
     input_tensors = []
     for tensor_shape in tensor_shapes:
         if tensor_shape is None:
             input_tensors.append(None)
         else:
             input_tensors.append(p2p_communication.recv_forward(tensor_shape, dtype,
-                                                                timers=timers))
+                    variable_seq_lengths=variable_seq_lengths, timers=timers))
     return input_tensors
 
 
-def recv_backward(tensor_shapes, dtype, timers):
+def recv_backward(tensor_shapes, dtype, variable_seq_lengths, timers):
+    """recv backward"""
     output_tensor_grads = []
     for tensor_shape in tensor_shapes:
         if tensor_shape is None:
             output_tensor_grads.append(None)
         else:
             output_tensor_grads.append(p2p_communication.recv_backward(tensor_shape, dtype,
-                                                                       timers=timers))
+                    variable_seq_lengths=variable_seq_lengths, timers=timers))
     return output_tensor_grads
 
 
-def send_forward(output_tensors, tensor_shapes, timers):
+def send_forward(output_tensors, tensor_shapes, variable_seq_lengths, timers):
+    """send forward"""
     if not isinstance(output_tensors, list):
         output_tensors = [output_tensors]
     for (output_tensor, tensor_shape) in zip(output_tensors, tensor_shapes):
         if tensor_shape is None:
             continue
-        p2p_communication.send_forward(output_tensor, timers=timers)
+        p2p_communication.send_forward(output_tensor,
+                variable_seq_lengths=variable_seq_lengths, timers=timers)
 
 
-def send_backward(input_tensor_grads, tensor_shapes, timers):
+def send_backward(input_tensor_grads, tensor_shapes, variable_seq_lengths, timers):
+    """send backward"""
     if not isinstance(input_tensor_grads, list):
         input_tensor_grads = [input_tensor_grads]
     for (input_tensor_grad, tensor_shape) in zip(input_tensor_grads, tensor_shapes):
         if tensor_shape is None:
             continue
-        p2p_communication.send_backward(input_tensor_grad, timers=timers)
+        p2p_communication.send_backward(input_tensor_grad,
+                variable_seq_lengths=variable_seq_lengths, timers=timers)
 
 
-def send_forward_recv_backward(output_tensors, tensor_shapes, dtype, timers):
+def send_forward_recv_backward(output_tensors, tensor_shapes, dtype, variable_seq_lengths, timers):
+    """send forward recv backward"""
     if not isinstance(output_tensors, list):
         output_tensors = [output_tensors]
     output_tensor_grads = []
@@ -1020,12 +1031,14 @@ def send_forward_recv_backward(output_tensors, tensor_shapes, dtype, timers):
             output_tensor_grads.append(None)
             continue
         output_tensor_grad = p2p_communication.send_forward_recv_backward(
-                output_tensor, tensor_shape, dtype, timers=timers)
+                output_tensor, tensor_shape, dtype,
+                variable_seq_lengths=variable_seq_lengths, timers=timers)
         output_tensor_grads.append(output_tensor_grad)
     return output_tensor_grads
 
 
-def send_backward_recv_forward(input_tensor_grads, tensor_shapes, dtype, timers):
+def send_backward_recv_forward(input_tensor_grads, tensor_shapes, dtype, variable_seq_lengths, timers):
+    """send backward recv forward"""
     if not isinstance(input_tensor_grads, list):
         input_tensor_grads = [input_tensor_grads]
     input_tensors = []
@@ -1034,7 +1047,8 @@ def send_backward_recv_forward(input_tensor_grads, tensor_shapes, dtype, timers)
             input_tensors.append(None)
             continue
         input_tensor = p2p_communication.send_backward_recv_forward(
-                input_tensor_grad, tensor_shape, dtype, timers=timers)
+                input_tensor_grad, tensor_shape, dtype,
+                variable_seq_lengths=variable_seq_lengths, timers=timers)
         input_tensors.append(input_tensor)
     return input_tensors
 
@@ -1051,20 +1065,23 @@ def forward_backward_pipelining_without_interleaving(*,
                                                      sequence_parallel: bool = False,
                                                      overlap_p2p_comm: bool = False,
                                                      batch_p2p_comm: bool = True,
+                                                     variable_seq_lengths: bool = False,
                                                      forward_only: bool = False,
                                                      timers: Callable = None,
                                                      collect_non_loss_data: bool = False,
                                                      enable_autocast: bool = False,
                                                      deallocate_pipeline_outputs: bool = False,
                                                      no_sync_func: Optional[Callable] = None,
-                                                     grad_sync_func: Optional[Callable] = None,
                                                      param_sync_func: Optional[Callable] = None, # unused
-                                                     optimizer=None
-                                                     ):
+                                                     schedule_prologue_func: Optional[Callable] = None,
+                                                     schedule_epilogue_func: Optional[Callable] = None):
     """Run non-interleaved 1F1B schedule, with communication between pipeline
     stages.
 
     Returns dictionary with losses if the last stage, empty dict otherwise."""
+
+    if schedule_prologue_func is not None:
+        schedule_prologue_func()
 
     if isinstance(model, list):
         assert len(model) == 1, \
@@ -1135,11 +1152,13 @@ def forward_backward_pipelining_without_interleaving(*,
 
     # Run warmup forward passes.
     for i in range(num_warmup_microbatches):
-        input_tensor = recv_forward(recv_tensor_shapes, dtype, timers=timers)
+        input_tensor = recv_forward(recv_tensor_shapes, dtype,
+                variable_seq_lengths=variable_seq_lengths, timers=timers)
         output_tensor = forward_step(forward_step_func, data_iterator, model, num_microbatches,
                                      input_tensor, forward_data_store,
                                      timers, collect_non_loss_data, dtype, enable_autocast)
-        send_forward(output_tensor, send_tensor_shapes, timers=timers)
+        send_forward(output_tensor, send_tensor_shapes,
+                variable_seq_lengths=variable_seq_lengths, timers=timers)
 
         if not forward_only:
             input_tensors.append(input_tensor)
@@ -1150,7 +1169,8 @@ def forward_backward_pipelining_without_interleaving(*,
     # If all microbatches are run in warmup / cooldown phase, then no need to
     # receive this tensor here.
     if num_microbatches_remaining > 0:
-        input_tensor = recv_forward(recv_tensor_shapes, dtype, timers=timers)
+        input_tensor = recv_forward(recv_tensor_shapes, dtype,
+                variable_seq_lengths=variable_seq_lengths, timers=timers)
 
     # Run 1F1B in steady state.
     for i in range(num_microbatches_remaining):
@@ -1161,15 +1181,20 @@ def forward_backward_pipelining_without_interleaving(*,
                                      timers, collect_non_loss_data, dtype, enable_autocast)
 
         if forward_only:
-            send_forward(output_tensor, send_tensor_shapes, timers=timers)
+            send_forward(output_tensor, send_tensor_shapes, variable_seq_lengths=variable_seq_lengths, timers=timers)
 
             if not last_iteration:
-                input_tensor = recv_forward(recv_tensor_shapes, dtype, timers=timers)
+                input_tensor = recv_forward(recv_tensor_shapes, dtype,
+                        variable_seq_lengths=variable_seq_lengths, timers=timers)
 
         else:
+            if last_iteration and parallel_state.is_pipeline_last_stage():
+                enable_grad_sync()
+
             output_tensor_grad = \
                 send_forward_recv_backward(output_tensor,
                                            send_tensor_shapes, dtype,
+                                           variable_seq_lengths=variable_seq_lengths,
                                            timers=timers)
 
             # Add input_tensor and output_tensor to end of list.
@@ -1188,13 +1213,16 @@ def forward_backward_pipelining_without_interleaving(*,
 
             if last_iteration:
                 input_tensor = None
-                send_backward(input_tensor_grad, recv_tensor_shapes, timers=timers)
+                send_backward(input_tensor_grad, recv_tensor_shapes,
+                        variable_seq_lengths=variable_seq_lengths, timers=timers)
             else:
                 input_tensor = \
                     send_backward_recv_forward(
-                        input_tensor_grad, recv_tensor_shapes, dtype, timers=timers)
-            if optimizer is not None:
-                optimizer.backward_epilogue()
+                        input_tensor_grad, recv_tensor_shapes, dtype,
+                        variable_seq_lengths=variable_seq_lengths, timers=timers)
+
+            if schedule_epilogue_func is not None:
+                schedule_epilogue_func()
 
     # Run cooldown backward passes.
     if not forward_only:
@@ -1206,26 +1234,22 @@ def forward_backward_pipelining_without_interleaving(*,
             # pipeline stages do grad reduction during pipeline
             # bubble.
             if i == num_warmup_microbatches-1:
-                if grad_sync_func is None or rank == 0:
-                    enable_grad_sync()
+                enable_grad_sync()
 
             input_tensor = input_tensors.pop(0)
             output_tensor = output_tensors.pop(0)
 
-            output_tensor_grad = recv_backward(send_tensor_shapes, dtype, timers=timers)
+            output_tensor_grad = recv_backward(send_tensor_shapes, dtype,
+                    variable_seq_lengths=variable_seq_lengths, timers=timers)
 
             input_tensor_grad = \
                 backward_step(grad_scaler, input_tensor, output_tensor,
                               output_tensor_grad, model_type, timers, deallocate_pipeline_outputs)
 
-            send_backward(input_tensor_grad, recv_tensor_shapes, timers=timers)
-            if optimizer is not None:
-                optimizer.backward_epilogue()
+            send_backward(input_tensor_grad, recv_tensor_shapes,
+                    variable_seq_lengths=variable_seq_lengths, timers=timers)
 
-    # Launch any remaining grad reductions
-    if no_sync_context is not None:
-        enable_grad_sync()
-        if grad_sync_func is not None:
-            grad_sync_func(model.parameters())
+            if schedule_epilogue_func is not None:
+                schedule_epilogue_func()
 
     return forward_data_store

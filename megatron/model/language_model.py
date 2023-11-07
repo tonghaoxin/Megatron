@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from megatron import get_args
 from megatron.core import mpu, tensor_parallel
-from megatron.utils import get_hook_fn
+from megatron.utils import get_hook_fn, debug
 from megatron.model import LayerNorm
 from megatron.accelerator import get_accelerator
 
@@ -658,6 +658,8 @@ class TransformerLanguageModel(MegatronModule):
                 inference_params=None,
                 pooling_sequence_index=0,
                 enc_hidden_states=None, output_enc_hidden=False):
+        """forward"""
+        args = get_args()
 
         # Retriever embedding.
         if self.retriever and self.pre_process:
@@ -680,7 +682,8 @@ class TransformerLanguageModel(MegatronModule):
                 rotary_pos_emb = \
                     self.rotary_pos_emb(inference_params.max_sequence_len)
             else:
-                rotary_pos_emb = self.rotary_pos_emb(self.seq_length)
+                seq_length = enc_input_ids.shape[1]
+                rotary_pos_emb = self.rotary_pos_emb(seq_length)
 
         # Run encoder.
         if enc_hidden_states is None:
@@ -699,6 +702,8 @@ class TransformerLanguageModel(MegatronModule):
                         inference_params=inference_params,
                         rotary_pos_emb=rotary_pos_emb,
                         position_ids=enc_position_ids if self.use_rotary_position_embeddings_with_position_ids else None)
+                    if args.enable_debug:
+                        debug(self, "ParallelTransformer output", ParallelTransformer_output=encoder_output)
             else:
                 encoder_output = self.encoder_hidden_state
         else:

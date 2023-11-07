@@ -8,6 +8,7 @@ import torch
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 
+from megatron import get_args
 from megatron import get_timers
 from megatron import print_rank_0
 from megatron.core import mpu, tensor_parallel
@@ -23,9 +24,10 @@ custom_multi_tensor_applier = get_accelerator().get_operator('custom_multi_tenso
 def _zero_grad_group_helper(group, set_to_none):
     """Zero out the gradient for a group of parameters.
     Note: copied from torch.optim.optimizer."""
+    args = get_args()
     for param in group:
         if param.grad is not None:
-            if set_to_none:
+            if set_to_none and param.get_device() != -1:
                 param.grad = None
             else:
                 if param.grad.grad_fn is not None:
@@ -222,7 +224,7 @@ class MegatronOptimizer(ABC):
 
             if unwrapped_model.share_word_embeddings:
                 word_embeddings_weight = unwrapped_model.word_embeddings_weight()
-                if args.DDP_impl == 'local':
+                if args.use_contiguous_buffers_in_local_ddp:
                     grad = word_embeddings_weight.main_grad
                 else:
                     grad = word_embeddings_weight.grad
@@ -242,9 +244,10 @@ class MegatronOptimizer(ABC):
             unwrapped_model = self.models[0]
             unwrapped_model = unwrap_model(
                 unwrapped_model, (torchDDP, LocalDDP, Float16Module))
-            assert args.DDP_impl == 'local', \
-                'T5 model is only supported with local DDP mode'
-            grad = unwrapped_model.language_model.embedding.position_embeddings.weight.main_grad
+            if args.use_contiguous_buffers_in_local_ddp:
+                grad = unwrapped_model.language_model.embedding.position_embeddings.weight.main_grad
+            else:
+                grad = unwrapped_model.language_model.embedding.position_embeddings.weight.grad
             torch.distributed.all_reduce(grad, group=mpu.get_position_embedding_group())
 
 

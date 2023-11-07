@@ -12,6 +12,7 @@ from megatron import print_rank_0
 from megatron.core import mpu, tensor_parallel
 from megatron.utils import param_is_not_shared
 from megatron.accelerator import get_accelerator
+from megatron.optimizer.chunk.chunk_mgr import ChunkMgr
 
 from .optimizer import MixedPrecisionOptimizer, _zero_grad_group_helper
 
@@ -236,6 +237,17 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
         return group_ranges
 
+    def _register_chunk(chunk_mgr, shard_param, device_is_gpu):
+        """_register_chunk"""
+        args = get_args()
+        if args.cpu_offload:
+            param_device = torch.cuda.current_device() if device_is_gpu else torch.device('cpu')
+        else:
+            param_device = torch.cuda.current_device()
+        chunk_mgr.register_tensor(tensor=shard_param,
+                                  group_type='fp32_param',
+                                  device=param_device,
+                                  pin_memory=args.cpu_offload_pin_memory)
 
     @classmethod
     def build_model_and_main_param_groups(cls,
@@ -264,7 +276,21 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         shard_float16_groups = []
         shard_fp32_groups = []
         shard_fp32_from_float16_groups = []
+        args = get_args()
 
+        if args.use_chunk:
+            chunk_mgr = ChunkMgr()
+            if args.cpu_offload:
+                param_numel = 0
+                for group_index, group_range in enumerate(opt_group_ranges):
+                    for model_param in group_range["params"]:
+                        model_index, dtype = param_gbuf_map[model_param]
+                        gbuf_range = model_gbuf_ranges[model_index][dtype]
+                        param_range = gbuf_range["param_map"][model_param]["param"]
+                        param_numel += param_range.end - param_range.start
+                param_numel_in_gpu = int(param_numel * (1 - args.cpu_offload_percent))
+
+        cur_param_numel_in_gpu = 0
         # Allocate (or slice) each group's param shard.
         for group_index, group_range in enumerate(opt_group_ranges):
 
@@ -297,6 +323,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     shard_model_param = model_param.detach().view(-1) \
                         [param_range.start:param_range.end]
                     shard_main_param = shard_model_param.clone().float()
+                    if args.use_chunk:
+                        cur_param_numel_in_gpu += shard_main_param.numel()
+                        DistributedOptimizer._register_chunk(
+                            chunk_mgr, shard_main_param, cur_param_numel_in_gpu < param_numel_in_gpu)
                     tensor_parallel.copy_tensor_model_parallel_attributes(
                         shard_model_param, model_param)
                     tensor_parallel.copy_tensor_model_parallel_attributes(
@@ -314,6 +344,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 elif model_param.type() == get_accelerator().FloatTensor_name():
                     shard_model_param = model_param.view(-1) \
                         [param_range.start:param_range.end]
+                    if args.use_chunk:
+                        cur_param_numel_in_gpu += shard_model_param.numel()
+                        DistributedOptimizer._register_chunk(
+                            chunk_mgr, shard_model_param, cur_param_numel_in_gpu < param_numel_in_gpu)
                     model_fp32_params_this_group.append(model_param)
                     shard_fp32_params_this_group.append(shard_model_param)
                     tensor_parallel.copy_tensor_model_parallel_attributes(
@@ -685,6 +719,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         """
 
         # Utility method for copying group grads.
+        args = get_args()
         def copy_group_grads(model_groups, shard_main_groups):
             for model_group, shard_main_group in zip(model_groups,
                                                      shard_main_groups):
@@ -698,7 +733,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     model_grad = model_param.main_grad
                     shard_model_grad = model_grad.view(-1) \
                         [param_range.start:param_range.end]
-                    shard_main_param.grad = shard_model_grad.float()
+                    if args.use_chunk and shard_main_param.get_device() == -1:
+                        shard_main_param.grad.copy_(shard_model_grad.float())
+                    else:
+                        shard_main_param.grad = shard_model_grad.float()
 
         # Copy model groups to shard groups.
         copy_group_grads(self.model_float16_groups,

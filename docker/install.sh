@@ -15,8 +15,13 @@ CURRENT_DIR=$(cd `dirname $0`; pwd)
 function install_base_env() {
     cd ${CURRENT_DIR}
     rm -rf /opt/conda/pip.conf /root/.config/pip/pip.conf /root/.pip/pip.conf /etc/pip.conf /etc/xdg/pip/pip.conf /usr/pip.conf
-    pip install transformers==4.28.1 einops==0.6.0 pre-commit==3.2.2 accelerate sentencepiece==0.1.98 flash-attn==1.0.2 -i http://mirrors.baidubce.com/pypi/simple --trusted-host mirrors.baidubce.com
+    pip install -r /workspace/Megatron-LM/requirements.txt -i http://mirrors.baidubce.com/pypi/simple --trusted-host mirrors.baidubce.com
     cp pip.conf /etc/pip.conf
+    rm -rf /etc/apt/sources.list && cp /workspace/Megatron-LM/docker/sources.list /etc/apt/sources.list
+
+    # 设置时区
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install tzdata && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+    apt-get install bc
 }
 
 
