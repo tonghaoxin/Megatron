@@ -43,16 +43,34 @@ class CustomFCWrapper(object):
     """CustomFC wrapper"""
 
     def __init__(self):
+        """__init__"""
         pass
 
     def __call__(self, *args, **kwargs):
+        """__call__"""
+        global _INTERFACE_INNER_FUNCS
+        tp_gemm_func = _INTERFACE_INNER_FUNCS.get('matmul_reduce_parallel', None)
+        tp_group_func = _INTERFACE_INNER_FUNCS.get('tp_group_func', None)
         ctx = args[0]
         total_input = args[1]
         weight = args[2]
         bias = args[3]
-        if kwargs.get('transpose', False):
-            weight = weight.t()
-        output = torch.matmul(total_input, weight)
+        prepared = kwargs.get('is_forward', False) and kwargs.get('is_row_parallel', False)
+        kernel_split_num = kwargs.get('kernel_split_num', None)
+        if tp_gemm_func is not None and \
+                tp_group_func is not None and \
+                kwargs.get('tp_gemm_parallel', False) and \
+                prepared and kernel_split_num is not None:
+            output = tp_gemm_func.matmul_reduce_parallel(
+                total_input, weight,
+                not kwargs.get('transpose', False),
+                kernel_split_num,
+                torch.distributed.get_rank(),
+                tp_group_func())
+        else:
+            if kwargs.get('transpose', False):
+                weight = weight.t()
+            output = torch.matmul(total_input, weight)
         if bias is not None:
             output = output + bias
         return output
@@ -62,9 +80,11 @@ class CustomGradAccumWrapper(object):
     """CustomGradAccum wrapper"""
 
     def __init__(self, fused_func):
+        """__init__"""
         self.fused_func = fused_func
 
     def __call__(self, *args, **kwargs):
+        """__call__"""
         # ctx = args[0]
         total_input = args[1]
         grad_output = args[2]

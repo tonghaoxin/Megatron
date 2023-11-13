@@ -68,6 +68,8 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
             import scaled_softmax_cuda
             import rotary_positional_embedding_cuda
             import parallel_attention
+            import matmul_reduce_parallel_cuda
+            from megatron.core.parallel_state import get_tensor_model_parallel_group
         except ImportError:
             raise RuntimeError(
                 "Failed to import post-init custom ops."
@@ -91,6 +93,16 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_interface_manager.set_inner_func(
             'rotary_no_freqs_pos_emb',
             rotary_positional_embedding_cuda
+        )
+
+        self._custom_interface_manager.set_inner_func(
+            'matmul_reduce_parallel',
+            matmul_reduce_parallel_cuda
+        )
+
+        self._custom_interface_manager.set_inner_func(
+            'tp_group_func',
+            get_tensor_model_parallel_group
         )
 
         self._custom_ops['scaled_upper_triang_masked_softmax'] = self._custom_interface_manager.\

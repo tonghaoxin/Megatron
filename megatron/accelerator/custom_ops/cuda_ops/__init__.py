@@ -15,6 +15,7 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = ""
 
 
 def load(args):
+    """load"""
 
     # Check if cuda 11 is installed for compute capability 8.0
     cc_flag = []
@@ -33,6 +34,19 @@ def load(args):
     _create_build_dir(buildpath)
 
     # Helper function to build the kernels.
+    def _cpp_extention_load_helper_ext(name, sources, extra_cuda_flags):
+        return cpp_extension.load(
+            name=name,
+            sources=sources,
+            build_directory=buildpath,
+            extra_cflags=['-O3', '-DFMOE_USE_NCCL', '-DUSE_C10D_NCCL', '-DTORCH_API_INCLUDE_EXTENSION_H'],
+            extra_cuda_cflags=['-O3',
+                               '-gencode', 'arch=compute_70,code=sm_70',
+                               '--use_fast_math'] + extra_cuda_flags + cc_flag,
+            # extra_ldflags=['nccl', 'torch'],
+            verbose=(args.rank == 0)
+        )
+
     def _cpp_extention_load_helper(name, sources, extra_cuda_flags):
         return cpp_extension.load(
             name=name,
@@ -55,11 +69,24 @@ def load(args):
             verbose=(args.rank == 0)
         )
 
+    # ==================
+    # gemm nccl parallel.
+    # ==================
+    extra_cuda_flags = ['-DFMOE_USE_NCCL',
+                        '-DUSE_C10D_NCCL',
+                        '-DTORCH_API_INCLUDE_EXTENSION_H']
+
+    # Upper triangular softmax.
+    sources = [srcpath / 'matmul_reduce_parallel.cpp',
+             srcpath / 'matmul_reduce_parallel_cuda.cu']
+    matmul_reduce_parallel_cuda = _cpp_extention_load_helper_ext(
+        "matmul_reduce_parallel_cuda",
+        sources, extra_cuda_flags)
+
     # ==============
     # Fused softmax.
     # ==============
 
-    # if args.masked_softmax_fusion:
     extra_cuda_flags = ['-U__CUDA_NO_HALF_OPERATORS__',
                         '-U__CUDA_NO_HALF_CONVERSIONS__',
                         '--expt-relaxed-constexpr',

@@ -83,9 +83,12 @@ class DropPath(MegatronModule):
         return output
 
 def _args_to_kwargs():
+    """_args_to_kwargs"""
     args = get_args()
 
     common_kwargs = {
+        "tp_gemm_parallel": args.tp_gemm_parallel,
+        "tp_kernel_split_num": args.tp_kernel_split_num,
         "params_dtype": args.params_dtype,
         "use_cpu_initialization": args.use_cpu_initialization,
         "perform_initialization": args.perform_initialization,

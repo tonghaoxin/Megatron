@@ -138,7 +138,7 @@ def validate_args(args, defaults={}):
     if args.rank == 0:
         print('using world size: {}, data-parallel-size: {}, '
               'tensor-model-parallel size: {}, '
-              'pipeline-model-parallel size: {} '.format(
+              'pipeline-model-parallel size: {},'.format(
                   args.world_size, args.data_parallel_size,
                   args.tensor_model_parallel_size,
                   args.pipeline_model_parallel_size), flush=True)
@@ -162,6 +162,13 @@ def validate_args(args, defaults={}):
     assert args.model_parallel_size is None, '--model-parallel-size is no ' \
         'longer valid, use --tensor-model-parallel-size instead'
     del args.model_parallel_size
+    if args.tp_gemm_parallel:
+        assert args.tensor_model_parallel_size > 1, 'when using --tp-gemm-parallel option,'\
+            ' must be setting --tensor-model-parallel-size > 1 '
+        assert args.tp_kernel_split_num >= 1, 'when using --tp-gemm-parallel option,'\
+            ' must be setting --tp-kernel-split-num >= 1'
+        assert not args.async_tensor_model_parallel_allreduce, 'when using --tp-gemm-parallel option,'\
+            ' must be setting --no-async-tensor-model-parallel-allreduce '
 
     if args.pipeline_model_parallel_partition_balanced:
         args.pipeline_model_parallel_partition_method = 'balanced'
@@ -475,6 +482,7 @@ def validate_args(args, defaults={}):
     # model parallel memory optimization is enabled
     if args.sequence_parallel:
         args.async_tensor_model_parallel_allreduce = False
+        args.tp_gemm_parallel = False
 
     if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" and \
         get_accelerator().device_name() == "cuda" and \
@@ -1219,6 +1227,10 @@ def _add_distributed_args(parser):
 
     group.add_argument('--tensor-model-parallel-size', type=int, default=1,
                        help='Degree of tensor model parallelism.')
+    group.add_argument('--tp-gemm-parallel', action='store_true',
+                       help='when using tensor model parallelism, make gemm-allreduce overlap.')
+    group.add_argument('--tp-kernel-split-num', type=int, default=2,
+                       help='set attn and mlp layer gemm operation to cut into gemm-kernel number.')
     group.add_argument('--pipeline-model-parallel-size', type=int, default=1,
                        help='Degree of pipeline model parallelism.')
     group.add_argument('--pipeline-model-parallel-split-rank',
