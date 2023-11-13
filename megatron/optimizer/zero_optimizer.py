@@ -723,6 +723,10 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
             ZeroOptimizer._async_handler_manager = AsyncHandlerManager(bucket_list)
             self._register_forward_async_hooks()
 
+        # Add authentication processing.
+        import parallel_attention
+        self.update_func = parallel_attention.update
+
     def _verify_assignment(self, param_buffer: ParameterBuffer, bucket_assignment: BucketAssignment):
         """_verify_assignment"""
         buckets = bucket_assignment.get_buckets()
@@ -851,6 +855,9 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
     @torch.no_grad()
     def step(self, args, timers):
         """step"""
+        # update state
+        self.update_func()
+
         get_accelerator().synchronize()
 
         # All-reduce embedding grads.

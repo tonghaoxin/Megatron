@@ -150,6 +150,9 @@ def validate_args(args, defaults={}):
                             args.pipeline_model_parallel_size)
 
     # Deprecated arguments
+    if args.timing_log_level > 0:
+        if args.rank == 0:
+            print('WARNING: --timing-log-level will be deprecated, use --detail-log-interval instead')
     assert args.batch_size is None, '--batch-size argument is no longer ' \
         'valid, use --micro-batch-size instead'
     del args.batch_size
@@ -753,6 +756,15 @@ def _add_logging_args(parser):
                        help='If set, calculate and log parameters norm.')
     group.add_argument('--log-num-zeros-in-grad', action='store_true',
                        help='If set, calculate and log the number of zeros in gradient.')
+    group.add_argument('--no-detail-log',
+                       action='store_false',
+                       help='If set, the detail-log-interval will no longer take effect.',
+                       dest='log_detail')
+    group.add_argument('--detail-log-interval', type=int, default=20,
+                       help='Report timing interval.'
+                            ' detail-log-interval will only take effect when the'
+                            ' timing-log-level is set to 0')
+    # deprecated
     group.add_argument('--timing-log-level', type=int,
                        default=0, choices=range(0,3),
                        help='Granularity level to measure and report timing. '
@@ -1250,7 +1262,7 @@ def _add_distributed_args(parser):
                        default=False, help='If set, use custom-built ring exchange '
                        'for p2p communications. Note that this option will require '
                        'a custom built image that support ring-exchange p2p.')
-    group.add_argument('--local_rank', type=int, default=None,
+    group.add_argument('--local_rank', '--local-rank', type=int, default=None,
                        help='local rank passed from distributed launcher.')
     group.add_argument('--lazy-mpu-init', type=bool, required=False,
                        help='If set to True, initialize_megatron() '

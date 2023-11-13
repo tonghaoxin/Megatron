@@ -440,7 +440,7 @@ def train_step(forward_step_func, data_iterator,
     timers('forward-backward', log_level=1).start(
         barrier=args.barrier_with_L1_time)
     forward_backward_func = get_forward_backward_func()
-    fwd_bwd_timers = timers if args.timing_log_level > 1 else None
+    fwd_bwd_timers = timers if args.timing_log_level > 1 or timers.is_show_detail_log() else None
     no_sync_func = None
     schedule_prologue_func = None
     schedule_epilogue_func = None
@@ -671,9 +671,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             args.consumed_train_samples)
         log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(
             elapsed_time_per_iteration * 1000.0)
-        log_string += ' average overall token/sec : {:.1f} |'.format(
-            token_per_second)
-        log_string += ' average token/sec/GPU : {:.1f} |'.format(
+        log_string += ' throughput (token/sec/GPU) : {:.1f} |'.format(
             token_per_second / args.world_size)
         log_string += ' learning rate: {:.3E} |'.format(learning_rate)
         log_string += ' global batch size: {:5d} |'.format(batch_size)
@@ -704,8 +702,12 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             # Report memory after optimizer state has been initialized.
             report_memory('(after {} iterations)'.format(iteration))
             report_memory_flag = False
-        timers.log(timers_to_log, normalizer=args.log_interval)
 
+    if args.timing_log_level < 1 and iteration % args.detail_log_interval == 0:
+        # Only the time for one iteration is recorded, so the normalizer is set to 1.
+        timers.log(timers_to_log, normalizer=1)
+    elif iteration % args.log_interval == 0:
+        timers.log(timers_to_log, normalizer=args.log_interval)
     return report_memory_flag
 
 
@@ -795,7 +797,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     print(f"Save {len(skipped_samples)} skipped samples to {skipped_samples_path}")
                     torch.save(skipped_samples, skipped_samples_path)
             continue
-
+        if args.log_detail and args.timing_log_level < 1 and (iteration + 1) % args.detail_log_interval == 0:
+            timers.set_show_detail_log(True)
         update_num_microbatches(args.consumed_train_samples)
         args.curr_iteration = iteration
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
@@ -880,6 +883,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
            torch.distributed.get_rank() in args.profile_ranks:
                get_accelerator().profiler_stop(backward_profiler_ctx)
 
+        # The timer will call cuda.sync, causing the asynchronous stream to be ineffective
+        # and leading to a decrease in performance. Therefore, considering performance,
+        # only the time of a single iteration is recorded to minimize the impact on performance.
+        timers.set_show_detail_log(False)
     return iteration
 
 

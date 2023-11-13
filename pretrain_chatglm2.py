@@ -39,8 +39,8 @@ except ImportError:
         return fn
 
 
-
 def get_masks(input_ids, past_key_values, padding_mask=None):
+    """get_masks"""
     batch_size, seq_length = input_ids.shape
     full_attention_mask = torch.ones(batch_size, seq_length, seq_length, device=input_ids.device)
     full_attention_mask.tril_()
@@ -58,7 +58,9 @@ def get_masks(input_ids, past_key_values, padding_mask=None):
     full_attention_mask.unsqueeze_(1)
     return full_attention_mask
 
+
 def get_position_ids(input_ids, device):
+    """get_position_ids"""
     batch_size, seq_length = input_ids.shape
     position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
     return position_ids
@@ -170,10 +172,6 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 @record
 def main():
     """main"""
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--local-rank", type=int)
-    #args = parser.parse_args()
     pretrain(train_valid_test_datasets_provider, model_provider, ModelType.encoder_or_decoder, forward_step,
              args_defaults={'tokenizer_type': 'ChatGLM2Tokenizer'})
 
