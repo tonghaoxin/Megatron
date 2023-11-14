@@ -15,7 +15,8 @@ spec:
           - command:
             - /bin/bash
             - -c
-            - ${PYTORCHJOB_COMMAND}
+            - |-
+              ${PYTORCHJOB_COMMAND}
             image: ${IMAGE}
             imagePullPolicy: Always
             name: pytorch
@@ -30,6 +31,8 @@ spec:
               value: INFO
             - name: NCCL_IB_DISABLE
               value: "0"
+            - name: BOS_SYNC_MEGATRON_SCRIPTS_ADDR
+              value: "${BOS_SYNC_MEGATRON_SCRIPTS_ADDR}"
             securityContext:
                 capabilities:
                   add: [ "IPC_LOCK" ]
@@ -63,7 +66,8 @@ spec:
           - command:
             - /bin/bash
             - -c
-            - ${PYTORCHJOB_COMMAND}
+            - |-
+              ${PYTORCHJOB_COMMAND}
             image: ${IMAGE}
             imagePullPolicy: Always
             name: pytorch
@@ -78,6 +82,8 @@ spec:
               value: INFO
             - name: NCCL_IB_DISABLE
               value: "0"
+            - name: BOS_SYNC_MEGATRON_SCRIPTS_ADDR
+              value: "${BOS_SYNC_MEGATRON_SCRIPTS_ADDR}"
             securityContext:
                 capabilities:
                   add: [ "IPC_LOCK" ]

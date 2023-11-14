@@ -11,8 +11,8 @@ case_type="test_function"
 kubectl_path="/usr/local/bin"
 kubectl_view_allocations_path="/usr/local/bin"
 
-# "/ssd2/leoli/kubeconfigs/hwl-cce.config"、"/ssd2/leoli/kubeconfigs/bjtest_ztl-ai-1.24.config"
-kubeconfig_path=${kubeconfig_path:-"/ssd2/leoli/kubeconfigs/hwl-cce.config"}
+# "/ssd2/leoli/kubeconfigs/configs/hwl-cce.config"、"/ssd2/leoli/kubeconfigs/configs/bjtest_ztl-ai-1.24.config"
+kubeconfig_path=${kubeconfig_path:-"/ssd2/leoli/kubeconfigs/configs/hwl-cce.config"}
 # "baidu.com/a800_80g_cgpu"、"baidu.com/a100_80g_cgpu"
 gpu_resource=${gpu_resource:-"baidu.com/a800_80g_cgpu"}
 gpu_count="8"
@@ -24,20 +24,21 @@ export GPU_COUNT="$gpu_count"
 
 # K8S 集群方式存在于pfs 数据的根目录
 export TRAIN_DATA_DIR="/mnt/pfs/leoli"
-export IMAGE=${IMAGE:-"registry.baidubce.com/hac_test/aiak-megatron:dev_20231007_1697002434"}
+export IMAGE=${IMAGE:-"registry.baidubce.com/cce-ai-native/aiak-megatron:ubuntu22.04-cu12.2-torch2.1.0-py310_20231114_111918"}
 # export SPECIFIC_PYTORCHJOB_COMMAND="sleep 1d" # 可用于单机调试
 export TIMEOUT=${TIMEOUT:-"3600"}
 export SCHEDULE_TIMEOUT=${SCHEDULE_TIMEOUT:-"300"}
-
 # export specific_model_name="galactica-30b" # 运行指定模型
+
+export BOS_SYNC_MEGATRON_SCRIPTS_ADDR=${BOS_SYNC_MEGATRON_SCRIPTS_ADDR:-"https://cce-ai-datasets.bj.bcebos.com/hac_test/megatron/project_compile/20231114-001/script.tar.gz"}
 
 function usage()
 {
 	echo -e "bash $0 [args]"
 	echo -e ""
 	echo -e "\t--case_type: test_function | test_perf"
-    echo -e ""
-    echo -e "\tExample: bash ipipe_start.sh --case_type=test_function"
+  echo -e ""
+  echo -e "\tExample: bash ipipe_start.sh --case_type=test_function"
 	echo -e ""
 }
 

@@ -259,6 +259,7 @@ function run_all_ipipe_case(){
         
         configmap_yaml_path=${scripts_root_path}/yaml_template/configmap.yaml
         pytorchjob_yaml_path=${scripts_root_path}/yaml_template/pytorchjob_standalone.yaml
+        scripts_folder="/workspace/Megatron-LM/ci/gpu/scripts"
 
         # 透传变量给 run_pytorchjob 来生成yaml 文件使用, 使用方式：envsubst < ${pytorchjob_yaml_path} > ${new_pytorcjob_yaml_path}
         NAME_PREFIX=${NAME_PREFIX_AGILE:-"agile-megatron-pipeline-training-run"}
@@ -270,6 +271,7 @@ function run_all_ipipe_case(){
         export GPU_COUNT=${GPU_COUNT}
         export WORKER_REPLICAS=$((node_nums - 1))
         export TIMEOUT=${TIMEOUT}
+        export BOS_SYNC_MEGATRON_SCRIPTS_ADDR=${BOS_SYNC_MEGATRON_SCRIPTS_ADDR}
 
         if [[ $node_nums -gt 1 ]]; then
             pytorchjob_yaml_path=${scripts_root_path}/yaml_template/pytorchjob_distributed.yaml
@@ -278,7 +280,26 @@ function run_all_ipipe_case(){
             for model_name in ${model_names}
             do
                 export PYTORCHJOB_NAME=${NAME_PREFIX}-`date +%s`
-                export PYTORCHJOB_COMMAND=${SPECIFIC_PYTORCHJOB_COMMAND:-"bash /workspace/Megatron-LM/ci/gpu/scripts/common/model.sh \"$pipe_name\" \"${model_name}\" \"$node_nums\" \"$GPU_COUNT\""}
+                default_command=$(cat << EOF
+
+                    #! /bin/bash
+                    set -euo pipefail
+                    
+                    # 下载 script.tar.gz
+                    if [ ! -d "$scripts_folder" ]; then
+                        echo "开始下载 script.tar.gz"
+                        mkdir -p "$scripts_folder"
+                        cd $scripts_folder
+                        wget ${BOS_SYNC_MEGATRON_SCRIPTS_ADDR}
+                        tar -zxvf script.tar.gz
+                        echo "下载完成 script.tar.gz"
+                    fi
+
+                    bash /workspace/Megatron-LM/ci/gpu/scripts/common/model.sh "$pipe_name" "${model_name}" "$node_nums" "$GPU_COUNT"
+EOF
+)
+
+                export PYTORCHJOB_COMMAND=${SPECIFIC_PYTORCHJOB_COMMAND:-${default_command}}
                 
                 # 运行 pytorchjob 任务
                 file_name=pytorchjob_${model_name}_${node_nums}.yaml
@@ -292,7 +313,25 @@ function run_all_ipipe_case(){
             done
         else
             # 运行 pytorchjob 任务
-            export PYTORCHJOB_COMMAND=${SPECIFIC_PYTORCHJOB_COMMAND:-"bash /workspace/Megatron-LM/ci/gpu/scripts/common/model.sh \"$pipe_name\" \"${model_names}\" \"$node_nums\" \"$GPU_COUNT\""}
+            default_command=$(cat << EOF
+
+                #! /bin/bash
+                set -euo pipefail
+                
+                # 下载 script.tar.gz
+                if [ ! -d "$scripts_folder" ]; then
+                    echo "开始下载 script.tar.gz"
+                    mkdir -p "$scripts_folder"
+                    cd $scripts_folder
+                    wget ${BOS_SYNC_MEGATRON_SCRIPTS_ADDR}
+                    tar -zxvf script.tar.gz
+                    echo "下载完成 script.tar.gz"
+                fi
+
+                bash /workspace/Megatron-LM/ci/gpu/scripts/common/model.sh "$pipe_name" "${model_names}" "$node_nums" "$GPU_COUNT"
+EOF
+)
+            export PYTORCHJOB_COMMAND=${SPECIFIC_PYTORCHJOB_COMMAND:-${default_command}}
             file_name=pytorchjob_${node_nums}.yaml
             run_pytorchjob $file_name $pytorchjob_yaml_path
 

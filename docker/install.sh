@@ -32,12 +32,20 @@ function install_base_env() {
     # 设置时区
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install tzdata && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
     apt-get install bc
+}
 
+function clear_unused_file() {
     # 删除 /tmp/* ~/.bash_history
     rm -rf /tmp/* ~/.bash_history
 
     # 删除git相关
     rm -rf /workspace/Megatron-LM/.git
+
+    # 删除不对外暴露的文件
+    rm -rf /workspace/Megatron-LM/build.sh
+    rm -rf /workspace/Megatron-LM/ci.yml
+    rm -rf /workspace/Megatron-LM/docker
+    rm -rf /workspace/Megatron-LM/ci
 }
 
 function download_megatron_binary_compile() {
@@ -81,6 +89,9 @@ elif  [[ "$BINARY_REPLACE" == "all" ]];then
 else
     install_base_env
 fi
+
+# 清理无用文件
+clear_unused_file
 
 
 

@@ -3,9 +3,12 @@ set -eo pipefail
 
 root_path=$(dirname "$(readlink -f "$0")")
 export scripts_root_path=${root_path}
+source ${scripts_root_path}/common/common.sh
 
 # K8S 集群方式存在于pfs 数据的根目录
 export TRAIN_DATA_DIR="/mnt/pfs/leoli"
+
+export BOS_SYNC_MEGATRON_SCRIPTS_ADDR=${BOS_SYNC_MEGATRON_SCRIPTS_ADDR:-"https://cce-ai-datasets.bj.bcebos.com/hac_test/megatron/project_compile/20231114-001/script.tar.gz"}
 
 pipe_name="test_function"
 model_name="llama-7b"
