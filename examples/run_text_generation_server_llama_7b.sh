@@ -18,7 +18,7 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-PYTHONPATH="$ROOT_DIR/..":"$ROOT_DIR/../megatron/fused_kernels":$PYTHONPATH \
+PYTHONPATH="$ROOT_DIR/..":"$ROOT_DIR/../megatron/accelerator/custom_ops/cuda_ops":$PYTHONPATH \
 CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun $DISTRIBUTED_ARGS $ROOT_DIR/../tools/run_llama_text_generation_server.py   \
        --num-layers 32  \
        --hidden-size 4096  \

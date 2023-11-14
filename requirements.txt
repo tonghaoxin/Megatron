@@ -3,5 +3,5 @@ einops==0.6.0
 pre-commit==3.2.2
 accelerate
 sentencepiece==0.1.98
-flash-attn==1.0.2
+flash-attn==2.0.4
 datasets==2.11.0

@@ -1,6 +1,6 @@
 import argparse
 
-from megatron.fused_kernels import load
+from megatron.accelerator.custom_ops.cuda_ops import load
 
 def test_parallel_attention():
     import parallel_attention

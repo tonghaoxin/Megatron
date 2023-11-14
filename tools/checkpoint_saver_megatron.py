@@ -20,6 +20,7 @@ def add_arguments(parser):
                        'in the input checkpoint if provided by the loader, otherwise to 1')
 
 def save_checkpoint(queue, args):
+    """save_checkpoint"""
 
     # Search in directory above this
     sys.path.append(os.path.abspath(
@@ -34,7 +35,7 @@ def save_checkpoint(queue, args):
         from megatron.global_vars import set_global_variables, get_args
         from megatron.core.enums import ModelType
         from megatron.tokenizer.tokenizer import _vocab_size_with_padding
-        from megatron import fused_kernels
+        from megatron.accelerator.custom_ops.cuda_ops import load
         from megatron.core import mpu
     except ModuleNotFoundError:
         print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
@@ -178,7 +179,7 @@ def save_checkpoint(queue, args):
     # FIXME
     mpu.set_tensor_model_parallel_rank(0)
     mpu.set_pipeline_model_parallel_rank(0)
-    fused_kernels.load(margs)
+    load(margs)
 
     # Embeddings
     #-----------

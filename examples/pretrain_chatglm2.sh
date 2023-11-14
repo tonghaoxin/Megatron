@@ -111,7 +111,7 @@ OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx
 
 #DISTRIBUTED_ARGS="--hostfile $HOST_FILE_PATH"
 
-run_cmd="PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/fused_kernels':$PYTHONPATH \
+run_cmd="PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/cuda_ops':$PYTHONPATH \
          $OPTIONS_NCCL \
          torchrun $DISTRIBUTED_ARGS \
          $ROOT_DIR/../pretrain_chatglm2.py  \

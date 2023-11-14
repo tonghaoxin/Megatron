@@ -14,8 +14,8 @@ import torch
 import os
 import torch.distributed as dist
 import torch.distributed.distributed_c10d
-from megatron.fused_kernels import load
 import numpy as np
+from megatron.accelerator.custom_ops.cuda_ops import load
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--local_rank', default=-1, type=int,

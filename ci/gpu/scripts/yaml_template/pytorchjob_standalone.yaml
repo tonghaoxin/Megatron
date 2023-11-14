@@ -1,0 +1,51 @@
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: ${PYTORCHJOB_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          terminationGracePeriodSeconds: 10
+          containers:
+          - command:
+            - /bin/bash
+            - -c
+            - ${PYTORCHJOB_COMMAND}
+            image: ${IMAGE}
+            imagePullPolicy: Always
+            name: pytorch
+            env:
+            - name: TRAIN_DATA_DIR
+              value: ${TRAIN_DATA_DIR}
+            - name: CUDA_DEVICE_MAX_CONNECTIONS
+              value: "1"
+            - name: timeout
+              value: "${TIMEOUT}"
+            securityContext:
+                capabilities:
+                  add: [ "IPC_LOCK" ]
+            resources:
+              limits:
+                ${GPU_RESOURCE}: ${GPU_COUNT}
+                rdma/hca: 1
+            volumeMounts:
+              - mountPath: /mnt/pfs
+                name: pfs
+              - mountPath: /dev/shm
+                name: cache-volume
+          volumes:
+            # - hostPath:
+            #     path: /mnt/pfs
+            #   name: pfs
+            - name: pfs
+              persistentVolumeClaim:
+                claimName: pvc-pfs
+            - emptyDir:
+                medium: Memory
+              name: cache-volume
+          schedulerName: volcano

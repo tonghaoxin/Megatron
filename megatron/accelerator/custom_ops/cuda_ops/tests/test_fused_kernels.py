@@ -7,7 +7,7 @@ from megatron.model.enums import AttnMaskType
 from megatron.model.fused_layer_norm import MixedFusedLayerNorm
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.utils import attention_mask_func
-from megatron.fused_kernels import load
+from megatron.accelerator.custom_ops.cuda_ops import load
 
 def test_load_fused_kernels():
     try:

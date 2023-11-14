@@ -23,6 +23,7 @@ def add_arguments(parser):
                        'in the input checkpoint')
 
 def _load_checkpoint(queue, args):
+    """_load_checkpoint"""
 
     # Search in directory above this
     sys.path.append(os.path.abspath(
@@ -38,7 +39,7 @@ def _load_checkpoint(queue, args):
         from megatron.model import module
         from megatron.core import mpu
         from megatron.core.enums import ModelType
-        from megatron import fused_kernels
+        from megatron.accelerator.custom_ops.cuda_ops import load
         from megatron.tokenizer.tokenizer import _vocab_size_with_padding
     except ModuleNotFoundError:
         print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
@@ -194,7 +195,7 @@ def _load_checkpoint(queue, args):
     set_global_variables(margs)
     mpu.set_tensor_model_parallel_world_size(margs.tensor_model_parallel_size)
     mpu.set_pipeline_model_parallel_world_size(margs.pipeline_model_parallel_size)
-    fused_kernels.load(margs)
+    load(margs)
 
     # short aliases
     tp_size = margs.tensor_model_parallel_size

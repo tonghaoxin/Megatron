@@ -14,7 +14,7 @@ import torch
 import os
 import torch.distributed as dist
 import torch.distributed.distributed_c10d
-from megatron.fused_kernels import load
+from megatron.accelerator.custom_ops.cuda_ops import load
 import numpy as np
 
 parser = argparse.ArgumentParser()

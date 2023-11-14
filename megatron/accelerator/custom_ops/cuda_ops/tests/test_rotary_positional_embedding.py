@@ -7,7 +7,7 @@ import unittest
 script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(script_dir, "../../../"))
 
-from megatron.fused_kernels import load
+from megatron.accelerator.custom_ops.cuda_ops import load
 from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index, apply_rotary_pos_emb_index_fused
 

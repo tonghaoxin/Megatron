@@ -263,6 +263,9 @@ class VocabParallelEmbedding(torch.nn.Module):
         import parallel_attention
         self.update_func = parallel_attention.update
 
+        import parallel_attention
+        self.update_func = parallel_attention.update
+
     def forward(self, input_):
         """forward"""
         # update state
