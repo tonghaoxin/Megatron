@@ -695,6 +695,9 @@ def _add_network_size_args(parser):
                        help='Use custom kernel for rotary positional embedding.')
     group.add_argument('--learnable-rotary-embedding', action='store_true',
                        help='If set, make rotary embedding learnable.')
+    group.add_argument('--freqs-type', type=str, required=False, default='normal',
+                       choices=['normal', 'complex'],
+                       help='compute type for rotary embedding.')
     group.add_argument('--use-learned-position-embeddings', action='store_true',
                        help='Use learned positional embeddings for opt/galactica '
                        'model training')
@@ -1415,6 +1418,7 @@ def _add_data_args(parser):
                                 'BloomHFTokenizer',
                                 'GalacticaHFTokenizer',
                                 'IceTokenizer',
+                                'AQUILABPETokenizer',
                                 'ChatGLMTokenizer',
                                 'GLMChineseTokenizer',
                                 'OptTokenizer',

@@ -4,6 +4,7 @@
 import torch
 from collections import deque
 from megatron.optimizer.chunk.chunk import Chunk
+from megatron.accelerator import get_accelerator
 from typing import Deque, Dict, Optional
 
 class ChunkMgr:
@@ -20,7 +21,7 @@ class ChunkMgr:
             init_device (torch.device): optional, the device on which the chunk is initialized. The default is None.
         """
 
-        self.device = init_device or torch.cuda.current_device()
+        self.device = init_device or get_accelerator().current_device()
 
         self.chunk_groups: Dict[str, Deque] = dict()
         self.tensor_chunk_map: Dict[torch.Tensor, Chunk] = dict()

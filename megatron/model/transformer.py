@@ -20,6 +20,7 @@ from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import RotaryEmbeddingWithPositionIds
+from megatron.model.rotary_pos_embedding import apply_complex_rotary_pos_emb
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb, apply_rotary_pos_emb_fused
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb_index, apply_rotary_pos_emb_index_fused
 from megatron.model.utils import attention_mask_func, get_deepnorm_coefficients, init_method_normal
@@ -489,6 +490,7 @@ class ParallelAttention(MegatronModule):
         self.attn_mask_type = attn_mask_type
         self.params_dtype = args.params_dtype
         self.sequence_parallel = args.sequence_parallel
+        self.freqs_type = args.freqs_type
         self.rotary_embedding_2d = args.rotary_embedding_2d
         self.rotary_embedding_2d_to_1d = args.rotary_embedding_2d_to_1d
         self.apply_rotary_positional_embedding_kernel = args.apply_rotary_positional_embedding_kernel
@@ -783,6 +785,8 @@ class ParallelAttention(MegatronModule):
             # [b, sq] -> [sq, b]
             position_ids = position_ids.transpose(0, 1)
             rotary_pos_emb = self.rotary_emb(value_layer, seq_len=position_ids.max() + 1)
+        elif self.freqs_type == "complex":
+            apply_rotary_fn = apply_complex_rotary_pos_emb
         else:
             apply_rotary_fn = (
                 apply_rotary_pos_emb_fused

@@ -241,9 +241,9 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         """_register_chunk"""
         args = get_args()
         if args.cpu_offload:
-            param_device = torch.cuda.current_device() if device_is_gpu else torch.device('cpu')
+            param_device = get_accelerator().current_device() if device_is_gpu else torch.device('cpu')
         else:
-            param_device = torch.cuda.current_device()
+            param_device = get_accelerator().current_device()
         chunk_mgr.register_tensor(tensor=shard_param,
                                   group_type='fp32_param',
                                   device=param_device,

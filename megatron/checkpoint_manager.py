@@ -30,6 +30,7 @@ from megatron.checkpointing import (save_checkpoint,
                                     get_rng_state,
                                     get_checkpoint_names,
                                     get_checkpoint_tracker_filename)
+from megatron.accelerator import get_accelerator
 
 PREFIX = "done_"
 SUFFIX = ".txt"
@@ -117,8 +118,8 @@ class CheckpointManager():
         self._ckpt_process_join_thread.start()
         self._save_to_storage_done = torch.Tensor([0])
 
-        if torch.distributed.is_nccl_available() and torch.cuda.is_available():
-            self._save_to_storage_done = self._save_to_storage_done.cuda()
+        if get_accelerator().is_available():
+            self._save_to_storage_done = get_accelerator().h2d_copy(self._save_to_storage_done)
 
     def _build_state_dict_buffer(self, state_dict):
         """Build state dict buffer."""

@@ -38,6 +38,9 @@ def build_tokenizer(args):
         assert args.vocab_file is not None
         assert args.merge_file is not None
         tokenizer = _GPT2BPETokenizer(args.vocab_file, args.merge_file)
+    elif args.tokenizer_type == 'AQUILABPETokenizer':
+        assert args.hf_tokenizer_path is not None
+        tokenizer = _AQUILABPETokenizer(args.hf_tokenizer_path)
     elif args.tokenizer_type == 'SentencePieceTokenizer':
         assert args.tokenizer_model is not None
         tokenizer = _SentencePieceTokenizer(args.tokenizer_model, vocab_extra_ids=args.vocab_extra_ids)
@@ -328,10 +331,75 @@ class _BertWordPieceTokenizer(AbstractTokenizer):
         self._additional_special_tokens = value
 
 
+class _AQUILABPETokenizer(AbstractTokenizer):
+    def __init__(self,
+            tokenizer_path,
+            bos_token='<sop>',
+            eos_token='<eop>',
+            end_token='</s>',
+            ):
+        name = 'Aquila BPE'
+        super().__init__(name)
+
+        from .aquila_tokenizer.uni_tokenizer.tokenizer import AQUILATokenizer
+        self.tokenizer = AQUILATokenizer.from_pretrained("aquilachat-7b", cache_dir=tokenizer_path)
+
+        self.bos_token = bos_token
+        self.eod_id = self.tokenizer.encoder('<|endoftext|>')
+
+    @property
+    def bos_token_id(self):
+        """bos_token_id"""
+        return self.bos_token
+
+    @property
+    def vocab_size(self):
+        """vocab_size"""
+        return self.tokenizer.vocab_size
+
+    @property
+    def vocab(self):
+        """vocab"""
+        return self.tokenizer.get_vocab()
+
+    @property
+    def inv_vocab(self):
+        """inv_vocab"""
+        return self.tokenizer.decoder
+
+    def tokenize(self, text):
+        """tokenize"""
+        return self.tokenizer.encode(text)
+
+
+    @property
+    def eod(self):
+        """eod"""
+        return self.eod_id
+
+
+    def get_command_id(self, name):
+        """get command token corresponding to `name`"""
+        return self.command_name_map[name].Id
+
+    def encode_plus(  # for Seq2seq
+            self,
+            source_text: str,
+            second_text=None,
+            target_text=None,
+            truncation=True,
+            max_length=None,
+            padding=True,
+    ):
+        """encode_plus"""
+        return self.tokenizer.encode_plus(source_text)
+
+
 class _GPT2BPETokenizer(AbstractTokenizer):
     """Original GPT2 BPE tokenizer."""
 
     def __init__(self, vocab_file, merge_file):
+        """__init__"""
         name = 'GPT2 BPE'
         super().__init__(name)
 
@@ -341,24 +409,30 @@ class _GPT2BPETokenizer(AbstractTokenizer):
 
     @property
     def vocab_size(self):
+        """vocab_size"""
         return len(self.tokenizer.encoder)
 
     @property
     def vocab(self):
+        """vocab"""
         return self.tokenizer.encoder
 
     @property
     def inv_vocab(self):
+        """inv_vocab"""
         return self.tokenizer.decoder
 
     def tokenize(self, text):
+        """tokenize"""
         return self.tokenizer.encode(text)
 
     def detokenize(self, token_ids):
+        """detokenize"""
         return self.tokenizer.decode(token_ids)
 
     @property
     def eod(self):
+        """eod"""
         return self.eod_id
 
 
@@ -366,6 +440,7 @@ class _SentencePieceTokenizer(AbstractTokenizer):
     """SentencePieceTokenizer-Megatron wrapper"""
 
     def __init__(self, model_file, vocab_extra_ids=0):
+        """__init__"""
         name = 'SentencePieceTokenizer'
         super().__init__(name)
 
@@ -374,6 +449,7 @@ class _SentencePieceTokenizer(AbstractTokenizer):
         self._initalize(vocab_extra_ids)
 
     def _populate_vocab(self):
+        """_populate_vocab"""
         self._vocab = {}
         self._inv_vocab = {}
 
@@ -383,6 +459,7 @@ class _SentencePieceTokenizer(AbstractTokenizer):
             self._vocab[t] = i
 
     def _initalize(self, vocab_extra_ids):
+        """_initalize"""
         self._populate_vocab()
         self._special_tokens = {}
         self._inv_special_tokens = {}

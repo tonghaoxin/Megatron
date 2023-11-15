@@ -18,9 +18,14 @@ custom_apply_rope_no_freqs = None
 custom_apply_rope_with_idx = None
 
 
-__all__ = ['RotaryEmbedding', 'RotaryEmbeddingWithPositionIds',
-           'apply_rotary_pos_emb', 'apply_rotary_pos_emb_fused',
-           'apply_rotary_pos_emb_index', 'apply_rotary_pos_emb_index_fused']
+__all__ = ['RotaryEmbedding',
+           'RotaryEmbeddingWithPositionIds',
+           'ComplexRotaryEmbedding',
+           'apply_rotary_pos_emb',
+           'apply_rotary_pos_emb_fused',
+           'apply_rotary_pos_emb_index',
+           'apply_rotary_pos_emb_index_fused']
+
 
 def update_apply_rope_func():
     """update_apply_rope_func"""
@@ -131,6 +136,24 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
         return self.cos_cached[:seq_len, ...], self.sin_cached[:seq_len, ...]
 
 
+class ComplexRotaryEmbedding(nn.Module):
+    """ComplexRotaryEmbedding"""
+    def __init__(self, dim):
+        """__init__"""
+        super().__init__()
+        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+        self.register_buffer('inv_freq', inv_freq)
+        if importlib.util.find_spec('einops') is None:
+            raise RuntimeError("einops is required for Rotary Embedding")
+
+    def forward(self, max_seq_len):
+        """forward"""
+        t = torch.arange(max_seq_len, device=self.inv_freq.device)
+        freqs = torch.outer(t, self.inv_freq).float()
+        freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+        return freqs_cis
+
+
 def apply_rotary_pos_emb(t, freqs):
     """
     input tensor t is of shape [seq_length, ..., dim]
@@ -185,3 +208,20 @@ def apply_rotary_pos_emb_index_fused(q, k, cos, sin, position_id):
     q = custom_apply_rope_no_freqs(q, cos, sin)
     k = custom_apply_rope_no_freqs(k, cos, sin)
     return q, k
+
+
+def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+    """reshape_for_broadcast"""
+    ndim = x.ndim
+    assert 0 <= 1 < ndim
+    assert freqs_cis.shape == (x.shape[0], x.shape[-1])
+    shape = [d if i == 0 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    return freqs_cis.view(*shape)
+
+
+def apply_complex_rotary_pos_emb(t, freqs):
+    """apply_complex_rotary_pos_emb"""
+    t_ = torch.view_as_complex(t.float().reshape(*t.shape[:-1], -1, 2))
+    freqs = reshape_for_broadcast(freqs, t_)
+    t_out = torch.view_as_real(t_ * freqs).flatten(3)
+    return t_out.type_as(t)

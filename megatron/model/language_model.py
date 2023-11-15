@@ -14,7 +14,7 @@ from megatron.accelerator import get_accelerator
 from .enums import LayerType, AttnMaskType
 from .module import MegatronModule
 from .retro_transformer import ParallelRetroEncoder, ParallelRetroTransformer
-from .rotary_pos_embedding import RotaryEmbedding
+from .rotary_pos_embedding import RotaryEmbedding, ComplexRotaryEmbedding
 from .learned_positional_embedding import LearnedPositionalEmbedding
 from .transformer import ParallelTransformer
 from .utils import get_linear_layer
@@ -512,6 +512,7 @@ class TransformerLanguageModel(MegatronModule):
         self.encoder_hidden_state = None
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
         self.norm_type = norm_type
+        self.freqs_type = args.freqs_type
         self.use_rotary_position_embeddings = \
             args.use_rotary_position_embeddings
         self.use_rotary_position_embeddings_with_position_ids = \
@@ -546,10 +547,13 @@ class TransformerLanguageModel(MegatronModule):
             # partial rotary embeddings, which is better than full rotary
             # Wang and Komatsuzaki et al
             # https://github.com/kingoflolz/mesh-transformer-jax/
-            self.rotary_pos_emb = RotaryEmbedding(
-                rotary_dim,
-                seq_len_interpolation_factor=args.rotary_seq_len_interpolation_factor
-            )
+            if self.freqs_type == "complex":
+                self.rotary_pos_emb = ComplexRotaryEmbedding(rotary_dim)
+            else:
+                self.rotary_pos_emb = RotaryEmbedding(
+                    rotary_dim,
+                    seq_len_interpolation_factor=args.rotary_seq_len_interpolation_factor
+                )
 
         # Retriever (bi-directional transformer with cross attention)
         if args.retro_add_retriever:
