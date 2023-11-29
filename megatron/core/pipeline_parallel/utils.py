@@ -57,6 +57,17 @@ def partition_balanced(num_layers, num_parts, eps=1e-3):
     return parts_count, parts
 
 
+def partition_customized(partition_split):
+    """
+    user customized partition.
+    """
+    parts_count = list(map(int, partition_split.split(",")))
+    parts = [0] * (len(parts_count) + 1)
+    for i in range(1, len(parts)):
+        parts[i] = parts[i - 1] + parts_count[i - 1]
+    return parts_count, parts
+
+
 def partition_uniform(num_items, num_parts):
     """
     partition uniform.

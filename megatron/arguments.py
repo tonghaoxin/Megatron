@@ -174,6 +174,19 @@ def validate_args(args, defaults={}):
                   'Defaulting to pipeline-model-parallel-partition-method=balanced.')
     del args.pipeline_model_parallel_partition_balanced
 
+    if args.pipeline_model_parallel_partition_method == 'customized':
+        assert args.pipeline_model_parallel_partition_split is not None, 'if ' \
+            '--pipeline-model-parallel-partition-method is customized, ' \
+            '--pipeline-model-parallel-partition-split must be provided.'
+        pipeline_model_parallel_split_size = \
+            list(map(int, args.pipeline_model_parallel_partition_split.split(",")))
+        assert len(pipeline_model_parallel_split_size) == args.pipeline_model_parallel_size, \
+            'length of --pipeline-model-parallel-partition-split must be equal to ' \
+            'pipeline model parallel size.'
+        assert sum(pipeline_model_parallel_split_size) == args.num_layers, \
+            'sum of --pipeline-model-parallel-partition-split must be equal to ' \
+            'totoal number of layers.'
+
     if args.checkpoint_activations:
         if args.rank == 0:
             print('--checkpoint-activations is no longer valid, use --recompute-activations, '
@@ -1314,8 +1327,10 @@ def _add_distributed_args(parser):
                        help='Old model parallel argument, do not use. Use '
                        '--tensor-model-parallel-size instead.')
     group.add_argument('--pipeline-model-parallel-partition-method', default=None,
-                       choices=['balanced', 'imbalanced'],
+                       choices=['balanced', 'imbalanced', 'customized'],
                        help='split pipeline model parallel use partition method.')
+    group.add_argument('--pipeline-model-parallel-partition-split', type=str, default=None,
+                       help='user customized pipeline model parallel partition.')
     group.add_argument('--num-layers-per-virtual-pipeline-stage', type=int, default=None,
                        help='Number of layers per virtual pipeline stage')
     group.add_argument('--overlap-p2p-communication',
