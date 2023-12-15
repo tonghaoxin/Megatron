@@ -317,7 +317,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
                 # fp16, bf16 params.
                 if model_param.type() in [get_accelerator().HalfTensor_name(),
-                                          get_accelerator().BFloat16Tensor_name()]:
+                                          get_accelerator().BFloat16Tensor_name(),
+                                          "torch.HalfTensor", "torch.BFloat16Tensor"]:
 
                     # Clone model -> main.
                     shard_model_param = model_param.detach().view(-1) \
@@ -358,7 +359,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 else:
                     raise TypeError('Wrapped parameters must be one of '
                                     'FloatTensor, HalfTensor, or BFloat16Tensor. '
-                                    'Received {}'.format(param.type()))
+                                    'Received {}'.format(model_param.type()))
 
             # Update optimizer's params.
             group_range["orig_group"]["params"] = [
@@ -428,7 +429,11 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for model_index, model in enumerate(self.models):
             current_param_buffers = {}
             for dtype, grad_buffer in model._grad_buffers.items():
-                param_buffer = torch.tensor(grad_buffer.data.storage().untyped(),
+                if get_accelerator().device_name() == "npu":
+                    bufferin = torch.flatten(grad_buffer.data)
+                else:
+                    bufferin = grad_buffer.data.storage().untyped()
+                param_buffer = torch.tensor(bufferin,
                                             dtype = params_dtype,
                                             device = grad_buffer.data.device)
                 param_buffer = param_buffer[:grad_buffer.numel_padded]

@@ -26,7 +26,7 @@ def get_accelerator():
     if accelerator is not None:
         return accelerator
 
-    MEGATRON_ACCELERATOR_LIST = ["cuda", "xpu"]
+    MEGATRON_ACCELERATOR_LIST = ["cuda", "xpu", "npu"]
     accelerator_name = None
 
     # Check the accelerator name from environment variable
@@ -40,12 +40,21 @@ def get_accelerator():
             accelerator_name = "xpu"
         except ImportError as e:
             pass
+        try:
+            import torch_npu
+            from torch_npu.contrib import transfer_to_npu
+            accelerator_name = "npu"
+        except ImportError as e:
+            pass
         if accelerator_name is None:
             accelerator_name = "cuda"
 
     if accelerator_name == "cuda":
         from .cuda_accelerator import CUDAAccelerator
         accelerator = CUDAAccelerator()
+    elif accelerator_name == "npu":
+        from .npu_accelerator import NPUAccelerator
+        accelerator = NPUAccelerator()
     elif accelerator_name == "xpu":
         from .xpu_accelerator import XPUAccelerator
         accelerator = XPUAccelerator()

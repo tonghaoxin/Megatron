@@ -177,10 +177,17 @@ def _initialize_distributed():
                 args.local_rank = device
             get_accelerator().set_device(device)
     # Call the init process
+    # init_method = "env://"
+    # if get_accelerator().device_name() == "npu":
+    #     init_method = "tcp://"
+    #     master_ip = os.getenv('MASTER_ADDR', 'localhost')
+    #     master_port = os.getenv('MASTER_PORT', '6000')
+    #     init_method += master_ip + ':' + master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
         world_size=args.world_size, rank=args.rank,
         timeout=timedelta(minutes=args.distributed_timeout_minutes))
+        # init_method=init_method,
 
     # Set the tensor model-parallel, pipeline model-parallel, and
     # data-parallel communicators.
