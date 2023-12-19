@@ -34,6 +34,9 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
             from apex.multi_tensor_apply import multi_tensor_applier as multi_tensor_applier_cuda
             from amp_C import multi_tensor_l2norm as multi_tensor_l2norm_cuda
             from amp_C import multi_tensor_scale as multi_tensor_scale_cuda
+            # from flash_attn.flash_attn_interface import flash_attn_unpadded_func as flashattn_func_cuda # pip install flash-attn
+            from flash_attn.flash_attn_interface import flash_attn_varlen_func as flashattn_func_cuda
+            from einops import rearrange as rearrange_cuda # pip install einops'
         except ImportError:
             raise RuntimeError(
                 "Failed to import pre-init custom ops."
@@ -55,6 +58,8 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
             multi_tensor_applier_cuda,
             {'l2norm': multi_tensor_l2norm_cuda, 'scale': multi_tensor_scale_cuda}
         )
+        self._custom_ops['custom_flash_attn'] = self._custom_interface_manager.\
+                get_interface('custom_flash_attn')(flashattn_func_cuda, rearrange_cuda)
 
     def register_ops(self, args):
         """register_ops"""

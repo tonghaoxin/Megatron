@@ -95,6 +95,7 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_profiler_decorator'] = self._custom_interface_manager.\
                 get_interface('custom_profiler_decorator')
         self._custom_ops['sync_batch_norm'] = None # TODO(changtao02): add xpu custom SyncBatchNorm
+        self._custom_ops['custom_flash_attn'] = None #TODO(changtao02): add xpu custom flashattn
 
     def register_ops(self, args):
         """register_ops"""

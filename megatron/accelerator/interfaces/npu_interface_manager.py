@@ -219,6 +219,55 @@ class CustomApplyRoPEWrapper(object):
         return self.rope_func(*args, **kwargs)
 
 
+class CustomFlashAttnWrapper(object):
+    """CustomFlashAttn wrapper"""
+
+    def __init__(self, flashattn_func, rearrange):
+        """__init__"""
+        self.flashattn_func = flashattn_func
+        self.rearrange = rearrange
+
+    def __call__(self, *args, **kwargs):
+        """__call__"""
+        q = args[0]
+        k = args[1]
+        v = args[2]
+        attention_mask = args[3]
+        nheads = args[4]
+        is_training = args[5]
+        is_causal = args[6]
+        scale = args[7]
+        dropout_p = args[8]
+
+        q, k, v = [self.rearrange(x, 's b h d -> s b (h d)').contiguous()
+                   for x in (q, k, v)]
+
+        seqlen_q, seqlen_k = q.shape[0], k.shape[0]
+
+        if is_training:
+            # during training q,k,v always have same seqlen
+            assert seqlen_k == seqlen_q
+        else:
+            # turn off FA causal mask after first inference autoregressive iteration
+            # only on first autoregressive step q,k,v have same seqlen
+            is_causal = (seqlen_q == seqlen_k)
+            dropout_p = 0
+
+        if is_causal:
+            output = self.flashattn_func(
+                q, k, v, nheads, pse=None,
+                padding_mask=None,
+                atten_mask=attention_mask,
+                scale=scale,
+                pre_tockens=seqlen_k,  # seq_len
+                next_tockens=0,  # 0
+                keep_prob=1 - dropout_p)[0]
+        else:
+            raise Exception("Non-causal attention type is not support!")
+
+        return output
+
+
 class NPUInterfaceManager(MegatronInterfaceManager):
     """NPUInterfaceManager"""
 
@@ -234,6 +283,7 @@ class NPUInterfaceManager(MegatronInterfaceManager):
         self._custom_interfaces['custom_parallel_attention'] = CustomParallelAttentionWrapper
         self._custom_interfaces['custom_profiler_decorator'] = CustomProfilerDecoratorWrapper
         self._custom_interfaces['custom_softmax'] = CustomSoftmaxWrapper
+        self._custom_interfaces['custom_flash_attn'] = CustomFlashAttnWrapper
         self._custom_interfaces['custom_apply_rope_with_freqs'] = \
                 CustomApplyRoPEWrapper(_apply_rope_with_freqs)
         self._custom_interfaces['custom_apply_rope_with_idx'] = \

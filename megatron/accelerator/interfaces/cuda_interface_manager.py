@@ -155,6 +155,59 @@ class CustomApplyRoPEWrapper(object):
         return self.rope_func(*args, **kwargs)
 
 
+class CustomFlashAttnWrapper(object):
+    """CustomFlashAttn wrapper"""
+
+    def __init__(self, flashattn_func, rearrange):
+        """__init__"""
+        self.flashattn_func = flashattn_func
+        self.rearrange = rearrange
+
+    def __call__(self, *args, **kwargs):
+        """__call__"""
+        q = args[0]
+        k = args[1]
+        v = args[2]
+        # attention_mask = args[3]
+        nheads = args[4]
+        is_training = args[5]
+        is_causal = args[6]
+        # scale = args[7]
+        dropout_p = args[8]
+
+        q, k, v = [self.rearrange(x, 's b ... -> b s ...').contiguous()
+                   for x in (q, k, v)]
+
+        batch_size, seqlen_q = q.shape[0], q.shape[1]
+        seqlen_k = k.shape[1]
+
+        q, k, v = [self.rearrange(x, 'b s ... -> (b s) ...') for x in [q, k, v]]
+        cu_seqlens_q = torch.arange(0, (batch_size + 1) * seqlen_q, step=seqlen_q, dtype=torch.int32,
+                                    device=q.device)
+
+        if is_training:
+            # during training q,k,v always have same seqlen
+            assert seqlen_k == seqlen_q
+            cu_seqlens_k = cu_seqlens_q
+        else:
+            # turn off FA causal mask after first inference autoregressive iteration
+            # only on first autoregressive step q,k,v have same seqlen
+            is_causal = (seqlen_q == seqlen_k)
+            cu_seqlens_k = torch.arange(0, (batch_size + 1) * seqlen_k, step=seqlen_k, dtype=torch.int32,
+                        device=q.device)
+            dropout_p = 0
+
+        output = self.flashattn_func(
+            q, k, v, cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
+            dropout_p, softmax_scale=None, causal=is_causal
+        )
+
+        context_layer = self.rearrange(output, '(b s) ... -> b s ...', b=batch_size)
+        output = self.rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
+
+        return output
+
+
 class ScaledUpperTriangMaskedSoftmax(torch.autograd.Function):
     """
     Fused operation which performs following three operations in sequence
@@ -296,6 +349,7 @@ class CUDAInterfaceManager(MegatronInterfaceManager):
         self._custom_interfaces['custom_grad_accum'] = CustomGradAccumWrapper
         self._custom_interfaces['custom_multi_tensor_applier'] = CustomMultiTensorApplyWrapper
         self._custom_interfaces['custom_parallel_attention'] = CustomParallelAttentionWrapper
+        self._custom_interfaces['custom_flash_attn'] = CustomFlashAttnWrapper
         self._custom_interfaces['custom_scaled_upper_triang_masked_softmax'] = \
                 CustomSoftmaxWrapper(ScaledUpperTriangMaskedSoftmax)
         self._custom_interfaces['custom_scaled_masked_softmax'] = CustomSoftmaxWrapper(ScaledMaskedSoftmax)

@@ -28,22 +28,10 @@ from megatron.utils import print_rank, get_hook_fn, debug
 from .activation_funcs import ACTIVATION_FUNCS
 from megatron.accelerator import get_accelerator
 
-try:
-    from einops import rearrange
-except ImportError:
-    rearrange = None
-
-try:
-    from flash_attn.flash_attn_interface import flash_attn_unpadded_func
-except ImportError:
-    try:
-        from flash_attn.flash_attn_interface import flash_attn_varlen_func as flash_attn_unpadded_func
-    except ImportError:
-        flash_attn_unpadded_func = None
-
-custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
 custom_bmm = get_accelerator().get_operator('custom_bmm')
 custom_baddbmm = get_accelerator().get_operator('custom_baddbmm')
+custom_flash_attn = get_accelerator().get_operator('custom_flash_attn')
+custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
 
 
 """ We use the following notation throughout this file:
@@ -414,55 +402,31 @@ class FlashSelfAttention(torch.nn.Module):
         attention_dropout: The dropout rate to apply to the attention
                            (default: 0.0)
     """
-    def __init__(self, causal=False, softmax_scale=None, attention_dropout=0.0,
+    def __init__(self, causal=False, softmax_scale=None,
+                 attention_dropout=0.0,
+                 num_attention_heads_per_partition=1,
                  device=None, dtype=None):
+        """__init__"""
         super().__init__()
-        assert flash_attn_unpadded_func is not None, ('Please install FlashAttention first, '
-                                                      'e.g., with pip install flash-attn')
-        assert rearrange is not None, 'Please install einops first, e.g., with pip install einops'
+        assert custom_flash_attn is not None, ('Please implement an accelerator-dependant flashattn function')
         self.causal = causal
         self.softmax_scale = softmax_scale
         self.dropout_p = attention_dropout
+        self.nheads = num_attention_heads_per_partition
 
     @custom_profiler_decorator("FlashSelfAttention forward", color="cyan")
-    def forward(self, q, k, v):
+    def forward(self, q, k, v, attention_mask):
         """Implements the multihead softmax attention.
         Arguments
         ---------
             q, k, v: The tensor containing the query, key, and value. (B, S, H, D)
         """
-
         assert all((i.dtype in [torch.float16, torch.bfloat16] for i in (q, k, v)))
         assert all((get_accelerator().on_accelerator(i) for i in (q, k, v)))
 
-        batch_size, seqlen_q = q.shape[0], q.shape[1]
-        seqlen_k = k.shape[1]
-
-        q, k, v = [rearrange(x, 'b s ... -> (b s) ...') for x in [q, k, v]]
-        cu_seqlens_q = torch.arange(0, (batch_size + 1) * seqlen_q, step=seqlen_q, dtype=torch.int32,
-                                    device=q.device)
-
-        if self.training:
-            # during training q,k,v always have same seqlen
-            assert seqlen_k == seqlen_q
-
-            is_causal = self.causal
-            cu_seqlens_k = cu_seqlens_q
-        else:
-            # turn off FA causal mask after first inference autoregressive iteration
-            # only on first autoregressive step q,k,v have same seqlen
-            is_causal = seqlen_q == seqlen_k
-            cu_seqlens_k = torch.arange(0, (batch_size + 1) * seqlen_k, step=seqlen_k, dtype=torch.int32,
-                        device=q.device)
-            self.dropout_p = 0
-
-        output = flash_attn_unpadded_func(
-            q, k, v, cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
-            self.dropout_p,
-            softmax_scale=self.softmax_scale, causal=is_causal
-        )
-
-        output = rearrange(output, '(b s) ... -> b s ...', b=batch_size)
+        output = custom_flash_attn(q, k, v, attention_mask,
+                                   self.nheads, self.training, self.causal,
+                                   self.softmax_scale, self.dropout_p)
         return output
 
     def extra_repr(self):
@@ -482,6 +446,7 @@ class ParallelAttention(MegatronModule):
                  layer_number, layer_index,
                  attention_type=AttnType.self_attn,
                  attn_mask_type=AttnMaskType.padding):
+        """__init__"""
         super(ParallelAttention, self).__init__()
         args = get_args()
         self.layer_number = max(1, layer_number)
@@ -505,15 +470,10 @@ class ParallelAttention(MegatronModule):
 
         self.use_flash_attn = args.use_flash_attn
         if self.use_flash_attn:
-            if flash_attn_unpadded_func is None:
-                raise ImportError('FlashAttention is not installed, please install with '
-                                  'pip install flash-attn')
             assert attention_type == AttnType.self_attn, ('FlashAttention code path only supports '
                                                           'self-attention for now')
             assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
                                                                 'supports causal mask for now')
-            if rearrange is None:
-                raise ImportError('einops is not installed, please install with pip install einops')
 
         self.update_func = get_accelerator().get_operator('custom_parallel_attention')
 
@@ -626,7 +586,10 @@ class ParallelAttention(MegatronModule):
 
         if self.use_flash_attn:
             self.core_attention_flash = FlashSelfAttention(
-                causal=True, attention_dropout=args.attention_dropout
+                causal=True,
+                softmax_scale=1.0 / math.sqrt(self.hidden_size_per_attention_head),
+                attention_dropout=args.attention_dropout,
+                num_attention_heads_per_partition=self.num_attention_heads_per_partition,
             )
 
         # Output.
@@ -692,6 +655,7 @@ class ParallelAttention(MegatronModule):
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None,
                 rotary_pos_emb=None, position_ids=None, alibi=None):
+        """forward"""
         # hidden_states: [sq, b, h]
 
         # =================================================
@@ -899,14 +863,13 @@ class ParallelAttention(MegatronModule):
                 context_layer = self.core_attention(
                     query_layer, key_layer, value_layer, attention_mask, alibi=alibi)
         else:
-            q, k, v = [rearrange(x, 's b ... -> b s ...').contiguous()
-                       for x in (query_layer, key_layer, value_layer)]
             if not self.sequence_parallel:
                 with tensor_parallel.get_rng_tracker().fork():
-                    context_layer = self.core_attention_flash(q, k, v)
+                    context_layer = self.core_attention_flash(
+                        query_layer, key_layer, value_layer, attention_mask)
             else:
-                context_layer = self.core_attention_flash(q, k, v)
-            context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
+                context_layer = self.core_attention_flash(
+                    query_layer, key_layer, value_layer, attention_mask)
 
         # =================
         # Output. [sq, b, h]

@@ -34,6 +34,8 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
             from torch.nn import SyncBatchNorm as sync_batch_norm_npu
             from torch.nn import LayerNorm
             from torch.nn import Softmax
+            from torch_npu import npu_fusion_attention as flashattn_func_npu
+            from einops import rearrange as rearrange_npu
             softmax_func_npu = Softmax(dim=-1)
         except ImportError:
             raise RuntimeError(
@@ -73,6 +75,8 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
                 get_interface('custom_multi_tensor_applier')()
         self._custom_ops['custom_profiler_decorator'] = self._custom_interface_manager.\
                 get_interface('custom_profiler_decorator')
+        self._custom_ops['custom_flash_attn'] = self._custom_interface_manager.\
+                get_interface('custom_flash_attn')(flashattn_func_npu, rearrange_npu)
 
     def register_ops(self, args):
         """register_ops"""
