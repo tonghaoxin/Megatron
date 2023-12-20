@@ -64,6 +64,15 @@ class CustomRMSNormWrapper(object):
                 """__init__"""
                 super().__init__(normalized_shape, eps=eps, sequence_parallel=sequence_parallel)
 
+                if weight_empty:
+                    self.weight = torch.nn.Parameter(torch.empty(normalized_shape))
+                else:
+                    self.weight = torch.nn.Parameter(torch.ones(normalized_shape))
+
+                self.sequence_parallel = sequence_parallel
+                # set sequence parallelism flag on weight parameters
+                setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
+
         return CustomRMSNorm
 
 

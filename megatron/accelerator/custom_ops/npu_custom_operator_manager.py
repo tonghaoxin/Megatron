@@ -30,6 +30,7 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
             from torch_npu import npu_scaled_masked_softmax as scaled_masked_softmax_npu
             from torch_npu import npu_fusion_attention as flashattn_func_npu
             from torch_npu import npu_rotary_mul as rotary_mul_npu
+            from torch_npu import npu_rms_norm as rms_norm_npu
             from einops import rearrange as rearrange_npu
         except ImportError:
             raise RuntimeError(
@@ -39,7 +40,7 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_layer_norm'] = self._custom_interface_manager.\
                 get_interface('custom_layer_norm').wrap(LayerNorm)
         self._custom_ops['custom_rms_norm'] = self._custom_interface_manager.\
-                get_interface('custom_rms_norm').wrap(torch.nn.Module)
+                get_interface('custom_rms_norm').wrap(torch.nn.Module, rms_norm_npu)
         self._custom_ops['custom_bmm'] = bmm_npu
         self._custom_ops['custom_baddbmm'] = baddbmm_npu
         self._custom_ops['custom_sync_batch_norm'] = sync_batch_norm_npu

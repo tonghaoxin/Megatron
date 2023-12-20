@@ -76,6 +76,35 @@ class CustomFCWrapper(object):
         return output
 
 
+class CustomRMSNormWrapper(object):
+    """CustomRMSNorm wrapper"""
+
+    @staticmethod
+    def wrap(parent_class):
+        """wrap"""
+
+        class CustomRMSNorm(parent_class):
+            """Inherit from torch_xmlir.nn.rms_norm but add an invalid argument: weight_empty"""
+
+            def __init__(self, normalized_shape, eps=1e-5,
+                         elementwise_affine=True,
+                         sequence_parallel=False,
+                         weight_empty=False):
+                """__init__"""
+                super().__init__(normalized_shape, eps=eps, elementwise_affine=elementwise_affine)
+
+                if weight_empty:
+                    self.weight = torch.nn.Parameter(torch.empty(normalized_shape))
+                else:
+                    self.weight = torch.nn.Parameter(torch.ones(normalized_shape))
+
+                self.sequence_parallel = sequence_parallel
+                # set sequence parallelism flag on weight parameters
+                setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
+
+        return CustomRMSNorm
+
+
 class CustomGradAccumWrapper(object):
     """CustomGradAccum wrapper"""
 
@@ -360,6 +389,7 @@ class CUDAInterfaceManager(MegatronInterfaceManager):
                 CustomApplyRoPEWrapper(RotaryPositionalEmbeddingFunction.apply)
         self._custom_interfaces['custom_apply_rope_with_idx'] = \
                 CustomApplyRoPEWrapper(_apply_rope_with_idx)
+        self._custom_interfaces['custom_rms_norm'] = CustomRMSNormWrapper
 
     def set_inner_func(self, interface_name, inner_func):
         """set_inner_func"""

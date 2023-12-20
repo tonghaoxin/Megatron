@@ -29,7 +29,7 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
             from nvtx import annotate as profiler_decorator_cuda
             from apex.parallel import SyncBatchNorm as sync_batch_norm_cuda
             from apex.normalization.fused_layer_norm import FusedLayerNormAffineFunction as fused_layer_norm_cuda
-            from apex.normalization.fused_layer_norm import FusedRMSNorm as fused_rms_norm_cuda
+            from apex.normalization.fused_layer_norm import FusedRMSNorm as fused_rmsnorm_cuda
             from apex.contrib.layer_norm.layer_norm import FastLayerNormFN as fast_layer_norm_cuda
             from apex.multi_tensor_apply import multi_tensor_applier as multi_tensor_applier_cuda
             from amp_C import multi_tensor_l2norm as multi_tensor_l2norm_cuda
@@ -48,7 +48,8 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_sync_batch_norm'] = sync_batch_norm_cuda
         self._custom_ops['fused_layer_norm'] = fused_layer_norm_cuda
         self._custom_ops['fast_layer_norm'] = fast_layer_norm_cuda
-        self._custom_ops['custom_rms_norm'] = fused_rms_norm_cuda
+        self._custom_ops['custom_rms_norm'] = self._custom_interface_manager.\
+                 get_interface('custom_rms_norm').wrap(fused_rmsnorm_cuda)
         self._custom_ops['custom_fc'] = self._custom_interface_manager.\
                 get_interface('custom_fc')()
         self._custom_ops['custom_grad_accum'] = self._custom_interface_manager.\

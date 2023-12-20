@@ -63,7 +63,7 @@ class CustomRMSNormWrapper(object):
     """CustomRMSNorm wrapper"""
 
     @staticmethod
-    def wrap(parent_class):
+    def wrap(parent_class, rms_norm_func):
         """wrap"""
 
         class CustomRMSNorm(parent_class):
@@ -80,18 +80,15 @@ class CustomRMSNormWrapper(object):
                     self.weight = torch.nn.Parameter(torch.empty(normalized_shape))
                 else:
                     self.weight = torch.nn.Parameter(torch.ones(normalized_shape))
+                self.rms_norm_func = rms_norm_func
+
                 self.sequence_parallel = sequence_parallel
-
-                setattr(self.weight, 'sequence_parallel', sequence_parallel)
-
-            def _norm(self, x):
-                """_norm"""
-                return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+                # set sequence parallelism flag on weight parameters
+                setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
 
             def forward(self, x):
                 """forward"""
-                output = self._norm(x.float()).type_as(x)
-                return output * self.weight
+                return self.rms_norm_func(x, self.weight, epsilon=self.eps)[0]
 
         return CustomRMSNorm
 
