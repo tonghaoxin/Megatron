@@ -201,9 +201,9 @@ class CustomProfilerDecoratorWrapper(object):
 class CustomSoftmaxWrapper(object):
     """CustomSoftmax wrapper"""
 
-    def __init__(self, autograd_func):
+    def __init__(self, custom_softmax_func):
         """__init__"""
-        self.autograd_func = autograd_func
+        self.custom_softmax_func = custom_softmax_func
 
     def __call__(self, *args, **kwargs):
         """__call__"""
@@ -214,7 +214,13 @@ class CustomSoftmaxWrapper(object):
         # mask = torch.cat([mask] * inputs.shape[1], 1)
         # return self.autograd_func.apply(inputs, mask, -1, scale, -10000.0, True)
 
-        return self.autograd_func.apply(inputs, mask)
+        return self.custom_softmax_func.apply(inputs, mask)
+
+    def is_kernel_available(self, *args, **kwargs):
+        """is_kernel_available"""
+        # TODO(changtao02): implement an algo to decide
+        # if the kernel is available to be fused
+        return True
 
 
 class CustomSwiGLUWrapper(object):

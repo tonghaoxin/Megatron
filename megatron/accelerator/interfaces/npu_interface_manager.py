@@ -189,22 +189,38 @@ class CustomProfilerDecoratorWrapper(object):
 class CustomSoftmaxWrapper(object):
     """CustomSoftmax wrapper"""
 
-    def __init__(self):
+    def __init__(self, custom_softmax_func):
         """__init__"""
+        self.custom_softmax_func = custom_softmax_func
 
     def __call__(self, *args, **kwargs):
         """__call__"""
-        global _INTERFACE_INNER_FUNCS
-
         inputs = args[0]
         mask = args[1]
         scale = args[2]
+        if scale is None:
+            scale = 1.0
 
-        mask_output = _INTERFACE_INNER_FUNCS["custom_mask_func"](inputs, mask) \
-                if mask is not None else inputs
-        probs = _INTERFACE_INNER_FUNCS["custom_softmax_func"](mask_output)
+        return self.custom_softmax_func(inputs, mask, scale, False)
 
-        return probs
+    def is_kernel_available(self, *args, **kwargs):
+        """is_kernel_available"""
+        mask = args[0]
+        b = args[1]
+        np = args[2]
+        sq = args[3]
+        sk = args[4]
+
+        scaled_masked_softmax_fusion = kwargs.get('scaled_masked_softmax_fusion', False)
+        input_in_float16 = kwargs.get('input_in_float16', False)
+
+        return (
+                scaled_masked_softmax_fusion  # user want to fuse
+                and input_in_float16  # input must be fp16
+                and 32 < sk <= 4096  # sk must be 32 ~ 4096
+                and sq % 16 == 0  # sq must be divisor of 16
+                and sk % 16 == 0  # sk must be divisor of 16
+        )
 
 
 class CustomApplyRoPEWrapper(object):
@@ -255,7 +271,8 @@ class CustomFlashAttnWrapper(object):
 
         if is_causal:
             output = self.flashattn_func(
-                q, k, v, nheads, pse=None,
+                q, k, v, nheads, "SBH",
+                pse=None,
                 padding_mask=None,
                 atten_mask=attention_mask,
                 scale=scale,

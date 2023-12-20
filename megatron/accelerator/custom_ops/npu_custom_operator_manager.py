@@ -13,10 +13,10 @@ from .abstract_custom_operator_manager import MegatronCustomOperatorManager
 from ..interfaces import NPUInterfaceManager
 
 
-def mask_func_npu(attention_scores, attention_mask):
-    """mask_func_npu"""
-    attention_scores.masked_fill_(attention_mask, -10000.0)
-    return attention_scores
+# def mask_func_npu(attention_scores, attention_mask):
+#     """mask_func_npu"""
+#     attention_scores.masked_fill_(attention_mask, -10000.0)
+#     return attention_scores
 
 
 class NPUCustomOperatorManager(MegatronCustomOperatorManager):
@@ -33,24 +33,13 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
             from torch import baddbmm as baddbmm_npu
             from torch.nn import SyncBatchNorm as sync_batch_norm_npu
             from torch.nn import LayerNorm
-            from torch.nn import Softmax
+            from torch_npu import npu_scaled_masked_softmax as scaled_masked_softmax_npu
             from torch_npu import npu_fusion_attention as flashattn_func_npu
             from einops import rearrange as rearrange_npu
-            softmax_func_npu = Softmax(dim=-1)
         except ImportError:
             raise RuntimeError(
                 "Failed to import pre-init custom ops."
             )
-
-        self._custom_interface_manager.set_inner_func(
-            'custom_mask_func',
-            mask_func_npu
-        )
-
-        self._custom_interface_manager.set_inner_func(
-            'custom_softmax_func',
-            softmax_func_npu
-        )
 
         self._custom_ops['custom_layer_norm'] = self._custom_interface_manager.\
                 get_interface('custom_layer_norm').wrap(LayerNorm)
@@ -60,7 +49,7 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_baddbmm'] = baddbmm_npu
         self._custom_ops['custom_sync_batch_norm'] = sync_batch_norm_npu
         self._custom_ops['custom_softmax'] = self._custom_interface_manager.\
-                get_interface('custom_softmax')()
+                get_interface('custom_softmax')(scaled_masked_softmax_npu)
         self._custom_ops['custom_apply_rope_with_freqs'] = self._custom_interface_manager.\
                 get_interface('custom_apply_rope_with_freqs')
         # self._custom_ops['custom_apply_rope_no_freqs'] = self._custom_interface_manager.\
