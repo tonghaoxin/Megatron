@@ -301,6 +301,7 @@ class NPUInterfaceManager(MegatronInterfaceManager):
         self._custom_interfaces['custom_profiler_decorator'] = CustomProfilerDecoratorWrapper
         self._custom_interfaces['custom_softmax'] = CustomSoftmaxWrapper
         self._custom_interfaces['custom_flash_attn'] = CustomFlashAttnWrapper
+        self._custom_interfaces['custom_apply_rope_no_freqs'] = CustomApplyRoPEWrapper
         self._custom_interfaces['custom_apply_rope_with_freqs'] = \
                 CustomApplyRoPEWrapper(_apply_rope_with_freqs)
         self._custom_interfaces['custom_apply_rope_with_idx'] = \

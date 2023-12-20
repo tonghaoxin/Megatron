@@ -13,12 +13,6 @@ from .abstract_custom_operator_manager import MegatronCustomOperatorManager
 from ..interfaces import NPUInterfaceManager
 
 
-# def mask_func_npu(attention_scores, attention_mask):
-#     """mask_func_npu"""
-#     attention_scores.masked_fill_(attention_mask, -10000.0)
-#     return attention_scores
-
-
 class NPUCustomOperatorManager(MegatronCustomOperatorManager):
     """NPUCustomOperatorManager"""
 
@@ -35,6 +29,7 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
             from torch.nn import LayerNorm
             from torch_npu import npu_scaled_masked_softmax as scaled_masked_softmax_npu
             from torch_npu import npu_fusion_attention as flashattn_func_npu
+            from torch_npu import npu_rotary_mul as rotary_mul_npu
             from einops import rearrange as rearrange_npu
         except ImportError:
             raise RuntimeError(
@@ -50,10 +45,10 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_sync_batch_norm'] = sync_batch_norm_npu
         self._custom_ops['custom_softmax'] = self._custom_interface_manager.\
                 get_interface('custom_softmax')(scaled_masked_softmax_npu)
+        self._custom_ops['custom_apply_rope_no_freqs'] = self._custom_interface_manager.\
+                get_interface('custom_apply_rope_no_freqs')(rotary_mul_npu)
         self._custom_ops['custom_apply_rope_with_freqs'] = self._custom_interface_manager.\
                 get_interface('custom_apply_rope_with_freqs')
-        # self._custom_ops['custom_apply_rope_no_freqs'] = self._custom_interface_manager.\
-        #         get_interface('custom_apply_rope_no_freqs')
         self._custom_ops['custom_apply_rope_with_idx'] = self._custom_interface_manager.\
                 get_interface('custom_apply_rope_with_idx')
         self._custom_ops['custom_fc'] = self._custom_interface_manager.\
