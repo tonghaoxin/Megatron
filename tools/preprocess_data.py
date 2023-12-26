@@ -98,7 +98,7 @@ def get_args():
                                 'GPTSentencePieceTokenizer', 'NullTokenizer',
                                 'LLaMASentencePieceTokenizer', 'GalacticaHFTokenizer',
                                 'ChatGLMTokenizer', 'IceTokenizer', 'OptTokenizer',
-                                'BloomHFTokenizer'],
+                                'BloomHFTokenizer', 'BaichuanTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--vocab-file', type=str, default=None,
                        help='Path to the vocab file')

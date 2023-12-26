@@ -8,6 +8,7 @@ from .bert_model import BertModel
 from .gpt_model import GPTModel
 from .t5_model import T5Model
 from .llama_model import LLaMAModel
+from .baichuan_model import BaichuanModel
 from .aquila_model import AquilaModel
 from .opt_model import OPTModel
 from .glm_model import GLMModel

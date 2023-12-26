@@ -369,7 +369,7 @@ def _load_base_checkpoint(load_dir, use_distributed_optimizer, rank0=False):
     If rank0 is true, just loads rank 0 checkpoint, ignoring arguments.
     """
 
-
+    args = get_args()
     # Read the tracker file and set the iteration.
     tracker_filename = get_checkpoint_tracker_filename(load_dir)
 
@@ -403,7 +403,7 @@ def _load_base_checkpoint(load_dir, use_distributed_optimizer, rank0=False):
     # Load the checkpoint.
     try:
         model_state_dict = torch.load(model_checkpoint_name, map_location='cpu')
-        if use_distributed_optimizer:
+        if use_distributed_optimizer and not args.no_load_optim:
             optim_state_dict = torch.load(optim_checkpoint_name, map_location='cpu')
         else:
             optim_state_dict = model_state_dict

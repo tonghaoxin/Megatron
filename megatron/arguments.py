@@ -401,7 +401,8 @@ def validate_args(args, defaults={}):
     #             and args.use_rotary_position_embeddings_with_position_ids
     if args.use_alibi_position_embeddings:
         assert not args.use_flash_attn, 'Alibi is not supported by FlashAttention for now.'
-
+    if args.use_normhead:
+        assert not args.gradient_accumulation_fusion, 'NormHead is not compatible with GradientAccumulationFusion'
     if args.kv_channels is None:
         assert args.hidden_size % args.num_attention_heads == 0
         args.kv_channels = args.hidden_size // args.num_attention_heads
@@ -724,6 +725,8 @@ def _add_network_size_args(parser):
                        action='store_true',
                        help='If set, use original BERT residula connection '
                        'ordering.')
+    group.add_argument('--use-normhead', action='store_true',
+                       help='use NormHead. https://arxiv.org/pdf/2309.10305.pdf')
     group.add_argument('--deepnorm', action='store_true',
                        help='use DeepNorm.')
     group.add_argument('--fused-rmsnorm', action='store_true',
@@ -1214,6 +1217,10 @@ def _add_mixed_precision_args(parser):
                        help='Minimum loss scale for dynamic loss scale.')
     group.add_argument('--loss-scale-window', type=float, default=1000,
                        help='Window over which to raise/lower dynamic scale.')
+    group.add_argument('--z-loss-weight',
+                       type=float,
+                       default=0.0,
+                       help='max-z weight, see https://arxiv.org/pdf/2309.10305.pdf')
     group.add_argument('--hysteresis', type=int, default=2,
                        help='hysteresis for dynamic loss scaling')
     group.add_argument('--fp32-residual-connection', action='store_true',
@@ -1435,6 +1442,7 @@ def _add_data_args(parser):
                                 'OptTokenizer',
                                 'ChatGLM2Tokenizer',
                                 'LLaMASFTTokenizerHF',
+                                'BaichuanTokenizer',
                                 'NullTokenizer'],
 
                        help='What type of tokenizer to use.')

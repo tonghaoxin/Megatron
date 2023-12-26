@@ -300,12 +300,20 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
     @staticmethod
     @custom_fwd
-    def forward(ctx, input, weight, bias, gradient_accumulation_fusion,
-                async_grad_allreduce, sequence_parallel,
-                tp_gemm_parallel, kernel_split_num, is_row_parallel):
-        """forward"""
+    def forward(ctx, input, weight, bias, gradient_accumulation_fusion, async_grad_allreduce,
+                sequence_parallel, tp_gemm_parallel, kernel_split_num, is_row_parallel, use_normhead):
+        """See linear_with_grad_accumulation_and_async_allreduce"""
         args = get_args()
-        ctx.save_for_backward(input, weight)
+
+        if use_normhead:
+            norm = (torch.sqrt(torch.sum(weight.pow(2), axis=1))
+                    .reshape(weight.size(0), 1)
+                    .expand(weight.size(0), weight.size(1)))
+            ctx.save_for_backward(input, weight, norm)
+            weight = torch.nn.functional.normalize(weight)
+        else:
+            ctx.save_for_backward(input, weight, None)
+
         ctx.use_bias = bias is not None
         ctx.gradient_accumulation_fusion = gradient_accumulation_fusion
         ctx.async_grad_allreduce = async_grad_allreduce
@@ -315,6 +323,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         ctx.tp_gemm_parallel = tp_gemm_parallel
         ctx.kernel_split_num = kernel_split_num
         ctx.is_row_parallel = is_row_parallel
+        ctx.use_normhead = use_normhead
 
         if sequence_parallel:
             world_size = get_tensor_model_parallel_world_size()
@@ -352,7 +361,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, grad_output):
         """backward"""
-        input, weight = ctx.saved_tensors
+        # NormHead see https://arxiv.org/pdf/
+        input, weight, norm = ctx.saved_tensors
         use_bias = ctx.use_bias
 
         if ctx.sequence_parallel:
@@ -420,15 +430,18 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
                                         to_fuse=ctx.gradient_accumulation_fusion,
                                         findmax_opt=ctx.findmax_opt)
         grad_bias = grad_output.sum(dim=0) if use_bias else None
-
+        if ctx.use_normhead:
+            rs = torch.sum(weight, axis=1).reshape(weight.size(0), 1).expand(-1, weight.size(1))
+            scale = (-weight * rs + norm.pow(2)) / norm.pow(3)
+            grad_weight = grad_weight * scale
         if ctx.sequence_parallel:
             handle.wait()
-            return sub_grad_input, grad_weight, grad_bias, None, None, None, None, None, None
+            return sub_grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None
 
         if ctx.async_grad_allreduce:
             handle.wait()
 
-        return grad_input, grad_weight, grad_bias, None, None, None, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None
 
 def linear_with_grad_accumulation_and_async_allreduce(
     input: torch.Tensor,
@@ -439,7 +452,8 @@ def linear_with_grad_accumulation_and_async_allreduce(
     sequence_parallel_enabled: bool,
     tp_gemm_parallel: bool = False,
     kernel_split_num: int = 2,
-    is_row_parallel=True
+    is_row_parallel: bool = True,
+    use_normhead: bool = False
 ) -> torch.Tensor:
     """Linear layer execution with asynchronous communication and
     gradient accumulation fusion in backprop.
@@ -496,7 +510,8 @@ def linear_with_grad_accumulation_and_async_allreduce(
         sequence_parallel_enabled,
         tp_gemm_parallel,
         kernel_split_num,
-        is_row_parallel
+        is_row_parallel,
+        use_normhead
     ]
 
     if not linear_with_grad_accumulation_and_async_allreduce.warned:

@@ -104,6 +104,26 @@ def build_tokenizer(args):
         seq_length = args.seq_length
         tokenizer = LlamaTokenizer(vocab_file=args.tokenizer_model, model_max_length=seq_length,
                                    padding_side="right", pad_token="[PAD]")
+    elif args.tokenizer_type == 'BaichuanTokenizer':
+        assert args.tokenizer_model is not None
+        #assert args.seq_length is not None
+        from .tokenization_baichuan import BaichuanTokenizer
+        tokenizer = BaichuanTokenizer.from_pretrained(
+            args.tokenizer_model,
+            #model_max_length=args.seq_length,
+            padding_side='right',
+            use_fast=False,
+        )
+        special_tokens_dict = dict()
+        if not tokenizer.pad_token:
+            special_tokens_dict['pad_token'] = '[PAD]'
+        if not tokenizer.eos_token:
+            special_tokens_dict['eos_token'] = '</s>'
+        if not tokenizer.bos_token:
+            special_tokens_dict['bos_token'] = '<s>'
+        if not tokenizer.unk_token:
+            special_tokens_dict['unk_token'] = '<unk>'
+        tokenizer.add_special_tokens(special_tokens_dict)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
