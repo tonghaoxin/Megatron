@@ -35,7 +35,6 @@ namespace multihead_attn {
                         "Only fp16 and bf16 are supported");
                 AT_ASSERTM(mask.dim() == 4, "expected 4D tensor");
 
-                check_authority();
                 return fwd_cuda(input, mask, scale_factor);
             }
 

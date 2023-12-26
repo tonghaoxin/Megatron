@@ -10,6 +10,7 @@ import time
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
 import torch
+import torch.profiler
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 
 from megatron import get_args
@@ -370,13 +371,15 @@ def setup_model_and_optimizer(model_provider_func,
                               model_type,
                               no_wd_decay_cond=None,
                               scale_lr_cond=None,
-                              lr_mult=1.0):
+                              lr_mult=1.0,
+                              need_scheduler=True):
     """Setup model and optimizer."""
     args = get_args()
 
     model = get_model(model_provider_func, model_type)
     unwrapped_model = unwrap_model(model,
                                    (torchDDP, LocalDDP, Float16Module))
+        
     # FIXME load model checkpoint before create optimizer
     if args.use_distributed_optimizer or args.use_zero_optimizer:
         if args.load is not None:
@@ -388,7 +391,7 @@ def setup_model_and_optimizer(model_provider_func,
 
     optimizer = get_megatron_optimizer(model, no_wd_decay_cond,
                                        scale_lr_cond, lr_mult)
-    opt_param_scheduler = get_optimizer_param_scheduler(optimizer)
+    opt_param_scheduler = get_optimizer_param_scheduler(optimizer) if need_scheduler else None
 
     if args.load is not None:
         if not (args.use_distributed_optimizer or args.use_zero_optimizer):
@@ -728,8 +731,38 @@ def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
 def train(forward_step_func, model, optimizer, opt_param_scheduler,
           train_data_iterator, valid_data_iterator,
           process_non_loss_data_func):
-    """Train the model function."""
+
     args = get_args()
+    is_torch_profiler_enabled = args.enable_torch_profiler
+    torch_profiler_log_path = args.torch_profiler_log_path
+    
+    prof = None  # init prof for the profiler
+    
+    if is_torch_profiler_enabled:
+        if os.path.exists(torch_profiler_log_path):
+            if not os.path.isdir(torch_profiler_log_path):
+                print(f"'{torch_profiler_log_path}' is not a directory.")
+            else:
+                print(f"Directory '{torch_profiler_log_path}' already exists.")
+        else:
+            os.makedirs(torch_profiler_log_path)
+            print(f"Directory '{torch_profiler_log_path}' created.")
+
+        work_name = "RANK_{}_".format(torch.distributed.get_rank())
+        prof = torch.profiler.profile(
+                schedule=torch.profiler.schedule(
+                    wait=args.torch_profiler_wait_times,
+                    warmup=args.torch_profiler_warmup_times,
+                    active=args.torch_profiler_active_times,
+                    repeat=args.torch_profiler_repeat_times),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    dir_name=torch_profiler_log_path,
+                    worker_name=work_name),
+                record_shapes=True,
+                with_stack=True)
+        prof.start() ######## tensorboad profiler
+
+    """Train the model function."""
     timers = get_timers()
 
     # Write args to tensorboard
@@ -757,6 +790,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             args.skip_train_iteration_range.popleft()
 
     while iteration < args.train_iters:
+
+        if is_torch_profiler_enabled:
+            prof.step() ######## tensorboad profiler
+
         if args.profile and \
            iteration == args.profile_step_start and \
            torch.distributed.get_rank() in args.profile_ranks:
@@ -880,6 +917,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                          opt_param_scheduler)
             torch.distributed.barrier()
             print_datetime('exiting program at iteration {}'.format(iteration))
+
+            if is_torch_profiler_enabled:
+                prof.stop() ######## tensorboad profiler
+
             sys.exit()
 
         if args.profile and \

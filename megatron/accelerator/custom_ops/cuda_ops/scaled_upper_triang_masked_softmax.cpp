@@ -24,7 +24,6 @@ namespace multihead_attn {
                         (input.scalar_type() == at::ScalarType::BFloat16), 
                         "Only fp16 and bf16 are supported");
 
-                check_authority();
                 return fwd_cuda(input, scale_factor);
             }
 

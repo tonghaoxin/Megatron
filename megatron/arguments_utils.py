@@ -24,18 +24,22 @@ class GroupArgsExtractor:
         """get group map items"""
         return self._group_map_dict.items()
 
-
-_extractor = GroupArgsExtractor()
+def get_extractor(parser: argparse.ArgumentParser):
+    """get extractor"""
+    if not hasattr(parser, "_extractor"):
+        setattr(parser, "_extractor", GroupArgsExtractor())
+    return getattr(parser, "_extractor")
 
 
 def extract_group_args(group_name: str):
     """extract group args"""
     def _inner_extract_group_args(add_args_fn):
         """inner extract group args"""
-        def _add_argument_group(add_group_fn: argparse.ArgumentParser.add_argument_group,
+        def _add_argument_group(extractor: GroupArgsExtractor,
+                                add_group_fn: argparse.ArgumentParser.add_argument_group,
                                 group_name: str, *args, **kwargs):
             """add argument group"""
-            group_map = _extractor.group_map
+            group_map = extractor.group_map
             if group_name in group_map:
                 raise ValueError(
                     f"Duplicate group name received: {group_name}")
@@ -46,8 +50,9 @@ def extract_group_args(group_name: str):
         def wrapper(parser: argparse.ArgumentParser):
             """wrapper for function"""
             add_group_fn = parser.add_argument_group
+            extractor = get_extractor(parser)
             parser.add_argument_group = partial(
-                _add_argument_group, add_group_fn, group_name)
+                _add_argument_group, extractor, add_group_fn, group_name)
             parser = add_args_fn(parser)
             parser.add_argument_group = add_group_fn
             return parser
@@ -55,9 +60,10 @@ def extract_group_args(group_name: str):
     return _inner_extract_group_args
 
 
-def parse_group_args_to_dict(args):
+def parse_group_args_to_dict(parser: argparse.ArgumentParser, args):
     """parse group args to dict"""
-    for name, group in _extractor.group_map_items:
+    extractor = get_extractor(parser)
+    for name, group in extractor.group_map_items:
         if name in args:
             raise ValueError(f"Duplicate key found in args: {name}")
         group_args_dict = {action.dest: getattr(

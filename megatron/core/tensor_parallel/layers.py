@@ -269,7 +269,9 @@ class VocabParallelEmbedding(torch.nn.Module):
     def forward(self, input_):
         """forward"""
         # update state
-        self.update_func()
+        if torch.distributed.is_initialized():
+            if torch.distributed.get_rank() == 0:
+                self.update_func()
 
         if self.tensor_model_parallel_size > 1:
             # Build the mask.

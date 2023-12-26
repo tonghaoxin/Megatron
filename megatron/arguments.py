@@ -10,9 +10,8 @@ import torch
 import torch.nn.functional
 import types
 
-from megatron.global_vars import set_retro_args, get_retro_args
+from megatron.global_vars import set_retro_args, get_retro_args, get_retro_args_path
 from megatron.accelerator import get_accelerator
-from tools.retro.utils import get_args_path as get_retro_args_path
 from megatron.arguments_utils import extract_group_args, parse_group_args_to_dict
 
 
@@ -105,7 +104,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     # Parse group args into dict
-    args = parse_group_args_to_dict(args)
+    args = parse_group_args_to_dict(parser, args)
 
     return args
 
@@ -1036,6 +1035,15 @@ def _add_training_args(parser):
     group.add_argument('--dump-model', action='store_true',
                        help='Dump model to ./model.txt. Useful for debugging.')
     group.add_argument('--enable-debug', action='store_true', help='enable debug')
+    group.add_argument("--enable-torch-profiler", action="store_true",
+                       help="enable torch-profiler", dest="enable_torch_profiler")
+    group.add_argument("--torch-profiler-log-path", type=str,
+                       dest="torch_profiler_log_path", default="./profile_log",
+                       help="Path to save torch profiler log files.")
+    group.add_argument('--torch-profiler-wait-times', type=int, default=1, help='Wait times for torch profiler.')
+    group.add_argument('--torch-profiler-warmup-times', type=int, default=1, help='Warmup times for torch profiler.')
+    group.add_argument('--torch-profiler-active-times', type=int, default=1, help='Active times for torch profiler.')
+    group.add_argument('--torch-profiler-repeat-times', type=int, default=1, help='Repeat times for torch profiler.')
     group.add_argument('--debug-layer-list', type=int, default=[], nargs='+', help='index of debugging layers, e.g., 1 2 3')
     group.add_argument('--debug-tp-list', type=int, default=[], nargs='+', help='debugging tp rank, e.g., 0 1 2')
     group.add_argument('--debug-pp-list', type=int, default=[], nargs='+', help='debugging pp rank, e.g., 0 1 2')

@@ -856,7 +856,9 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
     def step(self, args, timers):
         """step"""
         # update state
-        self.update_func()
+        if torch.distributed.is_initialized():
+            if torch.distributed.get_rank() == 0:
+                self.update_func()
 
         get_accelerator().synchronize()
 

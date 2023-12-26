@@ -680,7 +680,9 @@ class ParallelAttention(MegatronModule):
                     inference_params.key_value_memory_dict[self.layer_number]
 
         # update state
-        self.update_func()
+        if torch.distributed.is_initialized():
+            if torch.distributed.get_rank() == 0:
+                self.update_func()
 
         # =====================
         # Query, Key, and Value

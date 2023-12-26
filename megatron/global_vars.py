@@ -30,6 +30,9 @@ def get_retro_args():
     """Return retro arguments."""
     return _GLOBAL_RETRO_ARGS
 
+def get_retro_args_path(workdir):
+    '''Argument copy stored within retro workdir.'''
+    return os.path.join(workdir, "args.json")
 
 def get_num_microbatches():
     return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get()
@@ -79,20 +82,24 @@ def _set_signal_handler():
     _GLOBAL_SIGNAL_HANDLER = dist_signal_handler.DistributedSignalHandler().__enter__()
 
 
-
-def set_global_variables(args):
+def set_global_variables(args, build_tokenizer=True):
     """Set args, tokenizer, tensorboard-writer, adlr-autoresume, and timers."""
 
     assert args is not None
 
-    _ensure_var_is_not_initialized(_GLOBAL_ARGS, 'args')
+    # _ensure_var_is_not_initialized(_GLOBAL_ARGS, 'args')
     set_args(args)
 
-    _build_num_microbatches_calculator(args)
-    _ = _build_tokenizer(args)
-    _set_tensorboard_writer(args)
-    _set_adlr_autoresume(args)
-    _set_timers(args)
+    if _GLOBAL_NUM_MICROBATCHES_CALCULATOR is None:
+        _build_num_microbatches_calculator(args)
+    if build_tokenizer:
+        _ = _build_tokenizer(args)
+    if _GLOBAL_TENSORBOARD_WRITER is None:
+        _set_tensorboard_writer(args)
+    if _GLOBAL_ADLR_AUTORESUME is None:
+        _set_adlr_autoresume(args)
+    if _GLOBAL_TIMERS is None:
+        _set_timers(args)
 
     if args.exit_signal_handler:
         _set_signal_handler()

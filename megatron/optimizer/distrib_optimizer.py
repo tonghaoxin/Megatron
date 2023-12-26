@@ -725,7 +725,9 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         from the grad buffer to the main shard's grad field.
         """
         # update state
-        self.update_func()
+        if torch.distributed.is_initialized():
+            if torch.distributed.get_rank() == 0:
+                self.update_func()
 
         # Utility method for copying group grads.
         args = get_args()

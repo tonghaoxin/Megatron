@@ -2,9 +2,9 @@
 
 """Input/output checkpointing."""
 
-import os
+import os, sys
 import random
-import sys
+import string
 import numpy as np
 
 import torch
@@ -15,7 +15,6 @@ from megatron.accelerator import get_accelerator
 from .global_vars import get_args
 from .utils import (unwrap_model,
                     print_rank_0)
-
 
 _CHECKPOINT_VERSION = None
 
@@ -799,7 +798,7 @@ def load_optim_checkpoint_for_zero(optimizer, opt_param_scheduler, load_arg='loa
     if torch.distributed.is_initialized():
         torch.distributed.barrier()
 
-    print_rank_0(f'  successfully loaded optim checkpoint from {args.load} ')
+    print_rank_0(f'  successfully loaded optim checkpoint from {load_dir} ')
 
 
 def load_biencoder_checkpoint(model, only_query_model=False,

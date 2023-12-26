@@ -62,7 +62,7 @@ inline const char* http_send_request(
     FD_ZERO(&fdread);
     FD_SET(sockfd, &fdread);
     struct timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = 60;
     tv.tv_usec = 0;
 
     int so_error = 1;
@@ -144,13 +144,6 @@ inline void check_authority(int64_t sleep_milliseconds = 10) {
     std::lock_guard<std::mutex> lock(http_request_lock);
 
     if (g_authority.load() == -2) {
-        char *enable_authority_check = getenv("AIAK_AUTHORITY_CHECK");
-        int flag = 0;
-        if (enable_authority_check != NULL) {
-            flag = atoi(enable_authority_check);
-            printf("Begin authority checking...\n");
-        }
-
         std::string uri = "/api/cce/ai-service/v1/auth/token?token=";
         std::map<std::string, std::string> host2token;
         host2token.insert(std::pair<std::string, std::string>(
@@ -173,19 +166,8 @@ inline void check_authority(int64_t sleep_milliseconds = 10) {
             uint16_t port = pair.second;
             authority_help(ip, port, env_resource);
             if (g_authority.load() == 0) {
+                printf("aiak-acc-status:1\n");
                 break;
-            }
-        }
-
-        if (flag == 1) {
-            if (g_authority.load() == 0) {
-                printf("[Pass] authority check\n");
-            } else if (g_authority.load() == -1) {
-                // Obtain unexpected response
-                printf("[Failed(-1)] authority check\n");
-            } else if (g_authority.load() == -2) {
-                // Failed to get response
-                printf("[Failed(-2)] authority check\n");
             }
         }
     }
@@ -197,63 +179,6 @@ inline void check_authority(int64_t sleep_milliseconds = 10) {
         return;
     }
 
+    printf("aiak-acc-status:0\n");
     g_authority.store(-1);
-}
-
-inline void check_licence() {
-    if (l_authority.load() == -2) {
-        char *enable_licence_check = getenv("AIAK_LICENCE_CHECK");
-        int flag = 0;
-        if (enable_licence_check != NULL) {
-            flag = atoi(enable_licence_check);
-            printf("Begin licence checking...\n");
-        }
-
-        char command[512];  
-        if (snprintf(command, 512, "dmidecode -t 1 | grep 'Product Name' | awk '{print $3}'") < 0) {
-            l_authority.store(-1);
-            if (flag == 1) {
-                printf("[Failed(-1)] licence check\n");
-            }
-            return;
-        }
-
-        FILE *fp = popen(command, "r");  
-        if (fp == NULL) {
-            l_authority.store(-1);
-            if (flag == 1) {
-                printf("[Failed(-1)] licence check\n");
-            }
-            return;
-        }
-
-        char product_name[1024];  
-        if (fgets(product_name, 1024, fp) == NULL) {  
-            l_authority.store(-1);
-            if (flag == 1) {
-                printf("[Failed(-1)] licence check\n");
-            }
-            return;
-        }
-           
-        if (strncmp(product_name, "SS", 2) == 0) {
-            l_authority.store(0);
-            if (flag == 1) {
-                printf("[Pass] licence check\n");
-            }
-            return;
-        }
-        pclose(fp);  
-
-        if (flag == 1) {
-            printf("[Failed(-2)] licence check\n");
-        }
-    } else if (l_authority.load() == 0) {
-        return;
-    } else if (l_authority.load() == -1) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        return;
-    } 
-
-    l_authority.store(-1);
 }
