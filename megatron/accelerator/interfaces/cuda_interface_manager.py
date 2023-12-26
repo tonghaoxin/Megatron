@@ -349,7 +349,7 @@ class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
         cos_ = cos.contiguous()
         sin_ = sin.contiguous()
         output = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).forward(
-            *q.shape, q_, cos_, sin_
+            q_, cos_, sin_, False
         )
         ctx.save_for_backward(cos_, sin_)
 
@@ -361,7 +361,7 @@ class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
         global _INTERFACE_INNER_FUNCS
         cos_, sin_ = ctx.saved_tensors
         grad_q = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).backward(
-            *grad_output.shape, grad_output, cos_, sin_
+            grad_output, cos_, sin_, False
         )
 
         return grad_q, None, None

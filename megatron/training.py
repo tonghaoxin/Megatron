@@ -513,15 +513,20 @@ def train_step(forward_step_func, data_iterator,
         loss_reduced = {}
         for key in losses_reduced[0]:
             losses_reduced_for_key = [x[key] for x in losses_reduced]
-            curation_losses = []
-            for i, losses_for_key in enumerate(losses_reduced_for_key):
-                if torch.isnan(losses_for_key) or torch.isinf(losses_for_key):
-                    if len(curation_losses) != 0:
-                        loss_cor = sum(curation_losses) / len(curation_losses)
-                        curation_losses.append(loss_cor)
-                else:
-                    curation_losses.append(losses_for_key)
-            loss_reduced[key] = sum(curation_losses) / len(curation_losses)
+            if args.no_logging_nan_inf_filter:
+                loss_reduced[key] = sum(losses_reduced_for_key) / len(losses_reduced_for_key)
+            else:
+                curation_losses = []
+                for i, losses_for_key in enumerate(losses_reduced_for_key):
+                    if torch.isnan(losses_for_key) or torch.isinf(losses_for_key):
+                        if len(curation_losses) != 0:
+                            loss_cor = sum(curation_losses) / len(curation_losses)
+                            curation_losses.append(loss_cor)
+                    else:
+                        curation_losses.append(losses_for_key)
+                num_curation_losses = len(losses_reduced_for_key) if len(curation_losses) == 0 else len(curation_losses)
+                sum_curation_losses = sum(curation_losses) if len(curation_losses) != 0 else sum(losses_reduced_for_key)
+                loss_reduced[key] = sum_curation_losses / num_curation_losses
         return loss_reduced, skipped_iter, grad_norm, num_zeros_in_grad
     return {}, skipped_iter, grad_norm, num_zeros_in_grad
 

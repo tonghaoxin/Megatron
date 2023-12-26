@@ -178,7 +178,10 @@ def apply_rotary_pos_emb_fused(t, freqs):
     # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
     t, t_pass = t[..., :rot_dim], t[..., rot_dim:]
 
-    t = custom_apply_rope_no_freqs(t, freqs.cos(), freqs.sin())
+    cos_ = torch.cos(freqs).to(t.dtype)
+    sin_ = torch.sin(freqs).to(t.dtype)
+    t = custom_apply_rope_no_freqs(t, cos_, sin_)
+
     return torch.cat((t, t_pass), dim=-1)
 
 

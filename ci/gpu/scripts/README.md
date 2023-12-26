@@ -134,3 +134,19 @@ case_type 代表测试类型，分别功能和性能测试：test_function | tes
 kubectl: https://kubernetes.io/zh-cn/releases/download/
 kubectl_view_allocations: https://github.com/davidB/kubectl-view-allocations/releases
 ```
+
+### 4、算子包如何上传到BOS？
+
+```
+# 将编译好的算子包压缩成tar 包
+cp /workspace/Megatron-LM/megatron/fused_kernels/build/*.so ./
+cp /workspace/Megatron-LM/megatron/data/helpers.cpython-*.so ./
+tar -czf megatron_compile.tar.gz *.so
+
+# A800 算子上传到bos
+./bcecmd bos cp megatron_compile.tar.gz bos:/cce-ai-datasets/hac_test/megatron/binary_compile/a800/megatron_compile.tar.gz
+
+# H800 算子上传到bos
+./bcecmd bos cp megatron_compile.tar.gz bos:/cce-ai-datasets/hac_test/megatron/binary_compile/h800/megatron_compile.tar.gz
+```
+

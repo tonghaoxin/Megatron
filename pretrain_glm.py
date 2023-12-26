@@ -31,7 +31,6 @@ from megatron.utils import average_losses_across_data_parallel_group
 
 from megatron.data.glm_data import build_train_valid_test_datasets, build_mask_matrix
 
-import deepspeed
 import os
 
 try:

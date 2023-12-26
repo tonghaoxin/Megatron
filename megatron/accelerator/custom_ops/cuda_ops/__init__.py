@@ -116,8 +116,8 @@ def load(args):
     # =================================
     # if args.apply_rotary_positional_embedding_kernel:
     extra_cuda_flags = []
-    sources=[srcpath / 'rotary_positional_embedding.cpp',
-             srcpath / 'rotary_positional_embedding.cu']
+    sources=[srcpath / 'fused_rotary_positional_embedding.cpp',
+             srcpath / 'fused_rotary_positional_embedding_cuda.cu']
     rotary_positional_embedding_cuda = _cpp_extention_load_helper(
         "rotary_positional_embedding_cuda", sources, extra_cuda_flags)
 

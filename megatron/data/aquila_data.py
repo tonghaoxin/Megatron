@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 """ aquila dataset """
-import cyg_conversation as conversation_lib
+from megatron.data import cyg_conversation as conversation_lib
 from torch.utils.data import Dataset
 import numpy as np
 import jsonlines

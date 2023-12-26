@@ -49,3 +49,8 @@ $boscmd_dir bos sync bos:/cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/megatron
 $boscmd_dir bos sync bos:/cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/megatron_llama/megatron_llama_13b_checkpoint_tp2_pp1_dp4_zero1 ${checkpoint_dir}/megatron_llama/megatron_llama_13b_checkpoint_tp2_pp1_dp4_zero1
 $boscmd_dir bos sync bos:/cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/megatron_llama/llama_tokenizer ${tokenizers_dir}/megatron_llama/llama_tokenizer
 $boscmd_dir bos sync bos:/cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/megatron_llama/pile_llama_test ${datasets_dir}/megatron_llama/pile_llama_test
+
+# aquila_7b
+$boscmd_dir bos sync bos:/cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/aquilaChat-7b-tp8-pp1-dp1-fp32 ${checkpoint_dir}/aquilaChat-7b-tp8-pp1-dp1-fp32
+$boscmd_dir bos sync bos:/cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/aquilachat-7b ${tokenizers_dir}/aquilachat-7b
+$boscmd_dir bos sync bos:/cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/aquilachat-7b ${datasets_dir}/aquilachat-7b
