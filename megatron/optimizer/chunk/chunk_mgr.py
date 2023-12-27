@@ -25,40 +25,58 @@ class ChunkMgr:
 
         self.chunk_groups: Dict[str, Deque] = dict()
         self.tensor_chunk_map: Dict[torch.Tensor, Chunk] = dict()
-        self.total_mem: Dict[str, int] = {'cpu': 0, 'cuda': 0}
+        self.total_mem: Dict[str, Dict[str, Deque]] = dict()
 
     def register_tensor(self,
                         tensor: torch.Tensor,
-                        group_type: str,
-                        device: torch.device,
-                        pin_memory: bool = False) -> None:
+                        group_name: str,
+                        device: torch.device) -> None:
         """
         Register a tensor to the chunk manager.
 
         Args:
             tensor: the tensor appended to the chunk
-            group_type: the data type of the group.
+            group_name: the data type of the group.
             device: the device for tensor.
-            pin_memory: whether the chunk is pinned in the cpu memory
         """
         assert tensor not in self.tensor_chunk_map
 
         chunk_size = tensor.numel()
-        group_name = group_type
         chunk_group = self.__get_chunk_group(group_name)
+        if group_name not in self.total_mem:
+            self.total_mem[group_name] = {'cpu': 0, 'cuda': 0}
 
         chunk = Chunk(
             chunk_size=chunk_size,
             dtype=tensor.dtype,
-            device=device,
-            pin_memory=pin_memory
+            device=device
         )
 
         chunk_group.append(chunk)
-        chunk.append_tensor(tensor)
-        self.__add_memory_usage(chunk.memory_usage)
+        self.__add_memory_usage(group_name, chunk.memory_usage)
+        chunk.reset_tensor(tensor)
 
         self.tensor_chunk_map[tensor] = chunk
+
+    def reset_tensor(self,
+                     group_name,
+                     tensor: torch.Tensor,
+                     device: torch.device) -> None:
+        """
+        Reset a tensor to the chunk.
+
+        Args:
+            group_name: the data type of the group.
+            tensor: the tensor appended to the chunk
+            device: the device for tensor.
+        """
+        assert tensor in self.tensor_chunk_map
+
+        chunk = self.tensor_chunk_map[tensor]
+        self.__sub_memory_usage(group_name, chunk.memory_usage)
+        chunk.reset_chunk_tensor(tensor.numel(), tensor.dtype, device)
+        chunk.reset_tensor(tensor)
+        self.__add_memory_usage(group_name, chunk.memory_usage)
 
     def close_all_groups(self):
         """Close all the chunks of all groups.
@@ -73,19 +91,29 @@ class ChunkMgr:
             self.chunk_groups[group_name] = deque()
         return self.chunk_groups[group_name]
 
-    def __close_one_chunk(self, chunk: Chunk):
+    def __close_one_chunk(self, group_name: str, chunk: Chunk):
         """__close_one_chunk"""
-        self.__sub_memory_usage(chunk.memory_usage)
+        assert group_name in self.total_mem, f"No key in total_mem group_name: {group_name}"
+        self.__sub_memory_usage(group_name, chunk.memory_usage)
         chunk.close_chunk()
-        self.__add_memory_usage(chunk.memory_usage)
+        self.__add_memory_usage(group_name, chunk.memory_usage)
 
-    def __sub_memory_usage(self, usage: Dict[str, int]):
+    def __sub_memory_usage(self, group_name: str, usage: Dict[str, int]):
         """__sub_memory_usage"""
+        assert group_name in self.total_mem, f"No key in total_mem group_name: {group_name}"
         for k, v in usage.items():
-            self.total_mem[k] -= v
+            self.total_mem[group_name][k] -= v
 
-    def __add_memory_usage(self, usage: Dict[str, int]):
+    def __add_memory_usage(self, group_name: str, usage: Dict[str, int]):
         """__add_memory_usage"""
+        assert group_name in self.total_mem, f"No key in total_mem group_name: {group_name}"
         for k, v in usage.items():
-            self.total_mem[k] += v
+            self.total_mem[group_name][k] += v
 
+    def memory_usage(self, group_name: str) -> Dict[str, int]:
+        """ The memory usage for chunk
+        """
+        if group_name in self.chunk_groups:
+            return self.total_mem[group_name]
+        else:
+            return {'cpu': 0, 'cuda': 0}

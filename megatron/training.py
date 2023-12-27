@@ -44,6 +44,9 @@ from megatron.data.data_samplers import build_pretraining_data_loader
 from megatron.utils import calc_params_l2_norm
 from megatron.core.pipeline_parallel import get_forward_backward_func
 from megatron.utils import report_memory
+from megatron.model.vision.knn_monitor import compute_feature_bank
+from megatron.optimizer.memory_tracer.memory_monitor import SyncCudaMemoryMonitor
+from megatron.optimizer.memory_tracer.memory_stats import MemoryType
 from megatron.accelerator import get_accelerator
 
 
@@ -379,7 +382,7 @@ def setup_model_and_optimizer(model_provider_func,
     model = get_model(model_provider_func, model_type)
     unwrapped_model = unwrap_model(model,
                                    (torchDDP, LocalDDP, Float16Module))
-        
+
     # FIXME load model checkpoint before create optimizer
     if args.use_distributed_optimizer or args.use_zero_optimizer:
         if args.load is not None:
@@ -427,7 +430,7 @@ def setup_model_and_optimizer(model_provider_func,
 
 
 def train_step(forward_step_func, data_iterator,
-               model, optimizer, opt_param_scheduler):
+               model, optimizer, opt_param_scheduler, memory_monitor):
     """Single training step."""
     args = get_args()
     timers = get_timers()
@@ -450,6 +453,10 @@ def train_step(forward_step_func, data_iterator,
         no_sync_func = optimizer.no_sync
         schedule_prologue_func = optimizer.forward_prologue
         schedule_epilogue_func = optimizer.backward_epilogue
+    if memory_monitor.running:
+        model_data_cuda = memory_monitor.cur_memory()
+        memory_monitor.mem_stats.record_memory(MemoryType.MODEL_DATA_CUDA, model_data_cuda)
+        memory_monitor.start()
     losses_reduced = forward_backward_func(
         forward_step_func=forward_step_func,
         data_iterator=data_iterator,
@@ -467,6 +474,9 @@ def train_step(forward_step_func, data_iterator,
         no_sync_func=no_sync_func,
         schedule_prologue_func=schedule_prologue_func,
         schedule_epilogue_func=schedule_epilogue_func)
+    if memory_monitor.running:
+        memory_monitor.mem_stats.record_memory(MemoryType.NON_MODEL_DATA_CUDA,
+                                               memory_monitor.finish() - model_data_cuda)
     timers('forward-backward').stop()
 
     # Empty unused memory.
@@ -482,10 +492,41 @@ def train_step(forward_step_func, data_iterator,
                                        (torchDDP, LocalDDP, Float16Module))
         unwrapped_model.cancel_gradients_last_layer(args.curr_iteration)
 
+    if memory_monitor.running:
+        memory_before_optimizer = memory_monitor.cur_memory()
+        memory_monitor.start()
+        if (memory_monitor.mem_stats.is_warmup):
+            left_cuda = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory * \
+                args.cuda_capacity - (memory_monitor.mem_stats.get_memory(MemoryType.NON_MODEL_DATA_CUDA) + \
+                memory_monitor.mem_stats.get_memory(MemoryType.MODEL_DATA_CUDA))
+            element_size = optimizer.get_parameters()[0].element_size()
+            # 4 element(fp32) for 1 parameter in adam, and grad(fp32) will be deleted after optimizer.
+            max_param_numel_cuda = left_cuda / (element_size * 3)
+            count = 0
+            param_numel_cuda = 0
+            for param in optimizer.get_parameters():
+                if param_numel_cuda + param.numel() >= max_param_numel_cuda:
+                    break
+                param_numel_cuda += param.numel()
+                count += 1
+                optimizer.reset_tensor(param, torch.cuda.current_device())
+            memory_monitor.mem_stats.increase_warmup_steps()
+            max_cuda = param_numel_cuda * element_size * 3 + \
+                  memory_monitor.mem_stats.get_memory(MemoryType.NON_MODEL_DATA_CUDA) + \
+                  memory_monitor.mem_stats.get_memory(MemoryType.MODEL_DATA_CUDA)
+            print(f"Warmup and set param in cuda. count of param: {count}, param_numel_cuda: {param_numel_cuda}, "
+                  f"max cuda will be {max_cuda}")
     # Update parameters.
     timers('optimizer', log_level=1).start(barrier=args.barrier_with_L1_time)
     update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
     timers('optimizer').stop()
+    if memory_monitor.running:
+        memory_monitor.mem_stats.record_memory(MemoryType.OPTIMIZER_BASE_CUDA, memory_monitor.finish())
+        print(f"memory usage. model_data_cuda: {memory_monitor.mem_stats.get_memory(MemoryType.MODEL_DATA_CUDA)}, "
+              f"non_model_data_cuda: {memory_monitor.mem_stats.get_memory(MemoryType.NON_MODEL_DATA_CUDA)}, "
+              f"optimizer_cuda: {memory_monitor.mem_stats.get_memory(MemoryType.OPTIMIZER_BASE_CUDA)}, "
+              f"optimizer_chunk_cuda: {optimizer.get_chunk_mem_usage()['cuda']}, "
+              f"optimizer_chunk_cpu: {optimizer.get_chunk_mem_usage()['cpu']}")
 
     # Gather params.
     if update_successful:
@@ -735,9 +776,9 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     args = get_args()
     is_torch_profiler_enabled = args.enable_torch_profiler
     torch_profiler_log_path = args.torch_profiler_log_path
-    
+
     prof = None  # init prof for the profiler
-    
+
     if is_torch_profiler_enabled:
         if os.path.exists(torch_profiler_log_path):
             if not os.path.isdir(torch_profiler_log_path):
@@ -788,6 +829,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         index = bisect.bisect_left(ends, iteration)
         for _ in range(index):
             args.skip_train_iteration_range.popleft()
+
+    memory_monitor = SyncCudaMemoryMonitor()
+    if args.cpu_offload == 'disabled':
+        memory_monitor.running = False
 
     while iteration < args.train_iters:
 
@@ -847,7 +892,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                        train_data_iterator,
                        model,
                        optimizer,
-                       opt_param_scheduler)
+                       opt_param_scheduler,
+                       memory_monitor)
         iteration += 1
         args.consumed_train_samples += mpu.get_data_parallel_world_size() * \
                                        args.micro_batch_size * \
@@ -858,6 +904,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         params_norm = None
         if args.log_params_norm:
             params_norm = calc_params_l2_norm(model)
+        if memory_monitor.running and not report_memory_flag:
+            memory_monitor.running = False
         report_memory_flag = training_log(loss_dict, total_loss_dict,
                                           optimizer.param_groups[0]['lr'],
                                           iteration, loss_scale,

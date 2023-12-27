@@ -269,13 +269,13 @@ def validate_args(args, defaults={}):
         assert args.DDP_impl == 'local'
         assert args.use_contiguous_buffers_in_local_ddp
 
-    if args.use_chunk:
+    if args.cpu_offload in ('auto', 'manual'):
         assert args.use_distributed_optimizer, \
-            "use-distributed-optimizer is needed for use-chunk."
-
-    if args.cpu_offload:
-        assert args.use_chunk, \
-            "use-chunk is needed for cpu-offload."
+            "use-distributed-optimizer is needed when cpu-offload is not disabled."
+        if args.cpu_offload == 'auto':
+            assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is auto."
+    else:
+        assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is disabled."
 
     if args.use_zero_optimizer:
         # if we use the zero optimizer, we should make sure use_distributed_optimizer is off.
@@ -1081,12 +1081,13 @@ def _add_training_args(parser):
                        'It is only used when use-distributed-optimizer. '
                        'Then argment cpu-offload and cpu-offload-pin-memory are used in Chunk, '
                        'they will be used when creating Tensor in Chunk')
-    group.add_argument('--cpu-offload', action='store_true',
-                       help='Use cpu offload in optimizer')
-    group.add_argument('--cpu-offload-pin-memory', action='store_true',
-                       help='Use pinned memory for optimizer')
+    group.add_argument('--cpu-offload', type=str, default='disabled', choices=['disabled', 'auto', 'manual'],
+                       help='Use cpu offload in optimizer. It is only used with use-distributed-optimizer. '
+                       'Then argument cpu-offload is used in Chunk, they will be used when creating Tensor in Chunk')
     group.add_argument('--cpu-offload-percent', type=float, default=1.0,
-                       help='Percent of the parameters computed in cpu for optimizer.')
+                       help='Percent of the parameters computed in cpu for optimizer, only when cpu-offload is manual.')
+    group.add_argument('--cuda-capacity', type=float, default=0.9,
+                       help='Percent of max cuda used for optimizer.')
     return parser
 
 

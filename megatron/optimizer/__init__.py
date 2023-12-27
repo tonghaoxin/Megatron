@@ -2,7 +2,9 @@
 
 from megatron import get_args
 from megatron.accelerator import get_accelerator
+from megatron.hybrid_adam import HybridAdam
 
+from .offload_distrib_optimizer import OffloadDistributedOptimizer
 from .distrib_optimizer import DistributedOptimizer
 from .zero_optimizer import ZeroOptimizer
 from .grad_scaler import ConstantGradScaler, DynamicGradScaler
@@ -11,7 +13,6 @@ from .lion import Lion
 
 Adam = get_accelerator().get_optimizer('adam')
 SGD = get_accelerator().get_optimizer('sgd')
-
 
 def get_param_groups(modules,
                      no_weight_decay_cond,
@@ -110,7 +111,18 @@ def get_megatron_optimizer(model,
                            no_weight_decay_cond=None,
                            scale_lr_cond=None,
                            lr_mult=1.0):
-    """get_megatron_optimizer"""
+    """
+    Return megatron optimizer object.
+
+    Args:
+        model (torch.nn.Module): model object.
+        no_weight_decay_cond (list of str): no_weight_decay_cond
+        scale_lr_cond (dict of torch.nn.Parameter): scale_lr_cond
+        lr_mult (float): lr mult
+
+    Returns:
+        torch.optim.Optimizer: optimizer object
+    """
     args = get_args()
 
     # Base optimizer.
@@ -121,7 +133,14 @@ def get_megatron_optimizer(model,
                                     args.use_chunked_param_groups)
 
     if args.optimizer == 'adam':
-        optimizer = Adam(param_groups,
+        if args.cpu_offload != "disabled":
+            optimizer = HybridAdam(param_groups,
+                                   lr=args.lr,
+                                   weight_decay=args.weight_decay,
+                                   betas=(args.adam_beta1, args.adam_beta2),
+                                   eps=args.adam_eps)
+        else:
+            optimizer = Adam(param_groups,
                          lr=args.lr,
                          weight_decay=args.weight_decay,
                          betas=(args.adam_beta1, args.adam_beta2),
@@ -194,6 +213,10 @@ def get_megatron_optimizer(model,
             opt_ty = DistributedOptimizer \
                 if args.use_distributed_optimizer else \
                 Float16OptimizerWithFloat16Params
+
+            if args.cpu_offload != "disabled":
+                opt_ty = OffloadDistributedOptimizer
+
             return opt_ty(optimizer,
                           args.clip_grad,
                           args.log_num_zeros_in_grad,

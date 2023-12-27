@@ -83,6 +83,13 @@ class MegatronOptimizer(ABC):
             assert self.params_have_main_grad, \
                 "use of contiguous buffer requires that params have main grad"
 
+    def get_chunk_mem_usage(self):
+        """Get cpu mem usage of fp32 used for warmup"""
+        return 0
+
+    def reset_tensor(self, param, device):
+        """Reset tensor by param used for warmup"""
+        pass
 
     def get_parameters(self):
         params = []
@@ -201,6 +208,19 @@ class MegatronOptimizer(ABC):
         """
         pass
 
+    def _copy_duplicate_grads_to_main_grads(self):
+        """
+        Copy duplicate grads to main grads.
+
+        """
+        pass
+
+    def zero_duplicate_grads(self):
+        """
+        Zero duplicate grads.
+
+        """
+        pass
 
     def allreduce_word_embedding_grads(self, args):
         """
@@ -432,6 +452,7 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
 
             # If we found inf/nan, skip the update.
             if found_inf_flag:
+                self.zero_duplicate_grads()
                 return False, None, None
 
         # Clip the main gradients.
@@ -448,6 +469,13 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
         num_zeros_in_grad = self.count_zeros() if \
                             self.log_num_zeros_in_grad else None
         timers('optimizer-count-zeros').stop()
+
+        # Copy duplicate grads to main grads.
+        if args.cpu_offload != "disabled":
+            timers('copy-duplicate-grads-to-main-grads', log_level=1).start(
+                barrier=args.barrier_with_L1_time)
+            self._copy_duplicate_grads_to_main_grads()
+            timers('copy-duplicate-grads-to-main-grads').stop()
 
         # Step the optimizer.
         timers('optimizer-inner-step', log_level=1).start(

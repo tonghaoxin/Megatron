@@ -6,6 +6,8 @@
 import math
 import torch
 
+from typing import Dict
+
 from megatron import get_args
 from megatron import get_timers
 from megatron import print_rank_0
@@ -66,6 +68,20 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         models: list of models (i.e., the virtual pipelining models). This
             is used by the distributed optimizer for mapping parameters.
     """
+
+    def get_chunk_mem_usage(self):
+        """
+        Get cpu mem usage of fp32 used for warmup, by getting cpu memory usage in chunk
+        """
+        return self.chunk_mgr.memory_usage('fp32_param')
+
+    def reset_tensor(self, param, device):
+        """Reset tensor by param used for warmup"""
+        self.chunk_mgr.reset_tensor('fp32_param', param, device)
+        if 'exp_avg' in self.optimizer.state[param]:
+            self.optimizer.state[param]['exp_avg'] = self.optimizer.state[param]['exp_avg'].to(device)
+        if 'exp_avg_sq' in self.optimizer.state[param]:
+            self.optimizer.state[param]['exp_avg_sq'] = self.optimizer.state[param]['exp_avg_sq'].to(device)
 
     @classmethod
     def build_model_gbuf_param_range_map(cls, model, dtype, gbuf_world_range):
@@ -237,23 +253,23 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
         return group_ranges
 
-    def _register_chunk(chunk_mgr, shard_param, device_is_gpu):
+    def _register_chunk(chunk_mgr, shard_param, device_is_accel):
         """_register_chunk"""
         args = get_args()
-        if args.cpu_offload:
-            param_device = get_accelerator().current_device() if device_is_gpu else torch.device('cpu')
+        if args.cpu_offload in ('auto', 'manual'):
+            param_device = get_accelerator().current_device() if device_is_accel else torch.device('cpu')
         else:
             param_device = get_accelerator().current_device()
         chunk_mgr.register_tensor(tensor=shard_param,
-                                  group_type='fp32_param',
-                                  device=param_device,
-                                  pin_memory=args.cpu_offload_pin_memory)
+                                  group_name='fp32_param',
+                                  device=param_device)
 
     @classmethod
     def build_model_and_main_param_groups(cls,
                                           model_gbuf_ranges,
                                           param_gbuf_map,
-                                          opt_group_ranges):
+                                          opt_group_ranges,
+                                          chunk_mgr):
         """
         Create main parameter groups needed for the optimizer step.
 
@@ -278,19 +294,17 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         shard_fp32_from_float16_groups = []
         args = get_args()
 
-        if args.use_chunk:
-            chunk_mgr = ChunkMgr()
-            if args.cpu_offload:
-                param_numel = 0
-                for group_index, group_range in enumerate(opt_group_ranges):
-                    for model_param in group_range["params"]:
-                        model_index, dtype = param_gbuf_map[model_param]
-                        gbuf_range = model_gbuf_ranges[model_index][dtype]
-                        param_range = gbuf_range["param_map"][model_param]["param"]
-                        param_numel += param_range.end - param_range.start
-                param_numel_in_gpu = int(param_numel * (1 - args.cpu_offload_percent))
+        if args.cpu_offload in ('auto', 'manual'):
+            param_numel = 0
+            for group_index, group_range in enumerate(opt_group_ranges):
+                for model_param in group_range["params"]:
+                    model_index, dtype = param_gbuf_map[model_param]
+                    gbuf_range = model_gbuf_ranges[model_index][dtype]
+                    param_range = gbuf_range["param_map"][model_param]["param"]
+                    param_numel += param_range.end - param_range.start
+            param_numel_in_accel = int(param_numel * (1 - args.cpu_offload_percent))
+            cur_param_numel_in_accel = 0
 
-        cur_param_numel_in_gpu = 0
         # Allocate (or slice) each group's param shard.
         for group_index, group_range in enumerate(opt_group_ranges):
 
@@ -324,10 +338,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     shard_model_param = model_param.detach().view(-1) \
                         [param_range.start:param_range.end]
                     shard_main_param = shard_model_param.clone().float()
-                    if args.use_chunk:
-                        cur_param_numel_in_gpu += shard_main_param.numel()
+                    if args.cpu_offload in ('auto', 'manual'):
+                        cur_param_numel_in_accel += shard_main_param.numel()
                         DistributedOptimizer._register_chunk(
-                            chunk_mgr, shard_main_param, cur_param_numel_in_gpu < param_numel_in_gpu)
+                            chunk_mgr, shard_main_param, cur_param_numel_in_accel <= param_numel_in_accel)
                     tensor_parallel.copy_tensor_model_parallel_attributes(
                         shard_model_param, model_param)
                     tensor_parallel.copy_tensor_model_parallel_attributes(
@@ -345,10 +359,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 elif model_param.type() == get_accelerator().FloatTensor_name():
                     shard_model_param = model_param.view(-1) \
                         [param_range.start:param_range.end]
-                    if args.use_chunk:
-                        cur_param_numel_in_gpu += shard_model_param.numel()
+                    if args.cpu_offload in ('auto', 'manual'):
+                        cur_param_numel_in_accel += shard_model_param.numel()
                         DistributedOptimizer._register_chunk(
-                            chunk_mgr, shard_model_param, cur_param_numel_in_gpu < param_numel_in_gpu)
+                            chunk_mgr, shard_model_param, cur_param_numel_in_accel <= param_numel_in_accel)
                     model_fp32_params_this_group.append(model_param)
                     shard_fp32_params_this_group.append(shard_model_param)
                     tensor_parallel.copy_tensor_model_parallel_attributes(
@@ -410,6 +424,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             self.optimizer.param_groups,
             self.model_gbuf_ranges)
 
+        self.chunk_mgr = ChunkMgr()
+
         # Allocate main param shards.
         (
             self.model_float16_groups,
@@ -419,7 +435,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             self.shard_fp32_from_float16_groups,
         ) = self.build_model_and_main_param_groups(self.model_gbuf_ranges,
                                                    self.model_param_gbuf_map,
-                                                   self.opt_group_ranges)
+                                                   self.opt_group_ranges,
+                                                   self.chunk_mgr)
 
         # Initialize param buffers.
         # - These are views on the DDP model's grad buffers, that share
@@ -744,7 +761,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     model_grad = model_param.main_grad
                     shard_model_grad = model_grad.view(-1) \
                         [param_range.start:param_range.end]
-                    if args.use_chunk and shard_main_param.get_device() == -1:
+                    if args.cpu_offload in ('auto', 'manual') and shard_main_param.get_device() == -1:
                         shard_main_param.grad.copy_(shard_model_grad.float())
                     else:
                         shard_main_param.grad = shard_model_grad.float()

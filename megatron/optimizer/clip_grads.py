@@ -7,8 +7,8 @@ from torch import inf
 
 from megatron.utils import param_is_not_shared
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
-from megatron import get_args
 from megatron.accelerator import get_accelerator
+from megatron import get_args
 
 custom_multi_tensor_applier = get_accelerator().get_operator('custom_multi_tensor_applier')
 
@@ -44,10 +44,17 @@ def clip_grad_norm_fp32(parameters, grads_for_norm,
 
     # Grads.
     grads = []
-    for param in parameters:
-        if param.grad is not None:
-            assert param.grad.type() == get_accelerator().FloatTensor_name()
-            grads.append(param.grad.detach())
+    args = get_args()
+    if args.cpu_offload != "disabled":
+        for grad in parameters:
+            if grad is not None:
+                assert grad.type() == get_accelerator().FloatTensor_name()
+                grads.append(grad.detach())
+    else:
+        for param in parameters:
+            if param.grad is not None:
+                assert param.grad.type() == get_accelerator().FloatTensor_name()
+                grads.append(param.grad.detach())
 
     # Norm parameters.
     max_norm = float(max_norm)
