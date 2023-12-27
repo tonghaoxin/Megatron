@@ -1,0 +1,35 @@
+{
+    "xpu_pretrain_chatglm_8_1_1_fp32_loss" : {
+        "step1_loss" : 3.8732,
+        "step2_loss" : 3.9486,
+        "commitID" : "6ac935584a18174085dd221e1c6ad24e7d1c5f23"
+    },
+    "xpu_pretrain_chatglm2_1_2_4_fp32" : {
+        "step1_loss" : 6.0787,
+        "step2_loss" : 6.3509,
+        "step3_loss" : 4.6155,
+        "step4_loss" : 4.3025,
+        "step5_loss" : 4.1549,
+        "commitID" : "88b47a9d54244c7962fdac791b3fa905cdaad28b"
+    },
+    "xpu_pretrain_galactica_distributed_8_1_1" : {
+        "step1_loss" : 1.8997, 
+        "step2_loss" : 1.9873,
+        "commitID" : "ee0c8aca313f093fedd97ec9d447e760894d87b8"
+    },
+    "xpu_pretrain_aquila_distributed_8_1_1_fp32" : {
+        "step1_loss" : 1.5376,
+        "step2_loss" : 1.5627,
+        "commitID" : "3d57651638f338445ddfc3a995f01fa44a8feb08"
+    },
+    "xpu_pretrain_llama_distributed_8_1_1_fp32" : {
+        "step1_loss" : 1.7646,
+        "step2_loss" : 1.6937,
+        "commitID" : "6ac935584a18174085dd221e1c6ad24e7d1c5f23"
+    },
+    "xpu_pretrain_bloom_distributed_8_1_1_fp32" : {
+        "step1_loss" : 2.8454,
+        "step2_loss" : 2.8104,
+        "commitID" : "b9a29882741a7ff676453bc96d36fd009d6849cc"
+    }
+}

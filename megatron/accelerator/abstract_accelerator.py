@@ -13,9 +13,15 @@ class MegatronAccelerator(ABC):
 
     def __init__(self):
         """__init__"""
+        self._backend_name = None
         self._communication_backend_name = None
         self._optimizers = None
         self._custom_operator_manager = None
+
+    @abc.abstractmethod
+    def backend_name(self):
+        """backend_name"""
+        ...
 
     # Device APIs
     @abc.abstractmethod

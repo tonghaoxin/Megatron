@@ -82,15 +82,15 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
 
 LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --pipeline-model-parallel-size 1 \
-                --num-layers 4 \
+                --num-layers 1 \
                 --hidden-size 5120 \
                 --ffn-hidden-size 13824 \
                 --num-attention-heads 40 \
                 --micro-batch-size 1 \
                 --global-batch-size 128 \
-                --exit-interval 3 \
-                --seq-length 2048 \
-                --max-position-embeddings 2048 \
+                --exit-interval 2 \
+                --seq-length 4096 \
+                --max-position-embeddings 4096 \
                 --lr 0.0003 \
                 --min-lr 1.0e-5 \
                 --clip-grad 1.0 \
@@ -109,6 +109,7 @@ LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --activation-func swiglu \
                 --use-rotary-position-embeddings \
                 --rmsnorm-epsilon 1e-5 \
+                --no-position-embedding \
                 --no-gradient-accumulation-fusion \
                 --no-bias-gelu-fusion \
                 --no-masked-softmax-fusion \
@@ -277,9 +278,8 @@ export BKCL_CCIX_BUFFER_GM=1
 # xmlir set L3 size, default 13M
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
-export XACC=1
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS \
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
        $LLAMA_13B_ARGS \
        $OUTPUT_ARGS \

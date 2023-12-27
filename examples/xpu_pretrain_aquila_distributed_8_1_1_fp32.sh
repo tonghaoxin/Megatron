@@ -2,27 +2,26 @@
 
 '''
 # 测试数据集 BOS 地址
-bos://cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/megatron_llama/llama_test/
-# llama tokenizer model BOS 地址
-bos://cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/megatron_llama/llama_tokenizer/
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/aquila/data/
+# aquila_7b tokenizer model BOS 地址
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/aquila/tokenizer_model/
 # 7B 模型 BOS 地址
-bos://cce-ai-datasets/cce-ai-datasets.bj.bcebos.com/megatron_llama/megatron_llama_7b_checkpoint_tp8_pp1/
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/aquila/checkpoints/megatron_aquila_7b_checkpoint_tp8_pp1_fp32/
 '''
 
 set -x
-export XACC=1
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 #DATA_PATH=${ROOT_DIR}/../data/llama_00_text_document
 #DATA_PATH=${ROOT_DIR}/../megatron/data/my-aquila_conversations_document
-DATA_PATH=/megatron_datasets/aquila_7b/data
-CHECKPOINT_LOAD_PATH=/megatron_datasets/aquila_7b/aquilaChat-7b-tp8-pp1-dp1-fp32
-CHECKPOINT_SAVE_PATH=/megatron_datasets/aquila_7b/aquilaChat-7b-tp8-pp1-dp1-fp32_save
+DATA_PATH=/megatron_datasets/aquila/data/convo_samples.jsonl
+CHECKPOINT_LOAD_PATH=/megatron_datasets/aquila/checkpoints/megatron_aquila_7b_checkpoint_tp8_pp1_fp32
+CHECKPOINT_SAVE_PATH=/megatron_datasets/aquila/checkpoints/megatron_aquila_7b_checkpoint_tp8_pp1_fp32_save
 TENSORBOARD_PATH='./aquila7b_tp8_pp1_fp32_tensorboard'
 #VOCAB_FILE=${ROOT_DIR}/../megatron/data/checkpoints_in/aquilachat-7b/vocab.json
 #MERGE_FILE=${ROOT_DIR}/../megatron/data/checkpoints_in/aquilachat-7b/merges.txt
-HF_TOKENIZER_PATH=/megatron_datasets/aquila_7b/hf_token_path/
+HF_TOKENIZER_PATH=/megatron_datasets/aquila/tokenizer_model
 
 export XPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 #export XPU_VISIBLE_DEVICES="4,5,6,7"
@@ -179,9 +178,12 @@ export ALLREDUCE_WORKER_SIZE=${GPUS_PER_NODE}
 # xmlir set L3 size, default 13M
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
+# Disable XFLAGS megatron mock module
+XFLAGS --disable megatron
+
 PYTHONPATH=${ROOT_DIR}/../megatron/data
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS \
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_aquila.py \
        $AQUILA_7B_ARGS \
        $OUTPUT_ARGS \

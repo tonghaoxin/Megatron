@@ -5,9 +5,9 @@ TIMESTAMP=$(date +'%Y.%m.%d-%H:%M:%S')
 EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
-DATA_PATH=/megatron_datasets/chatglm_6b/data/wudao/
-CHECKPOINT_PATH=/megatron_datasets/chatglm_6b/checkpoints/tp8-pp1-dp1-fp32
-TOKENIZER_MODEL_PATH=/megatron_datasets/chatglm_6b/tokenizer_model/ice_text.model
+DATA_PATH=/megatron_datasets/chatglm/data/wudao/
+CHECKPOINT_PATH=/megatron_datasets/chatglm/checkpoints/tp8-pp1-dp1-fp32/
+TOKENIZER_MODEL_PATH=/megatron_datasets/chatglm/tokenizer_model/ice_text.model
 TENSORBOARD_PATH=./tensorborads/$EXP_NAME
 LOG_PATH=./logs/$EXP_NAME
 
@@ -76,7 +76,7 @@ TRAINING_ARGS="--train-iters 5000 \
                --micro-batch-size $MICRO_BATCH_SIZE \
                --global-batch-size $GLOBAL_BATCH_SIZE \
                --seq-length $SEQ_LEN \
-               --num-workers 1 \
+               --preprocessing-num-workers 1 \
                --load $CHECKPOINT_PATH \
                --exit-interval 2 \
                --data-path $DATA_PATH \
@@ -100,9 +100,12 @@ OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx
 
 #DISTRIBUTED_ARGS="--hostfile $HOST_FILE_PATH"
 
+# Disable XFLAGS megatron mock module
+XFLAGS --disable megatron
+
 run_cmd="PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
          $OPTIONS_NCCL \
-         python -m torch.distributed.launch $DISTRIBUTED_ARGS -m xacc --xacc-end \
+         torchrun $DISTRIBUTED_ARGS \
          $ROOT_DIR/../pretrain_chatglm.py \
          $GLM_ARGS \
          $TRAINING_ARGS \

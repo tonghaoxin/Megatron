@@ -485,7 +485,7 @@ def validate_args(args, defaults={}):
         args.tp_gemm_parallel = False
 
     if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" and \
-        get_accelerator().device_name() == "cuda" and \
+        get_accelerator().backend_name() == "cuda" and \
         not args.use_zero_optimizer:
         if args.sequence_parallel:
             raise RuntimeError(
@@ -1035,6 +1035,9 @@ def _add_training_args(parser):
                        help='Disable fusing gradient accumulation to weight '
                        'gradient computation of linear layers',
                        dest='gradient_accumulation_fusion')
+    group.add_argument('--no-init-megatron-time', action='store_false',
+                       dest='init_megatron_time',
+                       help='print init megatron elapsed time.')
     group.add_argument('--dump-model', action='store_true',
                        help='Dump model to ./model.txt. Useful for debugging.')
     group.add_argument('--enable-debug', action='store_true', help='enable debug')
@@ -1072,8 +1075,8 @@ def _add_training_args(parser):
     group.add_argument('--onnx-safe', type=bool, required=False,
                        help='Use workarounds for known problems with '
                        'Torch ONNX exporter')
-    group.add_argument('--memory-saving', type=bool, default=False, required=False,
-                       help='Use memory saving strategies for several ops')
+    group.add_argument('--memory-saving', action='store_true', default=False,
+                        help='Save GPU memory during training')
     group.add_argument('--findmax-opt', action='store_true', default=False,
                         help='open findmax optimization in fc/mm during training')
     group.add_argument('--use-chunk', action='store_true',

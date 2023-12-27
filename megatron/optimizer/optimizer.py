@@ -290,7 +290,8 @@ class MegatronOptimizer(ABC):
                     model_module, (torchDDP, LocalDDP, Float16Module))
                 for param in unwrapped_model.parameters():
                     if getattr(param, 'sequence_parallel', False):
-                        grad = param.main_grad if args.DDP_impl == 'local' else param.grad
+                        grad = param.main_grad \
+                            if args.DDP_impl == 'local' and args.use_contiguous_buffers_in_local_ddp else param.grad
                         grads.append(grad.data)
             coalesced = _flatten_dense_tensors(grads)
             torch.distributed.all_reduce(

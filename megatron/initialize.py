@@ -41,7 +41,7 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
     if not allow_no_accelerator:
         # Make sure accelerator is available.
         assert get_accelerator().is_available(), \
-                f'{get_accelerator().device_name()} is available for Megatron.'
+                f'{get_accelerator().backend_name()} is available for Megatron.'
 
     if args.use_checkpoint_args or args_defaults.get('use_checkpoint_args', False):
         assert args.load is not None, '--use-checkpoints-args requires --load argument'
@@ -178,7 +178,7 @@ def _initialize_distributed():
             get_accelerator().set_device(device)
     # Call the init process
     # init_method = "env://"
-    # if get_accelerator().device_name() == "npu":
+    # if get_accelerator().backend_name() == "npu":
     #     init_method = "tcp://"
     #     master_ip = os.getenv('MASTER_ADDR', 'localhost')
     #     master_port = os.getenv('MASTER_PORT', '6000')
@@ -261,7 +261,7 @@ def set_jit_fusion_options():
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_override_can_fuse_on_gpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)
-        if get_accelerator().device_name() == 'cuda':
+        if get_accelerator().backend_name() == 'cuda':
             torch._C._jit_set_nvfuser_enabled(True)
         torch._C._debug_set_autodiff_subgraph_inlining(False)
     else:

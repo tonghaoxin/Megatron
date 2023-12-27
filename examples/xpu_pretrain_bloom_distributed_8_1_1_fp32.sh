@@ -1,14 +1,27 @@
 #! /bin/bash
 
+'''
+# 测试数据集 BOS 地址
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/bloom/data/
+# aquila_7b tokenizer model BOS 地址
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/bloom/tokenizer_model/
+# 7B 模型 BOS 地址
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/bloom/checkpoints/megatron_bloom_7b_checkpoint_tp8_pp1_fp32/
+'''
+
+
+
 NAME="bloom-7b"
 TIMESTAMP=$(date +'%Y.%m.%d-%H:%M:%S')
 EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
-DATA_PATH=$ROOT_DIR/../data/openwebtext/openwebtext-10k_text_document
-CHECKPOINT_SAVE_PATH=$ROOT_DIR/../data/${NAME}_save
-CHECKPOINT_LOAD_PATH=$ROOT_DIR/../data/megatron_bloom_7b_checkpoint_tp8_pp1_fp32
-TOKENIZER_PATH=$ROOT_DIR/../data/model
+DATA_DIR=/megatron_datasets/bloom
+
+DATA_PATH=$DATA_DIR/data/openwebtext-10k_text_document
+CHECKPOINT_SAVE_PATH=$DATA_DIR/${NAME}_save
+CHECKPOINT_LOAD_PATH=$DATA_DIR/checkpoints/megatron_bloom_7b_checkpoint_tp8_pp1_fp32
+TOKENIZER_PATH=$DATA_DIR/tokenizer_model
 TENSORBOARD_PATH=./logs/$EXP_NAME
 
 export XPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
@@ -69,6 +82,7 @@ BLOOM_7B_ARGS="--tensor-model-parallel-size 8 \
                --no-query-key-layer-scaling \
                --initial-loss-scale 16 \
                --memory-saving \
+               --exit-interval 2 \
                "
 
 OUTPUT_ARGS="--log-interval 1 \
@@ -76,12 +90,12 @@ OUTPUT_ARGS="--log-interval 1 \
              --eval-interval 1000 \
              --eval-iters 10"
 
-OTHER_ARGS="--save $CHECKPOINT_SAVE_PATH \
-            --load $CHECKPOINT_LOAD_PATH \
+OTHER_ARGS="--load $CHECKPOINT_LOAD_PATH \
             --data-path $DATA_PATH \
             --data-impl mmap \
             --split 949,50,1 \
-            --distributed-backend nccl"
+            --distributed-backend nccl \
+            "
 
 TENSORBOARD_ARGS="--tensorboard-dir $TENSORBOARD_PATH \
                   --tensorboard-queue-size 5 \
@@ -89,8 +103,11 @@ TENSORBOARD_ARGS="--tensorboard-dir $TENSORBOARD_PATH \
                   --log-batch-size-to-tensorboard \
                   --log-validation-ppl-to-tensorboard"
 
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS -m xacc -Lamp -- \
+# Disable XFLAGS megatron mock module
+XFLAGS --disable megatron
+
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_bloom.py \
        $BLOOM_7B_ARGS \
        $OUTPUT_ARGS \

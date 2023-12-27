@@ -27,6 +27,7 @@ from megatron.training import pretrain
 from megatron.core.enums import ModelType
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.data.aquila_data import build_train_valid_test_datasets
+from megatron.accelerator import get_accelerator
 
 
 try:
@@ -78,10 +79,15 @@ def get_masks(input_ids, device):
     """Generate attention mask."""
     batch_size, seq_length = input_ids.shape
 
-    attention_mask = torch.ones((batch_size, seq_length, seq_length), device=device)
-    attention_mask.tril_()
-    attention_mask.unsqueeze_(1)
-    attention_mask = (attention_mask < 0.5).bool()
+    if get_accelerator().backend_name() != "xpu":
+        attention_mask = torch.ones((batch_size, seq_length, seq_length), device=device)
+        attention_mask.tril_()
+        attention_mask.unsqueeze_(1)
+        attention_mask = (attention_mask < 0.5).bool()
+    else:
+        attention_mask = torch.full((batch_size, seq_length, seq_length), -10000.0, device=device)
+        attention_mask.triu_(1)
+        attention_mask.unsqueeze_(1)
 
     return attention_mask
 

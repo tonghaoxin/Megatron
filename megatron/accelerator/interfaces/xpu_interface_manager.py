@@ -4,10 +4,7 @@
 
 """XPUInterfaceManager."""
 
-import os
-import pkgutil
 import inspect
-import importlib
 import torch
 
 from functools import wraps
@@ -168,7 +165,7 @@ class CustomMultiTensorApplyWrapper(object):
         grad_norm = None
         if kwargs.get('op', 'scale') == 'l2norm':
             if not kwargs.get('memory_saving', False):
-                grad_norm = torch.cat([item.reshape(1, -1) for item in grads_for_norm], 1).to('xpu').norm()
+                grad_norm = torch.cat([item.reshape(1, -1) for item in grads_for_norm], 1).norm()
             else:
                 grad_norm = sum([item.square().sum() for item in grads_for_norm]).sqrt()
             return grad_norm, None
@@ -218,18 +215,16 @@ class CustomSoftmaxWrapper(object):
         """__call__"""
         inputs = args[0]
         mask = args[1]
+        scale = args[2]
 
-        # scale = args[2]
-        # mask = torch.cat([mask] * inputs.shape[1], 1)
-        # return self.autograd_func.apply(inputs, mask, -1, scale, -10000.0, True)
+        if scale is None:
+            scale = 1.0
 
-        return self.custom_softmax_func.apply(inputs, mask)
+        return self.custom_softmax_func.apply(inputs, mask, scale)
 
     def is_kernel_available(self, *args, **kwargs):
         """is_kernel_available"""
-        # TODO(changtao02): implement an algo to decide
-        # if the kernel is available to be fused
-        return True
+        return (kwargs.get('scaled_masked_softmax_fusion', False) and kwargs.get('without_scale', False))
 
 
 class CustomSwiGLUWrapper(object):

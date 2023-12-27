@@ -516,7 +516,7 @@ def linear_with_grad_accumulation_and_async_allreduce(
 
     if not linear_with_grad_accumulation_and_async_allreduce.warned:
         if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" and \
-                get_accelerator().device_name() == 'cuda':
+                get_accelerator().backend_name() == 'cuda':
             if sequence_parallel_enabled:
                 warnings.warn(
                     "When using sequence parallelism it is recommended to set the "

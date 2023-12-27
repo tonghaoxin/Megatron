@@ -98,8 +98,8 @@ TENSORBOARD_ARGS="--tensorboard-dir $TENSORBOARD_PATH \
 # export BKCL_DEBUG=1
 # export XLOG_LEVEL="dist=info"
 
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS -m xacc -- \
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
        $LLAMA_65B_ARGS \
        $OUTPUT_ARGS \

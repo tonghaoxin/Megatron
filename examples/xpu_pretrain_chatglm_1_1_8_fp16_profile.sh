@@ -101,10 +101,9 @@ TRAINING_ARGS="--train-iters 5000 \
 OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8 NCCL_IB_DISABLE=0"
 
 #DISTRIBUTED_ARGS="--hostfile $HOST_FILE_PATH"
-export XACC=1
 run_cmd="PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
          $OPTIONS_NCCL \
-         python -m torch.distributed.launch $DISTRIBUTED_ARGS \
+         torchrun $DISTRIBUTED_ARGS \
          $ROOT_DIR/../pretrain_chatglm.py \
          $GLM_ARGS \
          $TRAINING_ARGS \

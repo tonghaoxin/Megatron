@@ -2,7 +2,6 @@
 
 from .fused_layer_norm import MixedFusedLayerNorm as LayerNorm
 from .rms_norm import RMSNorm, FusedRMSNorm
-
 from .distributed import DistributedDataParallel
 from .bert_model import BertModel
 from .gpt_model import GPTModel

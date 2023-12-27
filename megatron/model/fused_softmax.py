@@ -94,7 +94,8 @@ class FusedScaleMaskSoftmax(nn.Module):
         # if self.scaled_masked_softmax_fusion and self.scale is None:
         if self.custom_softmax.is_kernel_available(mask, *input.size(),
                                                    scaled_masked_softmax_fusion=self.scaled_masked_softmax_fusion,
-                                                   input_in_float16=self.input_in_float16):
+                                                   input_in_float16=self.input_in_float16,
+                                                   without_scale=self.scale is None):
             return self.custom_softmax(input, mask, self.scale)
         else:
             return self.forward_torch_softmax(input, mask)

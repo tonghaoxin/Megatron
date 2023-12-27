@@ -4,9 +4,6 @@
 
 """XPUAccelerator."""
 
-import os
-import pkgutil
-import importlib
 import torch
 
 from torch import _C
@@ -24,7 +21,8 @@ class XPUAccelerator(MegatronAccelerator):
 
     def __init__(self):
         """__init__"""
-        self._communication_backend_name = 'nccl'
+        self._backend_name = 'xpu'
+        self._communication_backend_name = 'xccl'
         self._optimizers = {}
 
         try:
@@ -40,36 +38,40 @@ class XPUAccelerator(MegatronAccelerator):
 
         self._custom_operator_manager = XPUCustomOperatorManager()
 
+    def backend_name(self):
+        """backend_name"""
+        return self._backend_name
+
     # Device APIs
     def device_name(self, device_index=None):
         """device_name"""
         if device_index is None:
-            return 'xpu'
-        return 'xpu:{}'.format(device_index)
+            return 'cuda'
+        return 'cuda:{}'.format(device_index)
 
     def device(self, device_index=None):
         """device"""
-        return torch_xmlir.xpu.device(device_index)
+        return torch.cuda.device(device_index)
 
     def set_device(self, device_index):
         """set_device"""
-        torch_xmlir.xpu.set_device(device_index)
+        torch.cuda.set_device(device_index)
 
     def current_device(self):
         """current_device"""
-        return torch_xmlir.xpu.current_device()
+        return torch.cuda.current_device()
 
     def current_device_name(self):
         """current_device_name"""
-        return 'xpu:{}'.format(torch_xmlir.xpu.current_device())
+        return 'cuda:{}'.format(torch.cuda.current_device())
 
     def device_count(self):
         """device_count"""
-        return torch_xmlir.xpu.device_count()
+        return torch.cuda.device_count()
 
     def synchronize(self):
         """synchronize"""
-        return torch_xmlir.xpu.synchronize()
+        return torch.cuda.synchronize()
 
     # RNG APIs
     def random(self):
@@ -79,32 +81,32 @@ class XPUAccelerator(MegatronAccelerator):
     def set_rng_state(self, new_state, device_index=None):
         """set_rng_state"""
         if device_index is None:
-            return torch_xmlir.xpu.set_rng_state(new_state)
+            return torch.cuda.set_rng_state(new_state)
 
-        return torch_xmlir.xpu.set_rng_state(new_state, device_index)
+        return torch.cuda.set_rng_state(new_state, device_index)
 
     def get_rng_state(self, device_index=None):
         """get_rng_state"""
         if device_index is None:
-            return torch_xmlir.xpu.get_rng_state()
+            return torch.cuda.get_rng_state()
 
-        return torch_xmlir.xpu.get_rng_state(device_index)
+        return torch.cuda.get_rng_state(device_index)
 
     def manual_seed(self, seed):
         """manual_seed"""
-        return torch_xmlir.xpu.manual_seed(seed)
+        return torch.cuda.manual_seed(seed)
 
     def manual_seed_all(self, seed):
         """manual_seed_all"""
-        return torch_xmlir.xpu.manual_seed_all(seed)
+        return torch.cuda.manual_seed_all(seed)
 
     def initial_seed(self, seed):
         """initial_seed"""
-        return torch_xmlir.xpu.initial_seed(seed)
+        return torch.cuda.initial_seed(seed)
 
     def default_generator(self, device_index):
         """default_generator"""
-        return torch_xmlir.xpu.default_generators[device_index]
+        return torch.cuda.default_generators[device_index]
 
     def _set_rng_state(self, new_state, device_index=-1):
         """Sets the random number generator state of the current GPU.
@@ -112,7 +114,7 @@ class XPUAccelerator(MegatronAccelerator):
         Argumentss:
             new_state (torch.ByteTensor): The desired state
             device_index (int | str): Device index
-        This function is adapted from PyTorch repo (torch_xmlir.xpu.set_rng_state)
+        This function is adapted from PyTorch repo (torch.cuda.set_rng_state)
         with a single change: the input state is not cloned. Cloning caused
         major performance issues for +4 GPU cases.
         """
@@ -120,23 +122,23 @@ class XPUAccelerator(MegatronAccelerator):
             # older PyTorch
             def cb():
                 """cb"""
-                with torch_xmlir.xpu.device(device_index):
+                with torch.cuda.device(device_index):
                     _C._cuda_setRNGState(new_state)
         else:
             # newer PyTorch
             if device_index == -1:
-                device = torch.device('xpu')
+                device = torch.device('cuda')
             elif isinstance(device_index, str):
                 device = torch.device(device_index)
             elif isinstance(device_index, int):
-                device = torch.device('xpu', device_index)
+                device = torch.device('cuda', device_index)
 
             def cb():
                 """cb"""
                 idx = device.index
                 if idx is None:
-                    idx = torch_xmlir.xpu.current_device()
-                default_generator = torch_xmlir.xpu.default_generators[idx]
+                    idx = torch.cuda.current_device()
+                default_generator = torch.cuda.default_generators[idx]
                 default_generator.set_state(new_state)
 
         torch.cuda._lazy_call(cb)
@@ -145,82 +147,78 @@ class XPUAccelerator(MegatronAccelerator):
     @property
     def Stream(self):
         """Stream"""
-        return torch_xmlir.xpu.Stream
+        return torch.cuda.Stream
 
     def stream(self, stream):
         """stream"""
-        return torch_xmlir.xpu.stream(stream)
+        return torch.cuda.stream(stream)
 
     def current_stream(self, device_index=None):
         """current_stream"""
-        return torch_xmlir.xpu.current_stream(device_index)
+        return torch.cuda.current_stream(device_index)
 
     def default_stream(self, device_index=None):
         """default_stream"""
-        return torch_xmlir.xpu.default_stream(device_index)
+        return torch.cuda.default_stream(device_index)
 
     @property
     def Event(self):
         """Event"""
-        return torch_xmlir.xpu.Event
+        return torch.cuda.Event
 
     # Memory management
     def empty_cache(self):
         """empty_cache"""
-        return torch_xmlir.xpu.empty_cache()
+        return torch.cuda.empty_cache()
 
     def memory_allocated(self, device_index=None):
         """memory_allocated"""
-        return torch_xmlir.xpu.memory_allocated(device_index)
+        return torch.cuda.memory_allocated(device_index)
 
     def max_memory_allocated(self, device_index=None):
         """max_memory_allocated"""
-        return torch_xmlir.xpu.max_memory_allocated(device_index)
+        return torch.cuda.max_memory_allocated(device_index)
 
     def reset_max_memory_allocated(self, device_index=None):
         """reset_max_memory_allocated"""
-        return torch_xmlir.xpu.reset_max_memory_allocated(device_index)
+        return torch.cuda.reset_max_memory_allocated(device_index)
 
     def memory_cached(self, device_index=None):
         """memory_cached"""
-        return torch_xmlir.xpu.memory_cached(device_index)
+        return torch.cuda.memory_cached(device_index)
 
     def max_memory_cached(self, device_index=None):
         """max_memory_cached"""
-        return torch_xmlir.xpu.max_memory_cached(device_index)
+        return torch.cuda.max_memory_cached(device_index)
 
     def reset_max_memory_cached(self, device_index=None):
         """reset_max_memory_cached"""
-        return torch_xmlir.xpu.reset_max_memory_cached(device_index)
+        return torch.cuda.reset_max_memory_cached(device_index)
 
     def memory_stats(self, device_index=None):
         """memory_stats"""
-        if hasattr(torch_xmlir.xpu, 'memory_stats'):
-            return torch_xmlir.xpu.memory_stats(device_index)
+        return torch.cuda.memory_stats(device_index)
 
     def reset_peak_memory_stats(self, device_index=None):
         """reset_peak_memory_stats"""
-        if hasattr(torch_xmlir.xpu, 'reset_peak_memory_stats'):
-            return torch_xmlir.xpu.reset_peak_memory_stats(device_index)
+        return torch.cuda.reset_peak_memory_stats(device_index)
 
     def memory_reserved(self, device_index=None):
         """memory_reserved"""
-        if hasattr(torch_xmlir.xpu, 'memory_reserved'):
-            return torch_xmlir.xpu.memory_reserved(device_index)
+        return torch.cuda.memory_reserved(device_index)
 
     def max_memory_reserved(self, device_index=None):
         """max_memory_reserved"""
-        if hasattr(torch_xmlir.xpu, 'max_memory_reserved'):
-            return torch_xmlir.xpu.max_memory_reserved(device_index)
+        return torch.cuda.max_memory_reserved(device_index)
 
     def total_memory(self, device_index=None):
         """total_memory"""
-        return torch_xmlir.xpu.get_device_properties(device_index).total_memory
+        return torch.cuda.get_device_properties(device_index).total_memory
 
     # Data types
     def autocast(self, dtype):
         """autocast"""
-        torch.autocast("xpu", dtype=dtype)
+        torch.autocast("cuda", dtype=dtype)
 
     def is_bf16_supported(self):
         """is_bf16_supported"""
@@ -237,23 +235,19 @@ class XPUAccelerator(MegatronAccelerator):
     # Misc
     def amp(self):
         """amp"""
-        if hasattr(torch_xmlir.xpu, 'amp'):
-            return torch_xmlir.xpu.amp
-        return None
+        return torch.cuda.amp
 
     def is_available(self):
         """is_available"""
-        return torch_xmlir.xpu.is_available()
+        return torch.cuda.is_available()
 
     def range_push(self, msg):
         """range_push"""
-        if hasattr(torch_xmlir.xpu.nvtx, 'range_push'):
-            return torch_xmlir.xpu.nvtx.range_push(msg)
+        pass
 
     def range_pop(self):
         """range_pop"""
-        if hasattr(torch_xmlir.xpu.nvtx, 'range_pop'):
-            return torch_xmlir.xpu.nvtx.range_pop()
+        pass
 
     def get_fwd_profiler_ctx(self):
         """get_fwd_profiler_ctx"""
@@ -273,7 +267,7 @@ class XPUAccelerator(MegatronAccelerator):
 
     def lazy_call(self, callback):
         """lazy_call"""
-        return torch_xmlir.xpu._lazy_call(callback)
+        return torch.cuda._lazy_call(callback)
 
     def communication_backend_name(self):
         """communication_backend_name"""
@@ -283,65 +277,65 @@ class XPUAccelerator(MegatronAccelerator):
     @property
     def BFloat16Tensor(self):
         """BFloat16Tensor"""
-        return torch_xmlir.xpu.HalfTensor
+        return torch.cuda.HalfTensor
 
     @property
     def ByteTensor(self):
         """ByteTensor"""
-        return torch_xmlir.xpu.ByteTensor
+        return torch.cuda.ByteTensor
 
     @property
     def DoubleTensor(self):
         """DoubleTensor"""
-        return torch_xmlir.xpu.DoubleTensor
+        return torch.cuda.DoubleTensor
 
     @property
     def FloatTensor(self):
         """FloatTensor"""
-        return torch_xmlir.xpu.FloatTensor
+        return torch.cuda.FloatTensor
 
     @property
     def HalfTensor(self):
         """HalfTensor"""
-        return torch_xmlir.xpu.HalfTensor
+        return torch.cuda.HalfTensor
 
     @property
     def IntTensor(self):
         """IntTensor"""
-        return torch_xmlir.xpu.IntTensor
+        return torch.cuda.IntTensor
 
     @property
     def LongTensor(self):
         """LongTensor"""
-        return torch_xmlir.xpu.LongTensor
+        return torch.cuda.LongTensor
 
     def BFloat16Tensor_name(self):
         """BFloat16Tensor_name"""
-        return 'torch.xpu.HalfTensor'
+        return 'torch.cuda.HalfTensor'
 
     def ByteTensor_name(self):
         """ByteTensor_name"""
-        return 'torch.xpu.ByteTensor'
+        return 'torch.cuda.ByteTensor'
 
     def DoubleTensor_name(self):
         """DoubleTensor_name"""
-        return 'torch.xpu.DoubleTensor'
+        return 'torch.cuda.DoubleTensor'
 
     def FloatTensor_name(self):
         """FloatTensor_name"""
-        return 'torch.xpu.FloatTensor'
+        return 'torch.cuda.FloatTensor'
 
     def HalfTensor_name(self):
         """HalfTensor_name"""
-        return 'torch.xpu.HalfTensor'
+        return 'torch.cuda.HalfTensor'
 
     def IntTensor_name(self):
         """IntTensor_name"""
-        return 'torch.xpu.IntTensor'
+        return 'torch.cuda.IntTensor'
 
     def LongTensor_name(self):
         """LongTensor_name"""
-        return 'torch.xpu.LongTensor'
+        return 'torch.cuda.LongTensor'
 
     def pin_memory(self, tensor):
         """pin_memory"""
@@ -350,7 +344,7 @@ class XPUAccelerator(MegatronAccelerator):
     def h2d_copy(self, obj, device=None):
         """h2d_copy"""
         if device is None:
-            device = torch_xmlir.xpu.current_device()
+            device = torch.cuda.current_device()
         return obj.to(device)
 
     def d2h_copy(self, obj):
@@ -359,7 +353,7 @@ class XPUAccelerator(MegatronAccelerator):
 
     def on_accelerator(self, tensor):
         """on_accelerator"""
-        return tensor.is_xpu
+        return tensor.is_cuda
 
     def is_contiguous(self, tensor):
         """is_contiguous"""

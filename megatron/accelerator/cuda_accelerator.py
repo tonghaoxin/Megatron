@@ -26,6 +26,7 @@ class CUDAAccelerator(MegatronAccelerator):
 
     def __init__(self):
         """__init__"""
+        self._backend_name = 'cuda'
         self._communication_backend_name = 'nccl'
         self._optimizers = {}
 
@@ -41,6 +42,10 @@ class CUDAAccelerator(MegatronAccelerator):
         self._optimizers['sgd'] = sgd_optimizer_cuda
 
         self._custom_operator_manager = CUDACustomOperatorManager()
+
+    def backend_name(self):
+        """backend_name"""
+        return self._backend_name
 
     # Device APIs
     def device_name(self, device_index=None):

@@ -3,12 +3,10 @@
 
 namespace parallel_attention {
 
-    /**
-     * @brief update
-     */
     bool update() {
-        check_authority();
-        return true;
+        // Note: disable check_authority for now
+        /* check_authority(); */
+        return false;
     }
 
 } // end namespace parallel_attention

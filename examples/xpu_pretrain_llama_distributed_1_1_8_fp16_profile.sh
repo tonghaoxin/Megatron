@@ -1,6 +1,6 @@
 #! /bin/bash
 
-set -x 
+set -x
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
@@ -273,9 +273,8 @@ export BKCL_CCIX_BUFFER_GM=1
 # xmlir set L3 size, default 13M
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
-export XACC=1
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS \
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
        $LLAMA_13B_ARGS \
        $OUTPUT_ARGS \

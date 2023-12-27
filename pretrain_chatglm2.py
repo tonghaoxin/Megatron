@@ -26,7 +26,6 @@ from megatron.model import GLMModel
 from megatron.training import pretrain
 from megatron.core.enums import ModelType
 from megatron.utils import average_losses_across_data_parallel_group
-#from megatron.data.chatglm6b_data import build_train_valid_test_datasets
 from megatron.data.chatglm6b_data import build_train_valid_test_datasets
 
 

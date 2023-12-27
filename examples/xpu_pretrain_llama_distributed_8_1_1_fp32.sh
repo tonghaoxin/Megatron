@@ -9,13 +9,13 @@ bos:/klx-pytorch-work-bd/training/qinduohao_llama/install/tokenizer_model/
 bos:/klx-pytorch-work-bd/training/qinduohao_llama/install/checkpoints/megatron_llama_7b_checkpoint_tp8_pp1_fp32/
 '''
 
-set -x 
+set -x
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
-DATA_PATH=/megatron_datasets/llama_7b/data/llama_00_text_document
-CHECKPOINT_LOAD_PATH=/megatron_datasets/llama_7b/checkpoints/megatron_llama_7b_checkpoint_tp8_pp1_fp32/
-TOKENIZER_MODEL_PATH=/megatron_datasets/llama_7b/tokenizer_model/tokenizer.model
+DATA_PATH=/megatron_datasets/llama/data/llama_00_text_document
+CHECKPOINT_LOAD_PATH=/megatron_datasets/llama/checkpoints/megatron_llama_7b_checkpoint_tp8_pp1_fp32/
+TOKENIZER_MODEL_PATH=/megatron_datasets/llama/tokenizer_model/tokenizer.model
 
 #DATA_PATH=${ROOT_DIR}/../../data/llama_00_text_document
 #CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../../checkpoints/megatron_llama_7b_checkpoint_tp8_pp1_fp32
@@ -259,9 +259,11 @@ export BKCL_CCIX_BUFFER_GM=1
 # xmlir set L3 size, default 13M
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
-export XACC=1
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS \
+# Disable XFLAGS megatron mock module
+XFLAGS --disable megatron
+
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
        $LLAMA_7B_ARGS \
        $OUTPUT_ARGS \

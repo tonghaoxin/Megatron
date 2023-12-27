@@ -10,3 +10,9 @@ Profiles:
       env : DECK_CENTOS6U3_K3
       command : sh ./build.sh
       release : true
+    - profile:
+      name : xpu_build
+      env : DECK_CENTOS6U3_K3
+      command : env XPU_MEGATRON_OUTPUT=${XPU_MEGATRON_OUTPUT} bash xpu_build.sh
+      reuse_build : true
+      release : true

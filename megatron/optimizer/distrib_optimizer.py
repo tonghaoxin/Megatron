@@ -446,7 +446,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for model_index, model in enumerate(self.models):
             current_param_buffers = {}
             for dtype, grad_buffer in model._grad_buffers.items():
-                if get_accelerator().device_name() == "npu":
+                if get_accelerator().backend_name() == "npu":
                     bufferin = torch.flatten(grad_buffer.data)
                 else:
                     bufferin = grad_buffer.data.storage().untyped()

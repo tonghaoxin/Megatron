@@ -38,7 +38,6 @@ GLM_ARGS="--num-layers $NLAYERS \
           --attention-softmax-in-fp32 \
           --rotary-embedding-2d-to-1d \
           --vocab-size 65024 \
-          
 	        --pad-vocab-size-to 65024 \
           --model-type-custom chatglm2-6b \
           --use-rotary-position-embeddings-with-position-ids \
@@ -100,13 +99,13 @@ TRAINING_ARGS="--train-iters 5000 \
                --init-method-std 1.0 \
                --multi-query-attention \
                --multi-query-group-num 2 \
-	             --rmsnorm-epsilon 1e-05 \
+               --rmsnorm-epsilon 1e-05 \
                --no-bias-dropout-fusion \
                --dataloader-type cyclic \
                --memory-saving \
                --fp16-lm-cross-entropy \
                --fp16
-	       --untie-embeddings-and-output-weights"
+               --untie-embeddings-and-output-weights"
 #   --fp16-lm-cross-entropy \
 #                --fp16 \--use-distributed-optimizer \--no-contiguous-buffers-in-local-ddp\
 ulimit -c 0
@@ -138,10 +137,10 @@ export BKCL_CCIX_BUFFER_GM=1
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
 # python -m xacc.install
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS -m xacc --xacc-end \
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_chatglm2.py \
-        $GLM_ARGS \
-        $TRAINING_ARGS \
-        $OPTIMIZER_ARGS \
-        $OUTPUT_ARGS
+       $GLM_ARGS \
+       $TRAINING_ARGS \
+       $OPTIMIZER_ARGS \
+       $OUTPUT_ARGS

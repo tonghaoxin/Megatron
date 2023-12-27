@@ -5,9 +5,10 @@ TIMESTAMP=$(date +'%Y.%m.%d-%H:%M:%S')
 EXP_NAME=${NAME}-${TIMESTAMP}
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
-DATA_PATH=/megatron_datasets/chatglm2_6b/data/AdvertiseGen
-TOKENIZER_PATH=/megatron_datasets/chatglm2_6b/tokenizer_model/tokenizer.model
-CHECKPOINT_PATH=/megatron_datasets/chatglm2_6b/checkpoints/tp2-pp4-dp1-fp32
+DATA_PATH=/megatron_datasets/chatglm2/data/AdvertiseGen
+TOKENIZER_PATH=/megatron_datasets/chatglm2/tokenizer_model/tokenizer.model
+CHECKPOINT_PATH=/megatron_datasets/chatglm2/checkpoints/megatron_chatglm2_6b_checkpoint_tp2_pp4_fp32/
+
 TENSORBOARD_PATH=./tensorborads/$EXP_NAME
 LOG_PATH=./logs/$EXP_NAME
 
@@ -38,8 +39,7 @@ GLM_ARGS="--num-layers $NLAYERS \
           --attention-softmax-in-fp32 \
           --rotary-embedding-2d-to-1d \
           --vocab-size 65024 \
-          
-	        --pad-vocab-size-to 65024 \
+          --pad-vocab-size-to 65024 \
           --model-type-custom chatglm2-6b \
           --use-rotary-position-embeddings-with-position-ids \
           --seq2seq-data-collator "
@@ -84,7 +84,7 @@ TRAINING_ARGS="--train-iters 5 \
                --micro-batch-size $MICRO_BATCH_SIZE \
                --global-batch-size $GLOBAL_BATCH_SIZE \
                --seq-length $SEQ_LEN \
-               --num-workers 1 \
+               --preprocessing-num-workers 1 \
                --data-path $DATA_PATH \
                --split 949,50,1 \
                --distributed-backend nccl \
@@ -101,11 +101,11 @@ TRAINING_ARGS="--train-iters 5 \
                --init-method-std 1.0 \
                --multi-query-attention \
                --multi-query-group-num 2 \
-	             --rmsnorm-epsilon 1e-05 \
+               --rmsnorm-epsilon 1e-05 \
                --no-bias-dropout-fusion \
                --dataloader-type cyclic \
                --memory-saving \
-	       --untie-embeddings-and-output-weights"
+               --untie-embeddings-and-output-weights"
 #   --fp16-lm-cross-entropy \
 #                --fp16 \--use-distributed-optimizer \--no-contiguous-buffers-in-local-ddp\
 ulimit -c 0
@@ -137,10 +137,14 @@ export BKCL_CCIX_BUFFER_GM=1
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
 # python -m xacc.install
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS -m xacc --xacc-end \
+
+# Disable XFLAGS megatron mock module
+XFLAGS --disable megatron
+
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_chatglm2.py \
-        $GLM_ARGS \
-        $TRAINING_ARGS \
-        $OPTIMIZER_ARGS \
-        $OUTPUT_ARGS
+       $GLM_ARGS \
+       $TRAINING_ARGS \
+       $OPTIMIZER_ARGS \
+       $OUTPUT_ARGS

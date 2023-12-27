@@ -59,7 +59,7 @@ def calc_params_l2_norm(model):
         [params_data],
         False, # no per-parameter norm
         op='l2norm',
-        memory_saving=args().memory_saving
+        memory_saving=args.memory_saving
     )
     norm_2 = norm * norm
     # Sum across all model-parallel GPUs.

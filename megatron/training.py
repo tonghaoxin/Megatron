@@ -99,20 +99,21 @@ def pretrain(train_valid_test_dataset_provider,
     # Set pytorch JIT layer fusion options and warmup JIT functions.
     set_jit_fusion_options()
 
+    args = get_args()
+    timers = get_timers()
+
     # Adjust the startup time so it reflects the largest value.
     # This will be closer to what scheduler will see (outside of
     # image ... launches.
-    global _TRAIN_START_TIME
-    start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
-    torch.distributed.all_reduce(start_time_tensor,
-                                 op=torch.distributed.ReduceOp.MIN)
-    _TRAIN_START_TIME = start_time_tensor.item()
-    print_rank_0('time to initialize megatron (seconds): {:.3f}'.format(
-        time.time() - _TRAIN_START_TIME))
+    if args.init_megatron_time:
+        global _TRAIN_START_TIME
+        start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
+        torch.distributed.all_reduce(start_time_tensor,
+                                     op=torch.distributed.ReduceOp.MIN)
+        _TRAIN_START_TIME = start_time_tensor.item()
+        print_rank_0('time to initialize megatron (seconds): {:.3f}'.format(
+            time.time() - _TRAIN_START_TIME))
     print_datetime('after megatron is initialized')
-
-    args = get_args()
-    timers = get_timers()
 
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup', log_level=0).start(barrier=True)
@@ -993,7 +994,7 @@ def evaluate(forward_step_func,
 
     if args.vision_pretraining and args.vision_pretraining_type == "dino":
         # TODO: check if xpu, npu or other accelerators support torchvision
-        if get_accelerator().device_name() == "cuda":
+        if get_accelerator().backend_name() == "cuda":
             from megatron.model.vision.knn_monitor import compute_feature_bank
             compute_feature_bank(model)
 

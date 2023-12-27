@@ -1,23 +1,27 @@
 #! /bin/bash
+'''
+# Data 数据BOS地址：
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/galactica/data/
+# CheckPoint BOS地址：
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/galactica/checkpoints/megatron_galactica_6.7b_checkpoint_tp1_pp1_dp8_zero1/
+# Hf-Token BOS数据地址：
+bos:/klx-pytorch-work-bd/training/xpytorch/baige_megatron/galactica/tokenizer_model/
+'''
 
 set -x
 
-export IM_XACC_DEVELOPER=1
+export IM_XACC_DEVELOPER=0
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
-#DATA_PATH=/ssd2/datasets/pile_gala7b_test/my-pile_text_document
-DATA_PATH=/data/wuxinxuan/Galactica/pile_galactica_test/pile-galactica_text_document
 
-#CHECKPOINT_PATH=/ssd2/models/megatron_galactica_7b_checkpoint_tp2_pp2
-CHECKPOINT_PATH=/data/wuxinxuan/Galactica/megatron_galactica_6.7b_checkpoint_tp1_pp1_dp8_zero1
-
-#HF_TOKENIZER_PATH=/models/galactica-30b/
-HF_TOKENIZER_PATH=/data/wuxinxuan/Galactica/galactica-hf-config/
+DATA_PATH=/megatron_datasets/galactica/data/pile_galactica_test/pile-galactica_text_document
+CHECKPOINT_PATH=/megatron_datasets/galactica/checkpoints/megatron_galactica_6.7b_checkpoint_tp1_pp1_dp8_zero1
+HF_TOKENIZER_PATH=/megatron_datasets/galactica/tokenizer_model/
 
 # tensorboard
 TENSORBOARD_DIR="/tensorboard/galactica"
 mkdir -p ${TENSORBOARD_DIR}
 
-#export XPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
+export XPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$XPU_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
 # Change for multinode config
@@ -56,6 +60,7 @@ GALACTICA_7B_ARGS="--tensor-model-parallel-size 8 \
                    --weight-decay 0.1 \
                    --adam-eps 1e-08 \
                    --train-iters 500000 \
+                   --exit-interval 2 \
                    --lr-decay-iters 320000 \
                    --lr-decay-style linear \
                    --lr-warmup-fraction .01 \
@@ -63,14 +68,14 @@ GALACTICA_7B_ARGS="--tensor-model-parallel-size 8 \
                    --no-async-tensor-model-parallel-allreduce \
                    --tokenizer-type GalacticaHFTokenizer \
                    --hf-tokenizer-path ${HF_TOKENIZER_PATH} \
-                   --attention-dropout 0.1 \
-                   --hidden-dropout 0.1 \
+                   --attention-dropout 0 \
+                   --hidden-dropout 0 \
                    --embedding-dropout 0 \
                    --use-learned-position-embeddings \
                    --disable-bias-linear \
                    --no-gradient-accumulation-fusion \
                    --no-bias-gelu-fusion \
-                   --no-contiguous-buffers-in-local-ddp"
+                   --no-contiguous-buffers-in-local-ddp "
                    # --sequence-parallel
 
 GALACTICA_30B_ARGS="--tensor-model-parallel-size 2 \
@@ -144,16 +149,16 @@ GALACTICA_120B_ARGS="--tensor-model-parallel-size 4 \
                      # --sequence-parallel
 
 OUTPUT_ARGS="--log-interval 1 \
-             --save-interval 5000000000 \
+             --save-interval 500 \
              --eval-interval 1000 \
              --eval-iters 10"
 
 OTHER_ARGS="--data-path $DATA_PATH \
-            --save $CHECKPOINT_PATH \
             --data-impl mmap \
             --split 949,50,1 \
-            --distributed-backend nccl"
-            #--load $CHECKPOINT_PATH \
+            --distributed-backend nccl \
+            --load $CHECKPOINT_PATH "
+            #--save $CHECKPOINT_PATH "
 
 export XMLIR_F_XPU_ENABLED_BOOL=true
 export ALLREDUCE_ASYNC=false
@@ -181,9 +186,11 @@ export BKCL_TREE_THRESHOLD=1
 # xmlir set L3 size, default 13M
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
+# Disable XFLAGS megatron mock module
+XFLAGS --disable megatron
 
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS -m xacc --xacc-end \
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_galactica.py \
        $GALACTICA_7B_ARGS \
        $OUTPUT_ARGS \
