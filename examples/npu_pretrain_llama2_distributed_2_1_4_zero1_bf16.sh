@@ -28,16 +28,16 @@ MASTER_PORT=${MASTER_PORT:-9999}
 NNODES=${1:-1}
 NODE_RANK=${2:-0}
 
-export INF_NAN_MODE_ENABLE=1
+#export INF_NAN_MODE_ENABLE=1
+#export OMP_NUM_THREADS=96
 export HCCL_CONNECT_TIMEOUT=1200
 export HCCL_INTRA_PCIE_ENABLE=0
 export HCCL_INTRA_ROCE_ENABLE=1
 export HCCL_RDMA_TC=128
 export HCCL_RDMA_SL=4
 export COMBINED_ENABLE=1
-export ASCEND_GLOBAL_LOG_LEVEL=0
-export ASCEND_GLOBAL_EVENT_ENABLE=0
-export OMP_NUM_THREADS=96
+export ASCEND_GLOBAL_LOG_LEVEL=3
+export ASCEND_GLOBAL_EVENT_ENABLE=1
 export HCCL_SOCKET_IFNAME=xgbe0
 
 DISTRIBUTED_ARGS="--nproc_per_node $NPUS_PER_NODE
@@ -58,8 +58,6 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 2 \
                 --seq-length 4096 \
                 --max-position-embeddings 4096 \
                 --pad-vocab-size-to 32000 \
-                --data-path $DATA_PATH \
-                --no-async-tensor-model-parallel-allreduce \
                 --tokenizer-type LLaMASentencePieceTokenizer \
                 --tokenizer-model $TOKENIZER_PATH \
                 --lr 1.25e-5 \
@@ -75,7 +73,6 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 2 \
                 --lr-warmup-fraction 0.01 \
                 --sequence-parallel \
                 --rmsnorm-epsilon 1e-6 \
-                --reset-attention-mask \
                 --activation-func swiglu \
                 --use-distributed-optimizer \
                 --use-rotary-position-embeddings \
@@ -86,14 +83,19 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 2 \
                 --disable-bias-linear \
                 --no-bias-gelu-fusion \
                 --no-position-embedding \
-                --recompute-activations \
+                --no-masked-softmax-fusion \
+                --attention-softmax-in-fp32 \
+                --no-query-key-layer-scaling \
+                --apply-rotary-positional-embedding-kernel \
+                --use-flash-attn \
                 --bf16"
+                #--reset-attention-mask \
+                #--recompute-activations \
                 #--no-gradient-accumulation-fusion \
-                #--apply-rotary-positional-embedding-kernel
-                #--use-flash-attn \
                 #--fused-rmsnorm \
                 #--mlp-layer-fusion \
                 #--make-vocab-size-divisible-by 128 \
+                #--no-async-tensor-model-parallel-allreduce \
 
 OUTPUT_ARGS="--log-interval 1 \
              --save-interval 50000 \
@@ -101,11 +103,11 @@ OUTPUT_ARGS="--log-interval 1 \
              --eval-iters 0"
 
 OTHER_ARGS="--data-path $DATA_PATH \
-            --data-impl mmap \
-            --split 1000,0,0 \
+            --split 100,0,0 \
             --DDP-impl local \
             --load $CHECKPOINT_LOAD_PATH \
             --distributed-backend nccl"
+            #--data-impl mmap \
             #--save $CHECKPOINT_SAVE_PATH \
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \

@@ -223,17 +223,6 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 # --bf16
                 # --fused-rmsnorm \
 
-#OUTPUT_ARGS="--log-interval 10 \
-#             --save-interval 10000 \
-#             --eval-interval 1000 \
-#             --eval-iters 10"
-
-#OTHER_ARGS="--save $CHECKPOINT_PATH \
-#            --load $CHECKPOINT_PATH \
-#            --data-path $DATA_PATH \
-#            --data-impl mmap \
-#            --split 949,50,1 \
-#            --distributed-backend nccl"
 
 OUTPUT_ARGS="--log-interval 1 \
              --save-interval 10000 \

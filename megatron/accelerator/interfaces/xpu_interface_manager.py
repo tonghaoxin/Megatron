@@ -6,6 +6,7 @@
 
 import inspect
 import torch
+import os
 
 from functools import wraps
 from .abstract_interface_manager import MegatronInterfaceManager
@@ -81,6 +82,7 @@ class CustomFCWrapper(object):
         self.findmax = findmax
         self.fc_fusion = fc_fusion
         self.linear = linear
+        self.gemm_type = os.getenv("XDNN_FC_GEMM_DTYPE")
 
     def __call__(self, *args, **kwargs):
         """__call__"""
@@ -91,10 +93,13 @@ class CustomFCWrapper(object):
         if kwargs.get('findmax_opt', False):
             device = total_input.device
             if kwargs.get('is_forward', False):
-                input_max = torch.empty((64), dtype=torch.float, device=device)
-                self.findmax(total_input, max=input_max)
-                weight_max = torch.empty((64), dtype=torch.float, device=device)
-                self.findmax(weight, max=weight_max)
+                if self.gemm_type == "float32":
+                    input_max, weight_max = None, None
+                else:
+                    input_max = torch.empty((64), dtype=torch.float, device=device)
+                    self.findmax(total_input, max=input_max)
+                    weight_max = torch.empty((64), dtype=torch.float, device=device)
+                    self.findmax(weight, max=weight_max)
                 ctx.input_max = input_max
                 ctx.weight_max = weight_max
                 output = total_input.new_empty(total_input.shape[0], total_input.shape[1], weight.shape[0])
@@ -107,8 +112,11 @@ class CustomFCWrapper(object):
                     out=output
                 )
             else: # Backward
-                grad_output_max = torch.empty((64), dtype=torch.float, device=device)
-                self.findmax(total_input, max=grad_output_max)
+                if self.gemm_type == "float32":
+                    grad_output_max = None
+                else:
+                    grad_output_max = torch.empty((64), dtype=torch.float, device=device)
+                    self.findmax(total_input, max=grad_output_max)
                 ctx.grad_output_max = grad_output_max
                 output = total_input.new_empty(total_input.shape[:-1] + (weight.shape[-1],))
                 # dims compression for mat1 and mat2 dims not same

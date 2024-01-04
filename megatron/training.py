@@ -44,7 +44,6 @@ from megatron.data.data_samplers import build_pretraining_data_loader
 from megatron.utils import calc_params_l2_norm
 from megatron.core.pipeline_parallel import get_forward_backward_func
 from megatron.utils import report_memory
-from megatron.model.vision.knn_monitor import compute_feature_bank
 from megatron.optimizer.memory_tracer.memory_monitor import SyncCudaMemoryMonitor
 from megatron.optimizer.memory_tracer.memory_stats import MemoryType
 from megatron.accelerator import get_accelerator
