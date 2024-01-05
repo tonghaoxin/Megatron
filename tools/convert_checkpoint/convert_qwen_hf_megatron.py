@@ -507,6 +507,9 @@ def convert_checkpoint_from_transformers_to_megatron(args):
         print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
         exit(1)
 
+    config = GPT2Config.from_pretrained(args.load_path)
+    config.use_cache_quantization = False
+
     # load the transformers model state dict and config
     sub_dirs = [x for x in os.listdir(args.load_path) if x.startswith("pytorch_model") or x.endswith("safetensors") ]
     if len(sub_dirs) == 1:
@@ -515,12 +518,11 @@ def convert_checkpoint_from_transformers_to_megatron(args):
     else:
         if args.model_name == "qwen-7b" or args.model_name == "qwen-14b" or args.model_name == "qwen-72b":
             from transformers import AutoModelForCausalLM
-            hf_state_dict = AutoModelForCausalLM.from_pretrained(args.load_path, trust_remote_code=True).state_dict()
+            hf_state_dict = AutoModelForCausalLM.from_pretrained(
+                args.load_path, config=config, trust_remote_code=True).state_dict()
         else:
             print("Unrecognized model name, choose from qwen-7b, qwen-14b, qwen-72b!")
             exit(1)
-
-    config = GPT2Config.from_pretrained(args.load_path)
 
     internal_state_dict = {}
 

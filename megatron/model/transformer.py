@@ -506,7 +506,6 @@ class ParallelAttention(MegatronModule):
 
             self.rotary_emb = RotaryEmbeddingWithPositionIds(
                 self.hidden_size_per_attention_head // (2 if self.rotary_embedding_2d or self.rotary_embedding_2d_to_1d else 1),
-                base=10000,
                 precision=args.params_dtype,
                 learnable=args.learnable_rotary_embedding,
                 seq_len_interpolation_factor=args.rotary_seq_len_interpolation_factor)

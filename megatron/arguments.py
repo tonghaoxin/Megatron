@@ -149,9 +149,6 @@ def validate_args(args, defaults={}):
                             args.pipeline_model_parallel_size)
 
     # Deprecated arguments
-    if args.timing_log_level > 0:
-        if args.rank == 0:
-            print('WARNING: --timing-log-level will be deprecated, use --detail-log-interval instead')
     assert args.batch_size is None, '--batch-size argument is no longer ' \
         'valid, use --micro-batch-size instead'
     del args.batch_size
@@ -547,6 +544,20 @@ def validate_args(args, defaults={}):
     if args.apply_rotary_positional_embedding_kernel:
         assert not args.learnable_rotary_embedding, \
                 'RoPE embedding kernel is not compatible with learnable RoPE'
+
+    # check tensorboard env for baige
+    args.log_timers_to_tensorboard_interval = args.tensorboard_log_interval
+
+    _tensorboard_baige = os.getenv('TENSORBOARD_DIR', None)
+    if _tensorboard_baige is not None and _tensorboard_baige != "":
+        if args.tensorboard_dir is None or not args.log_timers_to_tensorboard:
+            if args.timing_log_level > 0 or args.log_detail:
+                args.log_timers_to_tensorboard = True
+                args.log_timers_to_tensorboard_interval = args.detail_log_interval \
+                    if args.timing_log_level < 1  else args.log_interval
+
+                if args.tensorboard_dir is None:
+                    args.tensorboard_dir = _tensorboard_baige
 
     # Print arguments.
     _print_args("arguments", args)
@@ -1124,6 +1135,9 @@ def _add_training_args(parser):
     group.add_argument('--cpu-adam-threads', type=int, default=1,
                        help='Use multi-threads for cpu adam, now only used when cpu-offload is enable.'
                        'Adjust the parameter from 1 to 2 or more, may improve performance in some cases.')
+
+    group.add_argument('--rotary-emb-base', type=int, default=10000,
+                       help='Rotary emb base used in RotaryEmbedding.')
     return parser
 
 

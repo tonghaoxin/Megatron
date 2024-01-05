@@ -11,6 +11,7 @@ import torch
 from torch import einsum, nn
 import torch.nn.functional as F
 from megatron.accelerator import get_accelerator
+from megatron import get_args
 
 custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
 custom_apply_rope_with_freqs = None
@@ -42,12 +43,12 @@ class RotaryEmbedding(nn.Module):
     """
     Original RotaryEmbedding
     """
-
     def __init__(self, dim, seq_len_interpolation_factor=1):
         """__init__"""
         super().__init__()
+        args = get_args()
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
-        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+        inv_freq = 1.0 / (args.rotary_emb_base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer('inv_freq', inv_freq)
         if importlib.util.find_spec('einops') is None:
             raise RuntimeError("einops is required for Rotary Embedding")
@@ -78,8 +79,7 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
     """
     RotaryEmbedding with position ids
     """
-
-    def __init__(self, dim, base=10000, precision=torch.half, learnable=False, seq_len_interpolation_factor=1):
+    def __init__(self, dim, precision=torch.half, learnable=False, seq_len_interpolation_factor=1):
         """
         __init__ function
         Args:
@@ -90,7 +90,8 @@ class RotaryEmbeddingWithPositionIds(nn.Module):
         Return:
         """
         super().__init__()
-        inv_freq = 1. / (base ** (torch.arange(0, dim, 2).float() / dim))
+        args = get_args()
+        inv_freq = 1. / (args.rotary_emb_base ** (torch.arange(0, dim, 2).float() / dim))
         self.learnable = learnable
         if learnable:
             self.inv_freq = torch.nn.Parameter(inv_freq)
@@ -141,7 +142,8 @@ class ComplexRotaryEmbedding(nn.Module):
     def __init__(self, dim):
         """__init__"""
         super().__init__()
-        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+        args = get_args()
+        inv_freq = 1.0 / (args.rotary_emb_base ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
         self.register_buffer('inv_freq', inv_freq)
         if importlib.util.find_spec('einops') is None:
             raise RuntimeError("einops is required for Rotary Embedding")
@@ -213,7 +215,7 @@ def apply_rotary_pos_emb_index_fused(q, k, cos, sin, position_id):
     return q, k
 
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     """reshape_for_broadcast"""
     ndim = x.ndim
     assert 0 <= 1 < ndim
@@ -225,6 +227,6 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
 def apply_complex_rotary_pos_emb(t, freqs):
     """apply_complex_rotary_pos_emb"""
     t_ = torch.view_as_complex(t.float().reshape(*t.shape[:-1], -1, 2))
-    freqs = reshape_for_broadcast(freqs, t_)
+    freqs = _reshape_for_broadcast(freqs, t_)
     t_out = torch.view_as_real(t_ * freqs).flatten(3)
     return t_out.type_as(t)

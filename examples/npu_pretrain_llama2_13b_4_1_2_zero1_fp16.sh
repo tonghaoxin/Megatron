@@ -46,53 +46,53 @@ DISTRIBUTED_ARGS="--nproc_per_node $NPUS_PER_NODE
                   --master_addr $MASTER_ADDR
                   --master_port $MASTER_PORT"
 
-LLAMA2_7B_ARGS="--tensor-model-parallel-size 2 \
-                --pipeline-model-parallel-size 1 \
-                --num-layers 32 \
-                --hidden-size 4096 \
-                --ffn-hidden-size 11008 \
-                --num-attention-heads 32 \
-                --init-method-std 0.01 \
-                --micro-batch-size 1 \
-                --global-batch-size 8 \
-                --seq-length 4096 \
-                --max-position-embeddings 4096 \
-                --pad-vocab-size-to 32000 \
-                --tokenizer-type LLaMASentencePieceTokenizer \
-                --tokenizer-model $TOKENIZER_PATH \
-                --lr 1.25e-5 \
-                --min-lr 1.25e-6 \
-                --lr-decay-style cosine \
-                --weight-decay 1e-1 \
-                --clip-grad 1.0 \
-                --initial-loss-scale 16 \
-                --adam-beta1 0.9 \
-                --adam-beta2 0.95 \
-                --train-iters 50000 \
-                --lr-decay-iters 320000 \
-                --lr-warmup-fraction 0.01 \
-                --sequence-parallel \
-                --rmsnorm-epsilon 1e-6 \
-                --activation-func swiglu \
-                --use-distributed-optimizer \
-                --use-rotary-position-embeddings \
-                --untie-embeddings-and-output-weights \
-                --attention-dropout 0 \
-                --hidden-dropout 0 \
-                --embedding-dropout 0 \
-                --disable-bias-linear \
-                --no-bias-gelu-fusion \
-                --no-position-embedding \
-                --no-masked-softmax-fusion \
-                --attention-softmax-in-fp32 \
-                --no-query-key-layer-scaling \
-                --apply-rotary-positional-embedding-kernel \
-                --use-flash-attn \
-                --bf16"
+LLAMA2_13B_ARGS="--tensor-model-parallel-size 4 \
+                 --pipeline-model-parallel-size 1 \
+		 --num-layers 40 \
+                 --hidden-size 5120 \
+                 --ffn-hidden-size 13824 \
+                 --num-attention-heads 40 \
+                 --init-method-std 0.01 \
+                 --micro-batch-size 1 \
+                 --global-batch-size 128 \
+                 --seq-length 4096 \
+                 --max-position-embeddings 4096 \
+                 --pad-vocab-size-to 32000 \
+                 --tokenizer-type LLaMASentencePieceTokenizer \
+                 --tokenizer-model $TOKENIZER_PATH \
+		 --lr 1.5e-4 \
+                 --min-lr 1.5e-5 \
+                 --lr-decay-style cosine \
+                 --weight-decay 1e-2 \
+                 --clip-grad 1.0 \
+                 --initial-loss-scale 16 \
+                 --adam-beta1 0.9 \
+                 --adam-beta2 0.95 \
+                 --train-iters 50000 \
+                 --lr-decay-iters 320000 \
+                 --lr-warmup-fraction 0.01 \
+                 --sequence-parallel \
+                 --rmsnorm-epsilon 1e-6 \
+                 --activation-func swiglu \
+                 --use-distributed-optimizer \
+                 --use-rotary-position-embeddings \
+                 --untie-embeddings-and-output-weights \
+                 --attention-dropout 0 \
+                 --hidden-dropout 0 \
+                 --embedding-dropout 0 \
+                 --disable-bias-linear \
+                 --no-bias-gelu-fusion \
+                 --no-position-embedding \
+                 --no-masked-softmax-fusion \
+                 --attention-softmax-in-fp32 \
+                 --no-query-key-layer-scaling \
+                 --apply-rotary-positional-embedding-kernel \
+                 --use-flash-attn \
+                 --fused-rmsnorm \
+                 --fp16"
                 #--reset-attention-mask \
                 #--recompute-activations \
                 #--no-gradient-accumulation-fusion \
-                #--fused-rmsnorm \
                 #--mlp-layer-fusion \
                 #--make-vocab-size-divisible-by 128 \
                 #--no-async-tensor-model-parallel-allreduce \
@@ -105,14 +105,14 @@ OUTPUT_ARGS="--log-interval 1 \
 OTHER_ARGS="--data-path $DATA_PATH \
             --split 100,0,0 \
             --DDP-impl local \
-            --load $CHECKPOINT_LOAD_PATH \
             --distributed-backend nccl"
             #--data-impl mmap \
             #--save $CHECKPOINT_SAVE_PATH \
+            #--load $CHECKPOINT_LOAD_PATH \
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
-       $LLAMA2_7B_ARGS \
+       $LLAMA2_13B_ARGS \
        $OUTPUT_ARGS \
        $OTHER_ARGS

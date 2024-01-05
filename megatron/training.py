@@ -631,9 +631,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     # Tensorboard values.
     # Timer requires all the ranks to call.
     if args.log_timers_to_tensorboard and \
-       (iteration % args.tensorboard_log_interval == 0):
+       (iteration % args.log_timers_to_tensorboard_interval == 0):
         timers.write(timers_to_log, writer, iteration,
                      normalizer=total_iterations)
+
     if writer and (iteration % args.tensorboard_log_interval == 0):
         if args.log_learning_rate_to_tensorboard:
             writer.add_scalar('learning-rate', learning_rate, iteration)
