@@ -1,11 +1,12 @@
 """
     HybridAdam used for cpu adam and gpu adam
 """
+import pathlib
+import os
 import torch
 from megatron import get_args
 from cpuinfo import get_cpu_info
 from apex.multi_tensor_apply import multi_tensor_applier
-from megatron.hybrid_adam.builder.cpu_adam_builder import CPUAdamBuilder
 
 class HybridAdam(torch.optim.Optimizer):
     """
@@ -48,7 +49,16 @@ class HybridAdam(torch.optim.Optimizer):
         self.cpu_have_optmizer = False
         self.cuda_have_optmizer = False
         
-        self.ds_opt_adam = CPUAdamBuilder().load()
+        load_dir = pathlib.Path(__file__).parent.absolute()
+        buildpath = load_dir / 'builder'
+        library_path = load_dir / 'cpu_adam.so'
+
+        if os.path.exists(buildpath):
+            from megatron.hybrid_adam.builder.cpu_adam_builder import CPUAdamBuilder
+            self.ds_opt_adam = CPUAdamBuilder().load()
+        else:
+            from . import cpu_adam
+            self.ds_opt_adam = cpu_adam
 
         self.ds_opt_adam.create_adam(self.opt_id, lr, betas[0], betas[1], eps, weight_decay, adamw_mode,
                                      False) 

@@ -1,18 +1,8 @@
 """ llama train step class. """
 import torch
 from functools import partial
-from megatron import (
-    get_args,
-    get_timers,
-    get_tensorboard_writer,
-)
-from megatron.core import tensor_parallel
-from transformers.modeling_outputs import (
-    Seq2SeqLMOutput,
-)
-from megatron.utils import (
-    average_losses_across_data_parallel_group,
-)
+from megatron import get_timers
+from megatron import pretrain_llama
 from .abstract_train_step import AbstractTrainStep
 
 class LlamaTrainStep(AbstractTrainStep):
@@ -28,9 +18,8 @@ class LlamaTrainStep(AbstractTrainStep):
         self.get_batch = self.get_batch_func(args.megatron_dataset_flag)
         self.loss_func = self.get_loss_func()
         self.forward_step = self.get_forward_step_func()
-        if not args.model_return_dict:
-            self.model_output_class = None
-        else:
+        if args.model_return_dict:
+            from transformers.modeling_outputs import Seq2SeqLMOutput
             self.model_output_class = Seq2SeqLMOutput
 
     def get_batch_func(self, megatron_dataset_flag):
@@ -60,21 +49,13 @@ class LlamaTrainStep(AbstractTrainStep):
             loss_mask[:, -1] = 0
             return [input_ids, labels, loss_mask, attention_mask, position_ids]
 
-        return get_batch
+        if megatron_dataset_flag:
+            return pretrain_llama.get_batch
+        else:
+            return get_batch
 
     def get_loss_func(self):
-        def loss_func(loss_mask, output_tensor):
-            """Loss func."""
-            # print(f"output_tensor {output_tensor}")
-            losses = output_tensor.float()
-            loss_mask = loss_mask.view(-1).float()
-            loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()
-
-            # Reduce loss for logging.
-            averaged_loss = average_losses_across_data_parallel_group([loss])
-
-            return loss, {'lm loss': averaged_loss[0]}
-        return loss_func
+        return pretrain_llama.loss_func
 
     def get_forward_step_func(self):
         def forward_step(data_iterator, model):

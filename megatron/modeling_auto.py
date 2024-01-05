@@ -3,27 +3,31 @@
 """ auto model """
 
 import importlib
-from .training import setup_model_and_optimizer
-from .core.enums import ModelType
-
+from .training import get_model
 
 MODEL_MAPPING = {
     "llama": {
         "model_class": "LLaMAModel",
-        "model_type": ModelType.encoder_or_decoder,
+        "pretrain_class": "pretrain_llama",
         "train_step_class": "LlamaTrainStep",
         "train_step_kwargs": {}
     },
     "glm": {
         "model_class": "GLMModel",
-        "model_type": ModelType.encoder_or_decoder,
+        "pretrain_class": "pretrain_glm",
         "train_step_class": "GLMTrainStep",
         "train_step_kwargs": {}
     },
     "chatglm": {
         "model_class": "GLMModel",
-        "model_type": ModelType.encoder_or_decoder,
+        "pretrain_class": "pretrain_chatglm",
         "train_step_class": "ChatGLMTrainStep",
+        "train_step_kwargs": {}
+    },
+    "qwen": {
+        "model_class": "QwenModel",
+        "pretrain_class": "pretrain_qwen",
+        "train_step_class": "QWenTrainStep",
         "train_step_kwargs": {}
     }
 }
@@ -54,16 +58,8 @@ class AutoModel:
     @classmethod
     def from_pretrained(cls, model_name, *model_args, **kwargs):
         """ from_pretrained """
-        need_scheduler = kwargs.pop('need_scheduler', True)
-        if model_name in cls._model_mapping.keys():
-            model_class = cls._model_mapping[model_name]["model_class"]
-            model_type = cls._model_mapping[model_name]["model_type"]
-            Model = getattr(importlib.import_module("megatron.model"), model_class)
-            model_provider_func = get_model_provider_func(Model)
-            return setup_model_and_optimizer(model_provider_func, model_type, need_scheduler=need_scheduler)
-        raise ValueError(
-            f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping.keys())}."
-        )
+        get_model, model_provider = cls.get_model_provider(model_name)
+        return get_model(model_provider)
 
     @classmethod
     def get_train_step(cls, model_name):
@@ -73,5 +69,57 @@ class AutoModel:
             train_step_kwargs = cls._model_mapping[model_name]["train_step_kwargs"]
             return getattr(importlib.import_module("megatron.train"), train_step_class), train_step_kwargs
         raise ValueError(
-            f"Model type should be one of {', '.join(c.__name__ for c in cls._model_mapping.keys())}."
+            f"Model type should be one of {', '.join(cls._model_mapping.keys())}."
         )
+
+    @classmethod
+    def get_model_provider(cls, model_name):
+        """ get model p """
+        if model_name in cls._model_mapping.keys():
+            pretrain = cls._model_mapping[model_name]["pretrain_class"]
+            model_provider = getattr(importlib.import_module(f"megatron.{pretrain}"), "model_provider")
+            return get_model, model_provider
+        raise ValueError(
+            f"Model type should be one of {', '.join(cls._model_mapping.keys())}."
+        )
+
+    @classmethod
+    def get_num_layers(cls, config):
+        """ num layers """
+        for k in ["num_hidden_layers", "num_layers"]:
+            if hasattr(config, k):
+                return getattr(config, k)
+        raise ValueError(f"Unknown config {config}")
+
+    @classmethod
+    def get_hidden_size(cls, config):
+        """ hidden size """
+        for k in ["hidden_size"]:
+            if hasattr(config, k):
+                return getattr(config, k)
+        raise ValueError(f"Unknown config {config}")
+
+    @classmethod
+    def get_num_attention_heads(cls, config):
+        """" num attention heads """
+        for k in ["num_attention_heads"]:
+            if hasattr(config, k):
+                return getattr(config, k)
+        raise ValueError(f"Unknown config {config}")
+
+    @classmethod
+    def get_max_position_embeddings(cls, config):
+        """ max position embeddings """
+        for k in ["max_position_embeddings"]:
+            if hasattr(config, k):
+                return getattr(config, k)
+        return None
+
+    @classmethod
+    def get_vocab_size(cls, config):
+        """ vocab size """
+        for k in ["vocab_size"]:
+            if hasattr(config, k):
+                return getattr(config, k)
+        raise ValueError(f"Unknown config {config}")
+

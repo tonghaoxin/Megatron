@@ -73,21 +73,39 @@ function download_megatron_binary_compile() {
     # 替换 data 下的 helpers.cpython-38-x86_64-linux-gnu.so 二进制
     cp ${CURRENT_DIR}/${compile_folder_name}/helpers.cpython-*.so /workspace/Megatron-LM/megatron/data/
 
+    # 删除hybrid_adam目录下的builder和csrc源码，安装cpu_adam.so
+    rm -rf /workspace/Megatron-LM/megatron/hybrid_adam/builder
+    rm -rf /workspace/Megatron-LM/megatron/hybrid_adam/csrc
+    cp ${CURRENT_DIR}/${compile_folder_name}/cpu_adam.so /workspace/Megatron-LM/megatron/hybrid_adam/
+
     rm -rf ${CURRENT_DIR}/${compile_folder_name}.tar.gz ${CURRENT_DIR}/${compile_folder_name}
+}
+
+function encrypt_code() {
+    cd  /workspace/Megatron-LM
+    cp tools/cython_setup.py ./
+    python cython_setup.py build
+    rm -rf cython_setup.py tools/cython_setup.py
 }
 
 # 参数1：编译GPU环境, h800/a800
 # 参数2：是否替换二进制
+# 参数3：是否对代码加密
 COMPILE_ENV=$1
 BINARY_REPLACE=$2
+ENCRYPT_FLAG=$3
 
-if  [[ "$BINARY_REPLACE" == "true" ]];then
-    download_megatron_binary_compile $COMPILE_ENV
-elif  [[ "$BINARY_REPLACE" == "all" ]];then
-    install_base_env
-    download_megatron_binary_compile $COMPILE_ENV
+if  [[ "$ENCRYPT_FLAG" == "true" ]];then
+    encrypt_code
 else
-    install_base_env
+    if  [[ "$BINARY_REPLACE" == "true" ]];then
+        download_megatron_binary_compile $COMPILE_ENV
+    elif  [[ "$BINARY_REPLACE" == "all" ]];then
+        install_base_env
+        download_megatron_binary_compile $COMPILE_ENV
+    else
+        install_base_env
+    fi
 fi
 
 # 清理无用文件

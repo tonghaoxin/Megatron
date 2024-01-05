@@ -14,3 +14,4 @@ from .glm_model import GLMModel
 from .bloom_model import BLOOMModel
 from .language_model import get_language_model
 from .module import Float16Module
+from .qwen_model import QwenModel

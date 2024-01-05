@@ -65,6 +65,7 @@ bash ipipe_start.sh
 # kubeconfig_path: kubeconfig 所在路径# gpu_resource: 资源描述符，比如：baidu.com/a100_80g_cgpu
 # TRAIN_DATA_DIR: 模型依赖文件存在 pfs 上的根目录, 比如: /mnt/pfs/leoli
 # IMAGE: 创建 PytorchJob 训练任务使用的镜像地址, 比如: registry.baidubce.com/hac_test/aiak-megatron:dev_20231010_144223
+# specific_model_name: 运行训练的指定模型
 # TIMEOUT: 容器所有任务等待最大时间, 比如: 1800 秒
 ```
 
@@ -82,11 +83,41 @@ bash ipipe_start.sh
 
 ![image](https://rte.weiyun.baidu.com/wiki/attach/image/api/imageDownloadAddress?attachId=6d373531ce934b2c89cbb6af468c4e64&docGuid=PGdfhJcYjkpGPM&sign=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwiYXBwSWQiOjEsInVpZCI6ImpkZlp6NWJnSU4iLCJkb2NJZCI6Im1ERWxZdlZ2b2dCb2lxIn0..E-0GFNmcME5RnfMW.3CuGealFU0lz3vuVE2Y1B8KfLo3y67UZuTWa6NWfF7hvsgcOoKY8n6dZIzJyigKIc9pHSEjRowvana-Oz4Ra1GLeyUJ3v6Z-07_g4rOh3S44R5irXQxLF58el5bolUBdAZUSS4PpaZc7HnRx8VQH7HB8FXMbQrvIG3Z9a5E5x7WcJDTcSjWSPgPfAaWicRd2y72ts3Zo8HENPr8gDmewtMXDRg.UE59kEFxjU5LDzQio7kBdg)
 
-### 2.2 容器内运行
+### 2.2 开发机提交本地代码训练任务
+
+作用：开发机上通过本地代码提交CCE任务，运行指定模型训练任务
+
+1. 步骤一、将本地代码构建新镜像
+
+```
+cd ci/gpu/scripts
+bash docker/docker_build.sh
+```
+
+2. 步骤二、获取新的镜像地址运行训练任务
+
+`修改 ipipe_start.sh 脚本 IMAGE 参数以及 specific_model_name 参数`
+
+```
+bash ipipe_start.sh
+
+# 参数说明：
+# case_type: 测试类型, test_function | test_perf 分别为功能/性能测试
+# kubectl_path: kubectl 所在路径
+# kubectl_view_allocations_path: kubectl_view_allocations 所在路径
+# kubeconfig_path: kubeconfig 所在路径# gpu_resource: 资源描述符，比如：baidu.com/a100_80g_cgpu
+# TRAIN_DATA_DIR: 模型依赖文件存在 pfs 上的根目录, 比如: /mnt/pfs/leoli
+# IMAGE: 创建 PytorchJob 训练任务使用的镜像地址, 比如: registry.baidubce.com/hac_test/aiak-megatron:dev_20231010_144223
+# specific_model_name: 运行训练的指定模型
+# TIMEOUT: 容器所有任务等待最大时间, 比如: 1800 秒
+```
+
+### 2.3 容器内运行
 
 作用：已有的容器或手动进入K8S Pod 后调试任务
 
 ```
+# 修改 local_start.sh 脚本参数
 bash local_start.sh
 
 # 参数说明：

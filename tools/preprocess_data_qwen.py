@@ -1,0 +1,227 @@
+# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+
+"""Processing data for pretraining."""
+
+import argparse
+import json
+import multiprocessing
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                             os.path.pardir)))
+import time
+from threading import Semaphore
+
+import torch
+try:
+    import nltk
+    nltk_available = True
+except ImportError:
+    nltk_available = False
+
+import lm_dataformat as lmd
+from megatron.tokenizer import build_tokenizer
+from megatron.data import indexed_dataset
+
+
+# https://stackoverflow.com/questions/33139531/preserve-empty-lines-with-nltks-punkt-tokenizer
+class CustomLanguageVars(nltk.tokenize.punkt.PunktLanguageVars):
+
+    _period_context_fmt = r"""
+        \S*                          # some word material
+        %(SentEndChars)s             # a potential sentence ending
+        \s*                       #  <-- THIS is what I changed
+        (?=(?P<after_tok>
+            %(NonWord)s              # either other punctuation
+            |
+            (?P<next_tok>\S+)     #  <-- Normally you would have \s+ here
+        ))"""
+
+class IdentitySplitter(object):
+    def tokenize(self, *text):
+        return text
+
+class Encoder(object):
+    def __init__(self, args):
+        self.args = args
+
+    def initializer(self):
+        # Use Encoder class as a container for global data
+        Encoder.tokenizer = build_tokenizer(self.args)
+        if self.args.split_sentences:
+            if not nltk_available:
+                print("NLTK is not available to split sentences.")
+                exit()
+            library = "tokenizers/punkt/{}.pickle".format(self.args.lang)
+            print("loading: " + library)
+            splitter = nltk.load(library)
+            if self.args.keep_newlines:
+                # this prevents punkt from eating newlines after sentences
+                Encoder.splitter = nltk.tokenize.punkt.PunktSentenceTokenizer(
+                    train_text=splitter._params,
+                    lang_vars=CustomLanguageVars())
+            else:
+                Encoder.splitter = splitter
+
+        else:
+            Encoder.splitter = IdentitySplitter()
+
+    def encode(self, text):
+        ids = {}
+        for key in self.args.json_keys:
+            doc_ids = []
+            text_ids = Encoder.tokenizer(text)['input_ids']
+            if len(text_ids) > 0:
+                doc_ids.append(text_ids)
+            if self.args.append_eod:
+                doc_ids[-1].append(Encoder.tokenizer.eod_id)
+            ids[key] = doc_ids
+        return ids, len(text)
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    group = parser.add_argument_group(title='input data')
+    group.add_argument('--input', type=str, required=True,
+                       help='Path to input JSON')
+    group.add_argument('--json-keys', nargs='+', default=['text'],
+                       help='space separate listed of keys to extract from json')
+    group.add_argument('--split-sentences', action='store_true',
+                       help='Split documents into sentences.')
+    group.add_argument('--keep-newlines', action='store_true',
+                       help='Keep newlines between sentences when splitting.')
+
+    group = parser.add_argument_group(title='tokenizer')
+    group.add_argument('--tokenizer-type', type=str, required=True,
+                       choices=['QwenTokenizer'],
+                       help='What type of tokenizer to use.')
+    group.add_argument('--vocab-file', type=str, default=None,
+                       help='Path to the vocab file')
+    group.add_argument('--merge-file', type=str, default=None,
+                       help='Path to the BPE merge file (if necessary).')
+    group.add_argument('--append-eod', action='store_true',
+                       help='Append an <eod> token to the end of a document.')
+    group.add_argument('--lang', type=str, default='english',
+                       help='Language to use for NLTK-powered sentence splitting.')
+    group.add_argument('--tokenizer-model', type=str, default=None,
+                       help='sentencepeice tokenizer model.')
+    group.add_argument('--vocab-size', default=786,
+                       help='size of vocab for use with NullTokenizer')
+    group.add_argument('--hf-tokenizer-path', type=str, default=None,
+                       help='HuggingFace tokenizer path: '
+                       '1) A string, the *model id* of a predefined tokenizer '
+                       'hosted inside a model repo on huggingface.co'
+                       '2) A path to a *directory* containing vocabulary '
+                       'files required by the tokenizer')
+
+    group = parser.add_argument_group(title='output data')
+    group.add_argument('--output-prefix', type=str, required=True,
+                       help='Path to binary output file without suffix')
+    group.add_argument('--dataset-impl', type=str, default='mmap',
+                       choices=['lazy', 'cached', 'mmap'])
+
+    group = parser.add_argument_group(title='runtime')
+    group.add_argument('--workers', type=int, required=True,
+                       help='Number of worker processes to launch')
+    group.add_argument('--chunk-size', type=int, required=True,
+                       help='Chunk size assigned to each worker process')
+    group.add_argument('--log-interval', type=int, default=100,
+                       help='Interval between progress updates')
+    group.add_argument('--seq-length', type=int, default=None,
+                       help='Maximum sequence length to process.')
+    args = parser.parse_args()
+    args.keep_empty = False
+
+    if args.tokenizer_type.lower().startswith('bert'):
+        if not args.split_sentences:
+            print("Bert tokenizer detected, are you sure you don't want to split sentences?")
+
+    # some default/dummy values for the tokenizer
+    args.rank = 0
+    args.make_vocab_size_divisible_by = 128
+    args.tensor_model_parallel_size = 1
+    args.vocab_extra_ids = 0
+    args.pad_vocab_size_to = None
+
+    return args
+
+def yield_from_files(fnames: list, semaphore):
+    def yielder(fname, semaphore):
+        for f in filter(lambda x: x, lmd.Reader(fname).stream_data()):
+            semaphore.acquire()
+            yield f
+
+    for fname in fnames:
+        semaphore.acquire()
+
+        yield from yielder(fname, semaphore)
+
+def main():
+    args = get_args()
+    startup_start = time.time()
+
+    print("Opening", args.input)
+
+    semaphore = Semaphore(10000 + args.workers)
+    if os.path.isdir(args.input):
+        file_list = os.listdir(args.input)
+        path_list = [os.path.join(args.input, file) for file in file_list]
+        fin = yield_from_files(path_list, semaphore)
+    else:
+        fin = yield_from_files([args.input], semaphore)
+    encoder = Encoder(args)
+
+    if nltk_available and args.split_sentences:
+        nltk.download("punkt", quiet=True)
+
+    tokenizer = build_tokenizer(args)
+    pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
+    encoded_docs = pool.imap(encoder.encode, fin, args.chunk_size)
+    #encoded_docs = map(encoder.encode, fin)
+
+    level = "document"
+    if args.split_sentences:
+        level = "sentence"
+
+    print(f"Vocab size: {tokenizer.vocab_size}")
+    print(f"Output prefix: {args.output_prefix}")
+    output_bin_files = {}
+    output_idx_files = {}
+    builders = {}
+    for key in args.json_keys:
+        output_bin_files[key] = "{}_{}_{}.bin".format(args.output_prefix,
+                                                      key, level)
+        output_idx_files[key] = "{}_{}_{}.idx".format(args.output_prefix,
+                                                      key, level)
+        builders[key] = indexed_dataset.make_builder(output_bin_files[key],
+                                               impl=args.dataset_impl,
+                                               vocab_size=tokenizer.vocab_size)
+
+    startup_end = time.time()
+    proc_start = time.time()
+    total_bytes_processed = 0
+    print("Time to startup:", startup_end - startup_start)
+
+    for i, (doc, bytes_processed) in enumerate(encoded_docs, start=1):
+        total_bytes_processed += bytes_processed
+        semaphore.release()
+        for key, sentences in doc.items():
+            if len(sentences) == 0:
+                continue
+            for sentence in sentences:
+                builders[key].add_item(torch.IntTensor(sentence))
+            builders[key].end_document()
+        if i % args.log_interval == 0:
+            current = time.time()
+            elapsed = current - proc_start
+            mbs = total_bytes_processed/elapsed/1024/1024
+            print(f"Processed {i} documents",
+                  f"({i/elapsed} docs/s, {mbs} MB/s).",
+                  file=sys.stderr)
+    print("Done! Now finalizing.")
+
+    for key in args.json_keys:
+        builders[key].finalize(output_idx_files[key])
+
+if __name__ == '__main__':
+    main()

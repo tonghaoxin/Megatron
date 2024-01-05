@@ -7,6 +7,7 @@ class AbstractTrainStep(ABC):
         """ initialize the class. """
         super().__init__()
         self.name = name
+        self.model_output_class = None
 
     def get_batch_func(self):
         """ get batch function. """

@@ -24,9 +24,7 @@ from megatron import update_num_microbatches
 from megatron.core import mpu, tensor_parallel
 from megatron import print_rank_0
 from megatron import print_rank_last
-from megatron.checkpoint_manager import (load_megatron_model_for_zero as load_model_checkpoint_for_zero,
-                                         load_megatron_optim_for_zero as load_optim_checkpoint_for_zero,
-                                         load_checkpoint_for_megatron as load_checkpoint,
+from megatron.checkpoint_manager import (load_checkpoint_for_megatron as load_checkpoint,
                                          save_checkpoint_for_megatron as save_checkpoint,
                                          finish_checkpoint_process)
 from megatron.model import Float16Module
@@ -383,33 +381,16 @@ def setup_model_and_optimizer(model_provider_func,
     unwrapped_model = unwrap_model(model,
                                    (torchDDP, LocalDDP, Float16Module))
 
-    # FIXME load model checkpoint before create optimizer
-    if args.use_distributed_optimizer or args.use_zero_optimizer:
-        if args.load is not None:
-            timers = get_timers()
-            timers('load-model-checkpoint', log_level=0).start(barrier=True)
-            args.iteration = load_model_checkpoint_for_zero(model)
-            timers('load-model-checkpoint').stop(barrier=True)
-            timers.log(['load-model-checkpoint'])
-
     optimizer = get_megatron_optimizer(model, no_wd_decay_cond,
                                        scale_lr_cond, lr_mult)
     opt_param_scheduler = get_optimizer_param_scheduler(optimizer) if need_scheduler else None
 
     if args.load is not None:
-        if not (args.use_distributed_optimizer or args.use_zero_optimizer):
-            timers = get_timers()
-            timers('load-checkpoint', log_level=0).start(barrier=True)
-            args.iteration = load_checkpoint(model, optimizer, opt_param_scheduler)
-            timers('load-checkpoint').stop(barrier=True)
-            timers.log(['load-checkpoint'])
-        else:
-            # FIXME: load optim & opt_param_scheduler
-            timers = get_timers()
-            timers('load-optim-checkpoint', log_level=0).start(barrier=True)
-            load_optim_checkpoint_for_zero(optimizer, opt_param_scheduler)
-            timers('load-optim-checkpoint').stop(barrier=True)
-            timers.log(['load-optim-checkpoint'])
+        timers = get_timers()
+        timers('load-checkpoint', log_level=0).start(barrier=True)
+        args.iteration = load_checkpoint(model, optimizer, opt_param_scheduler)
+        timers('load-checkpoint').stop(barrier=True)
+        timers.log(['load-checkpoint'])
     else:
         args.iteration = 0
 

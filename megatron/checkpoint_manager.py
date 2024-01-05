@@ -25,8 +25,6 @@ from megatron.utils import (unwrap_model,
 from megatron.global_vars import get_args
 from megatron.checkpointing import (save_checkpoint,
                                     load_checkpoint,
-                                    load_model_checkpoint_for_zero,
-                                    load_optim_checkpoint_for_zero,
                                     get_rng_state,
                                     get_checkpoint_names,
                                     get_checkpoint_tracker_filename)
@@ -421,38 +419,6 @@ def load_checkpoint_for_megatron(model, optimizer, opt_param_scheduler, load_arg
     load_dir = getattr(args, load_arg)
     _validate_checkpoint_done_for_megatron(load_dir)
     return load_checkpoint(model, optimizer, opt_param_scheduler, load_arg, strict)
-
-
-def load_megatron_model_for_zero(model, load_arg='load', strict=True):
-    """Load a model checkpoint and return the iteration.
-    strict (bool): whether to strictly enforce that the keys in
-        :attr:`state_dict` of the checkpoint match the names of
-        parameters and buffers in model.
-    """
-    args = get_args()
-    if args.enable_accelerate_checkpoint is None or not args.enable_accelerate_checkpoint:
-        print_rank_0(f'sync load model checkpoint for zero')
-        return load_model_checkpoint_for_zero(model, load_arg, strict)
-
-    print_rank_0(f'async load model checkpoint for zero')
-    load_dir = getattr(args, load_arg)
-    _validate_checkpoint_done_for_megatron(load_dir)
-    return load_model_checkpoint_for_zero(model, load_arg, strict)
-
-
-def load_megatron_optim_for_zero(optimizer, opt_param_scheduler, load_arg='load'):
-    """Load a optim checkpoint.
-    """
-    args = get_args()
-    if args.enable_accelerate_checkpoint is None or not args.enable_accelerate_checkpoint:
-        print_rank_0(f'sync load optim checkpoint for zero')
-        return load_optim_checkpoint_for_zero(optimizer, opt_param_scheduler, load_arg)
-
-    print_rank_0(f'async load optim checkpoint for zero')
-    load_dir = getattr(args, load_arg)
-    _validate_checkpoint_done_for_megatron(load_dir)
-    return load_optim_checkpoint_for_zero(optimizer, opt_param_scheduler, load_arg)
-
 
 def finish_checkpoint_process():
     """Finish checkpoint subprocess

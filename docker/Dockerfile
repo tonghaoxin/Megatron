@@ -6,6 +6,9 @@ ARG COMPILE_ENV={{COMPILE_ENV}}
 # 默认: false, 设置true 则替换编译算子二进制
 ARG BINARY_REPLACE="false"
 
+# 默认: false, 设置true 是否需要针对代码进行加密
+ARG ENCRYPT_FLAG="false"
+
 RUN rm -rf /workspace/
 COPY Megatron /workspace/Megatron-LM
-RUN bash /workspace/Megatron-LM/docker/install.sh ${COMPILE_ENV} ${BINARY_REPLACE}
+RUN bash /workspace/Megatron-LM/docker/install.sh ${COMPILE_ENV} ${BINARY_REPLACE} ${ENCRYPT_FLAG}

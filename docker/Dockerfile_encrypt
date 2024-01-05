@@ -1,0 +1,14 @@
+ARG BASE_IMAGE="iregistry.baidu-int.com/hac_test/nvcr.io/nvidia/pytorch:22.12-py3_cuda11.8"
+FROM ${BASE_IMAGE}
+
+# 支持根据卡类型获取算子包
+ARG COMPILE_ENV={{COMPILE_ENV}}
+# 默认: false, 设置true 则替换编译算子二进制
+ARG BINARY_REPLACE="false"
+
+# 默认: false, 设置true 是否需要针对代码进行加密
+ARG ENCRYPT_FLAG="true"
+
+# RUN rm -rf /workspace/
+COPY Megatron/docker /workspace/Megatron-LM/docker
+RUN bash /workspace/Megatron-LM/docker/install.sh ${COMPILE_ENV} ${BINARY_REPLACE} ${ENCRYPT_FLAG}

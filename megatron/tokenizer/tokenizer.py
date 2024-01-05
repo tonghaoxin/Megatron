@@ -15,6 +15,7 @@ from .tokenization_chatglm import ChatGLMTokenizer
 from .chinese_sp_tokenizer import GLMChineseTokenizer
 from .chatglm2_tokenization import ChatGLM2Tokenizer
 from .tokenization_llama import LlamaTokenizer
+from .tokenization_qwen import QWenTokenizer
 
 
 def build_tokenizer(args):
@@ -104,6 +105,13 @@ def build_tokenizer(args):
         seq_length = args.seq_length
         tokenizer = LlamaTokenizer(vocab_file=args.tokenizer_model, model_max_length=seq_length,
                                    padding_side="right", pad_token="[PAD]")
+    elif args.tokenizer_type == 'QwenTokenizer':
+        assert args.tokenizer_model is not None
+        assert args.seq_length is not None
+        tokenizer = QWenTokenizer(vocab_file=args.tokenizer_model, model_max_length=args.seq_length,
+                                  padding_side='right', use_fast=False)
+        tokenizer.pad_token_id = tokenizer.pad_id
+        tokenizer.eos_token_id = tokenizer.eod_id
     elif args.tokenizer_type == 'BaichuanTokenizer':
         assert args.tokenizer_model is not None
         #assert args.seq_length is not None

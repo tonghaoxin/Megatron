@@ -73,6 +73,9 @@ function stop_running_training() {
     fi
 
     sleep 10
+    
+    pkill -f '/workspace/Megatron-LM/examples/../pretrain' || echo 'skip faild to kill pretrain'
+    sleep 1
 }
 
 function run_models_case() {

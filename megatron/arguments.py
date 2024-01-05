@@ -276,8 +276,23 @@ def validate_args(args, defaults={}):
             assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is auto."
     else:
         assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is disabled."
-
-    if args.use_zero_optimizer:
+    # Set default values for dp-overlap-related parameters.
+    args.use_zero_optimizer = False
+    args.overlap_param = False
+    if args.overlap_param_gather:
+        assert args.overlap_grad_reduce, "--overlap-grad-reduce is needed when overlap-param-gather is set."
+        # Convert parameters for compatibility with Megatron-LM parameters.
+        args.overlap_param = True
+    if args.overlap_param_gather or args.overlap_grad_reduce:
+        assert args.num_layers_per_virtual_pipeline_stage is None, \
+            "overlap-param-gather and overlap-grad-reduce can't be set when interleaved pp is enabled."
+        # The current version of overlap only supports untied embedding layers.
+        assert args.untie_embeddings_and_output_weights, \
+            ("overlap-param-gather and overlap-grad-reduce must be set in conjunction "
+             "with the --untie-embeddings-and-output-weights.")
+        # Convert parameters for compatibility with Megatron-LM parameters.
+        args.use_distributed_optimizer = False
+        args.use_zero_optimizer = True
         # if we use the zero optimizer, we should make sure use_distributed_optimizer is off.
         assert not args.use_distributed_optimizer, \
             "can only specify one of use-distributed-optimizer and use-zero-optimizer"
@@ -288,7 +303,6 @@ def validate_args(args, defaults={}):
         args.gradient_accumulation_fusion = False
         if args.rank == 0:
             print('Disable gradient accumulation fusion, since the optimizer would handle it.', flush=True)
-
 
     # For torch DDP, we do not use contiguous buffer
     if args.DDP_impl == 'torch':
@@ -1322,24 +1336,21 @@ def _add_distributed_args(parser):
                        'affects the encoder embedding.)')
     group.add_argument('--use-distributed-optimizer', action='store_true',
                        help='Supports ZeRO-1, mutually exclusive with --use-zero-optimizer.')
-    group.add_argument('--use-zero-optimizer', action='store_true',
-                       default=False, help='Supports ZeRO-1, ZeRO-2 and DP gradient overlapping,'
-                       'mutually exclusive with --use-distributed-optimizer.')
+    group.add_argument('--overlap-grad-reduce', action='store_true',
+                       default=False, help='If set, overlap DDP grad reduce.')
+    group.add_argument('--overlap-param-gather', action='store_true',
+                       default=False, help='If set, overlap param all-gather in distributed optimizer.')
     group.add_argument('--zero-stage',  default=1, type=int,
                        choices=[1, 2],
                        help='1=ZeRO-1, 2=ZeRO-2 refer to optimizer state partitioning, '
                        'and optimizer+gradient state partitioning in ZeroOptimizer.')
-    group.add_argument('--reduce-bucket-size', default=5e4, type=int,
+    group.add_argument('--reduce-bucket-size', default=4e8, type=int,
                        help='Bucket size for reduce in ZeroOptimizer, the unit is the number of elements')
     group.add_argument('--last-bucket-split-count', type=int, default=None, help='Number of \
                        splits to split the last bucket in ZeroOptimizer.')
-    group.add_argument('--overlap-param', action='store_true',
-                       default=False, help='Supports ZeRO-1, ZeRO-2 and DP param overlapping,'
-                       'work with --use-zero-optimizer.')
     group.add_argument('--use-chunked-param-groups', action='store_true',
                        default=False, help='Supports ZeRO-1, ZeRO-2 and DP overlapping '
                        'with interleaved pipeline scheduler, work with --use-zero-optimizer.')
-
     return parser
 
 
@@ -1446,6 +1457,7 @@ def _add_data_args(parser):
                                 'OptTokenizer',
                                 'ChatGLM2Tokenizer',
                                 'LLaMASFTTokenizerHF',
+                                'QwenTokenizer',
                                 'BaichuanTokenizer',
                                 'NullTokenizer'],
 

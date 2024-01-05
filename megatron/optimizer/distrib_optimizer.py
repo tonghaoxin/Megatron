@@ -808,12 +808,15 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         copy_group_params(self.shard_fp32_groups,
                           self.model_fp32_groups)
 
-    '''
-    # FIXME: something error!!!!
     def _copy_model_params_to_main_params(self):
         """
         Copy model params to main params.
+
+        During finetuning, this method is used to reload the main params from
+        the model params. This copy does not make use of the grad buffer as
+        an intermediary.
         """
+
         # Utility method for copying group params.
         def copy_group_params(model_groups, shard_main_groups):
             for model_group, shard_main_group in zip(model_groups,
@@ -822,25 +825,15 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                                                          shard_main_group):
 
                     param_range_map = self.get_model_param_range_map(model_param)
-                    # param_range = param_range_map["param"]
-                    # assert param_range.size == shard_main_param.nelement()
+                    param_range = param_range_map["param"]
+                    assert param_range.size == shard_main_param.nelement()
 
-                    # FIXME
-                    world_range = param_range_map["gbuf_world"]
-                    assert world_range.size == shard_main_param.nelement()
-
-                    model_id, dtype = self.model_param_gbuf_map[model_param]
-                    model_param_buffer = self.param_buffers[model_id][dtype]
-
-                    shard_model_param = model_param_buffer.view(-1) \
-                        [world_range.start:world_range.end]
-
-                    # shard_model_param.data.copy_(shard_main_param)
+                    shard_model_param = model_param.view(-1) \
+                        [param_range.start:param_range.end]
                     shard_main_param.data.copy_(shard_model_param)
 
         # Copy model groups to shard groups.
         copy_group_params(self.model_float16_groups,
-                         self.shard_fp32_from_float16_groups)
+                          self.shard_fp32_from_float16_groups)
         copy_group_params(self.model_fp32_groups,
-                         self.shard_fp32_groups)
-    '''
+                          self.shard_fp32_groups)
