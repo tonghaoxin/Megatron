@@ -2,7 +2,7 @@
 
 from megatron import get_args
 from megatron.accelerator import get_accelerator
-from megatron.hybrid_adam import HybridAdam
+from megatron.hybrid_adam import HybridAdam, MultiThreadHybridAdam
 
 from .offload_distrib_optimizer import OffloadDistributedOptimizer
 from .distrib_optimizer import DistributedOptimizer
@@ -13,6 +13,7 @@ from .lion import Lion
 
 Adam = get_accelerator().get_optimizer('adam')
 SGD = get_accelerator().get_optimizer('sgd')
+
 
 def get_param_groups(modules,
                      no_weight_decay_cond,
@@ -134,7 +135,14 @@ def get_megatron_optimizer(model,
 
     if args.optimizer == 'adam':
         if args.cpu_offload != "disabled":
-            optimizer = HybridAdam(param_groups,
+            if args.overlap_offload_optimizer:
+                optimizer = MultiThreadHybridAdam(param_groups,
+                                   lr=args.lr,
+                                   weight_decay=args.weight_decay,
+                                   betas=(args.adam_beta1, args.adam_beta2),
+                                   eps=args.adam_eps)
+            else:
+                optimizer = HybridAdam(param_groups,
                                    lr=args.lr,
                                    weight_decay=args.weight_decay,
                                    betas=(args.adam_beta1, args.adam_beta2),

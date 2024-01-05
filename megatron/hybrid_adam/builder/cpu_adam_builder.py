@@ -31,7 +31,8 @@ class CPUAdamBuilder(TorchCPUOpBuilder):
         if self.build_for_cpu:
             return ['csrc/adam/cpu_adam.cpp']
 
-        return ['csrc/adam/cpu_adam.cpp', 'csrc/common/custom_cuda_kernel.cu']
+        return ['csrc/adam/adam_task.cpp', 'csrc/adam/adam_thread.cpp', \
+                'csrc/adam/cpu_adam.cpp', 'csrc/common/custom_cuda_kernel.cu']
 
     def libraries_args(self):
         """

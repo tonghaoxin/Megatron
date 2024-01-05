@@ -269,13 +269,6 @@ def validate_args(args, defaults={}):
         assert args.DDP_impl == 'local'
         assert args.use_contiguous_buffers_in_local_ddp
 
-    if args.cpu_offload in ('auto', 'manual'):
-        assert args.use_distributed_optimizer, \
-            "use-distributed-optimizer is needed when cpu-offload is not disabled."
-        if args.cpu_offload == 'auto':
-            assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is auto."
-    else:
-        assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is disabled."
     # Set default values for dp-overlap-related parameters.
     args.use_zero_optimizer = False
     args.overlap_param = False
@@ -303,6 +296,24 @@ def validate_args(args, defaults={}):
         args.gradient_accumulation_fusion = False
         if args.rank == 0:
             print('Disable gradient accumulation fusion, since the optimizer would handle it.', flush=True)
+
+    
+    if args.cpu_offload in ('auto', 'manual'):
+        assert args.use_distributed_optimizer, \
+            "use-distributed-optimizer is needed when cpu-offload is not disabled."
+        if args.cpu_offload == 'auto':
+            assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is auto."
+    else:
+        assert args.cpu_offload_percent == 1.0, "cpu-offload-percent can't be set when cpu-offload is disabled."
+
+        assert not args.overlap_offload_optimizer, \
+            "overlap-offload-optimizer can't be set when cpu-offload is disabled."
+
+    if not args.overlap_offload_optimizer:
+        args.cpu_adam_threads == 1
+    else:
+        assert args.cpu_adam_threads >= 1, \
+            "The number of cpu_adam_threads is error, should be more than 1."
 
     # For torch DDP, we do not use contiguous buffer
     if args.DDP_impl == 'torch':
@@ -1105,6 +1116,14 @@ def _add_training_args(parser):
                        help='Percent of the parameters computed in cpu for optimizer, only when cpu-offload is manual.')
     group.add_argument('--cuda-capacity', type=float, default=0.9,
                        help='Percent of max cuda used for optimizer.')
+
+    group.add_argument('--overlap-offload-optimizer', action='store_true',
+                       help='It is only used for cpu offload. overlap the cpu adam compute and data copy.'  
+                            'It can improve performance when used cpu offload. ')
+
+    group.add_argument('--cpu-adam-threads', type=int, default=1,
+                       help='Use multi-threads for cpu adam, now only used when cpu-offload is enable.'
+                       'Adjust the parameter from 1 to 2 or more, may improve performance in some cases.')
     return parser
 
 

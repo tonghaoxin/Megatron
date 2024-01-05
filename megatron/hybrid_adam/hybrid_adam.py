@@ -5,7 +5,6 @@ import pathlib
 import os
 import torch
 from megatron import get_args
-from cpuinfo import get_cpu_info
 from apex.multi_tensor_apply import multi_tensor_applier
 
 class HybridAdam(torch.optim.Optimizer):

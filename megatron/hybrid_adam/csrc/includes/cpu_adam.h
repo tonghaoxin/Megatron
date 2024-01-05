@@ -244,4 +244,13 @@ void Adam_Optimizer::Step_AVX(size_t* rounded_size,
     }
     *rounded_size = new_rounded_size;
 }
+
+int get_total_flat_params();
+int get_cuda_device();
+void cpu_adam_process_async(int optimizer_id, size_t step, float lr, float beta1,
+                      float beta2, float epsilon, float weight_decay,
+                      bool bias_correction, bool half_precision, size_t param_size,
+                      float* params_ptr, float* grads_ptr, float* exp_avg_ptr,
+                      float* exp_avg_sq_ptr, ds_half_precision_t*gpu_params_ptr,float*gpu_tmp_grads_ptr);
+
 #endif

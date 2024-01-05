@@ -14,8 +14,19 @@
 #include "custom_cuda_layers.h"
 #endif
 
-static std::unordered_map<int, std::shared_ptr<void>> s_optimizers;
+#include "adam_task.h"
+#include "adam_thread.h"
 
+static std::unordered_map<int, std::shared_ptr<void>> s_optimizers;
+static std::unordered_map<int, std::shared_ptr<adam_compute_thread>> adam_compute_thread_t;
+static std::unordered_map<int, std::shared_ptr<adam_copy_thread>> adam_copy_thread_t;
+
+static int total_flat_params = 0;
+static int cpu_adam_threads = 1;
+
+static int global_proc_cuda_device = 0;
+
+static bool start_adam_threads_flag = false;
 // C++ interface
 
 void Adam_Optimizer::Step_1(float* _params,
@@ -140,6 +151,13 @@ int create_adam_optimizer(int optimizer_id,
         std::make_shared<Adam_Optimizer>(alpha, betta1, betta2, eps, weight_decay, adamw_mode);
     s_optimizers[optimizer_id] = opt;
 
+    if (start_adam_threads_flag == true) {
+        auto compute_thread = std::make_shared<adam_compute_thread>(cpu_adam_threads);
+        adam_compute_thread_t[optimizer_id] = compute_thread;
+
+        auto copy_thread = std::make_shared<adam_copy_thread>();
+        adam_copy_thread_t[optimizer_id] = copy_thread;
+    }
     if (should_log) {
         std::string avx_type = "";
 #if defined(__AVX512__)
@@ -239,6 +257,84 @@ int ds_adam_step(int optimizer_id,
     return 0;
 }
 
+void cpu_adam_process_async(int optimizer_id, size_t step, float lr, float beta1,
+                      float beta2, float epsilon, float weight_decay, 
+                      bool bias_correction, bool half_precision, size_t param_size,
+                      float* params_ptr, float* grads_ptr, float* exp_avg_ptr, 
+                      float* exp_avg_sq_ptr, ds_half_precision_t*gpu_params_ptr,float*gpu_tmp_grads_ptr)
+{
+    float *params_ptr_start = params_ptr;
+    std::shared_ptr<Adam_Optimizer> opt =
+        std::static_pointer_cast<Adam_Optimizer>(s_optimizers[optimizer_id]);
+    assert(opt != nullptr);
+    opt->IncrementStep(step, beta1, beta2);
+    opt->update_state(lr, epsilon, weight_decay, bias_correction);
+
+    opt->Step_8(params_ptr,
+                grads_ptr,
+                exp_avg_ptr,
+                exp_avg_sq_ptr,
+                param_size,
+                nullptr,
+                half_precision);
+
+#if defined(__ENABLE_CUDA__)
+    opt->SynchronizeStreams();
+#endif
+   if (gpu_params_ptr != nullptr){
+       std::shared_ptr<adam_copy_thread> copy_thread =
+          std::static_pointer_cast<adam_copy_thread>(adam_copy_thread_t[optimizer_id]);
+       auto task = std::make_shared<adam_copy_task>(params_ptr_start, param_size, gpu_params_ptr,
+                                                    grads_ptr,exp_avg_ptr,exp_avg_sq_ptr,gpu_tmp_grads_ptr);
+       copy_thread->submit(task);
+   }
+}
+
+int ds_adam_step_async(int optimizer_id,
+                 size_t step,
+                 float lr,
+                 float beta1,
+                 float beta2,
+                 float epsilon,
+                 float weight_decay,
+                 bool bias_correction,
+                 torch::Tensor& params,
+                 torch::Tensor& grads,
+                 torch::Tensor& exp_avg,
+                 torch::Tensor& exp_avg_sq,
+                 torch::Tensor& gpu_params,
+                 torch::Tensor& gpu_tmp_grads,
+                 int cuda_device)
+{
+    global_proc_cuda_device = cuda_device;
+    auto gpu_tmp_grads_c = gpu_tmp_grads.contiguous();
+    auto params_c = params.contiguous();
+    auto gpu_params_c = gpu_params.contiguous();
+    auto grads_c = grads.contiguous();
+    auto exp_avg_c = exp_avg.contiguous();
+    auto exp_avg_sq_c = exp_avg_sq.contiguous();
+    size_t param_size = params_c.numel();
+    bool half_precision = (params.options().dtype() == at::kHalf);
+
+    assert(params.options().dtype() == grads.options().dtype());
+
+    float* gpu_tmp_grads_ptr = (float*)gpu_tmp_grads_c.data_ptr();
+    float* params_ptr = (float*)params_c.data_ptr();
+    float* grads_ptr = (float*)grads_c.data_ptr();
+    float* exp_avg_ptr = (float*)exp_avg_c.data_ptr();
+    float* exp_avg_sq_ptr = (float*)exp_avg_sq_c.data_ptr();
+    ds_half_precision_t* gpu_params_ptr = (ds_half_precision_t*)gpu_params_c.data_ptr();
+
+    std::shared_ptr<adam_compute_thread> compute_thread =
+        std::static_pointer_cast<adam_compute_thread>(adam_compute_thread_t[optimizer_id]);
+
+    auto task = std::make_shared<adam_compute_task>(optimizer_id, step, lr, beta1, beta2, epsilon,
+                                                    weight_decay, bias_correction, half_precision, param_size,
+                                                    params_ptr, grads_ptr, exp_avg_ptr, exp_avg_sq_ptr, gpu_params_ptr,gpu_tmp_grads_ptr); 
+    compute_thread->submit(task);
+    return 0;
+}
+
 int ds_adam_step_plus_copy(int optimizer_id,
                            size_t step,
                            float lr,
@@ -285,6 +381,52 @@ int ds_adam_step_plus_copy(int optimizer_id,
     return 0;
 }
 
+int set_total_flat_params(int totals)
+{
+    total_flat_params = totals;  
+    return 0;
+}
+
+int get_total_flat_params()
+{
+    return total_flat_params;
+}
+
+
+int get_cuda_device()
+{
+    return global_proc_cuda_device;
+}
+
+int set_cuda_device(int cuda_device)
+{
+    global_proc_cuda_device = cuda_device;
+    return 0;
+}
+
+int set_cpu_adam_threads(int threads)
+{
+    cpu_adam_threads = threads;
+    return 0;
+}
+
+int enable_adam_threads(bool enable)
+{
+    start_adam_threads_flag = enable;
+    return 0;
+}
+
+int wait_async(int optimizer_id)
+{
+    std::shared_ptr<adam_compute_thread> compute_thread =
+        std::static_pointer_cast<adam_compute_thread>(adam_compute_thread_t[optimizer_id]);
+    compute_thread->wait_thread_complated();
+    std::shared_ptr<adam_copy_thread> copy_thread =
+        std::static_pointer_cast<adam_copy_thread>(adam_copy_thread_t[optimizer_id]);
+    copy_thread->wait_thread_complated();
+    return 0;
+}
+
 int destroy_adam_optimizer(int optimizer_id)
 {
     s_optimizers.erase(optimizer_id);
@@ -298,6 +440,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("adam_update_copy",
           &ds_adam_step_plus_copy,
           "Megatron CPU Adam update and param copy (C++)");
+    m.def("adam_update_async", &ds_adam_step_async, "Megatron CPU Adam update (C++)");
+    m.def("adam_set_total_flat_params", &set_total_flat_params, "Megatron CPU Adam update (C++)");
+    m.def("adam_set_cpu_adam_threads", &set_cpu_adam_threads, "Megatron CPU Adam update (C++)");
+    m.def("adam_enable_adam_threads", &enable_adam_threads, "Megatron CPU Adam update (C++)");
+    m.def("adam_wait_async", &wait_async, "Megatron CPU Adam update (C++)");
     m.def("create_adam", &create_adam_optimizer, "Megatron CPU Adam (C++)");
     m.def("destroy_adam", &destroy_adam_optimizer, "Megatron CPU Adam destroy (C++)");
 }

@@ -38,6 +38,9 @@ class OffloadDistributedOptimizer(DistributedOptimizer):
             fp16, bf16, params_dtype, grad_scaler, models)
 
         self.shard_fp32_duplicate_grads = []
+        self.copy_cpu_grads = []
+        self.shard_fp16_groups_overlap = []
+        self.offoad_overlap_init = False
 
      def get_duplicate_grads(self):
         """get duplicate grads"""
@@ -136,6 +139,7 @@ class OffloadDistributedOptimizer(DistributedOptimizer):
         Copy duplicate grads to main grads.
 
         """
+        args = get_args()
         # Utility method for copying group grads.
         def copy_group_grads(shard_duplicate_groups, shard_main_groups):
             """
@@ -144,14 +148,156 @@ class OffloadDistributedOptimizer(DistributedOptimizer):
             """
             for duplicate_groups, shard_main_group in zip(shard_duplicate_groups,
                                                      shard_main_groups):
+                copy_cpu_grads_per_group = []
                 for grad, shard_main_param in zip(duplicate_groups,
                                                          shard_main_group):
                     if shard_main_param.device == torch.device('cpu'):
-                        shard_main_param.grad.copy_(grad)
+                        if args.overlap_offload_optimizer:
+                            copy_cpu_grads_per_group.append(grad)
+                        else:
+                            shard_main_param.grad.copy_(grad)
                     else:
                         shard_main_param.grad = grad
+
+                if len(copy_cpu_grads_per_group):
+                    self.copy_cpu_grads.append(copy_cpu_grads_per_group)
 
         copy_group_grads(self.shard_fp32_duplicate_grads,
                          self.shard_fp32_from_float16_groups)
         self.shard_fp32_duplicate_grads = []
 
+     def _copy_main_params_to_model_params(self):
+        """
+        Copy main params to model params.
+
+        Since this step is followed by an all-gather through the DDP's grad
+        buffer, this method is responsible for copying the updated params
+        from the main shards into the correct position in the grad buffer.
+        """
+
+        # Utility method for copying group params.
+        def copy_group_params(shard_main_groups, model_groups):
+            """
+            Copy main params to model params.
+            """
+            args = get_args()
+            for shard_main_group, model_group in zip(shard_main_groups,
+                                                     model_groups):
+                for shard_main_param, model_param in zip(shard_main_group,
+                                                         model_group):
+                    if args.overlap_offload_optimizer:
+                        if shard_main_param.device == torch.device('cpu'):
+                            continue
+                    param_range_map = self.get_model_param_range_map(model_param)
+                    world_range = param_range_map["gbuf_world"]
+
+                    assert world_range.size == shard_main_param.nelement()
+
+                    model_id, dtype = self.model_param_gbuf_map[model_param]
+                    model_param_buffer = self.param_buffers[model_id][dtype]
+
+                    shard_model_param = model_param_buffer.view(-1) \
+                        [world_range.start:world_range.end]
+
+                    shard_model_param.data.copy_(shard_main_param)
+
+        # Copy shard groups to model groups.
+        copy_group_params(self.shard_fp32_from_float16_groups,
+                          self.model_float16_groups)
+
+     def get_fp16_group_params(self):
+        """
+        Get fp16 params for overlap cpu adam.
+
+        """
+        for shard_main_group, model_group in zip(self.shard_fp32_from_float16_groups,
+                                                   self.model_float16_groups):
+            shard_fp16_per_group = []
+            for shard_main_param, model_param in zip(shard_main_group,
+                                                         model_group):
+                    param_range_map = self.get_model_param_range_map(model_param)
+                    world_range = param_range_map["gbuf_world"]
+
+                    assert world_range.size == shard_main_param.nelement()
+
+                    model_id, dtype = self.model_param_gbuf_map[model_param]
+                    model_param_buffer = self.param_buffers[model_id][dtype]
+
+                    shard_model_param = model_param_buffer.view(-1) \
+                        [world_range.start:world_range.end]
+                    shard_fp16_per_group.append(shard_model_param)
+            self.shard_fp16_groups_overlap.append(shard_fp16_per_group)
+
+     @torch.no_grad()
+     def step(self, args, timers):
+        """
+        Exec step.
+
+        """
+        # Copy gradients from model params to main params.
+        timers('optimizer-copy-to-main-grad', log_level=1).start(
+            barrier=args.barrier_with_L1_time)
+        self._copy_model_grads_to_main_grads()
+        timers('optimizer-copy-to-main-grad').stop()
+
+        if self.grad_scaler:
+
+            # Unscale and check for inf/nan.
+            timers('optimizer-unscale-and-check-inf', log_level=1).start(
+                barrier=args.barrier_with_L1_time)
+            found_inf_flag = self._unscale_main_grads_and_check_for_nan()
+            timers('optimizer-unscale-and-check-inf').stop()
+
+            # We are done with scaling gradients
+            # so we can update the loss scale.
+            self.grad_scaler.update(found_inf_flag)
+
+            # If we found inf/nan, skip the update.
+            if found_inf_flag:
+                self.zero_duplicate_grads()
+                return False, None, None
+        # Clip the main gradients.
+        timers('optimizer-clip-main-grad', log_level=1).start(
+            barrier=args.barrier_with_L1_time)
+        grad_norm = None
+        if self.clip_grad > 0.0:
+            grad_norm = self.clip_grad_norm(self.clip_grad)
+        timers('optimizer-clip-main-grad').stop()
+
+        # Count the zeros in the grads.
+        timers('optimizer-count-zeros', log_level=1).start(
+            barrier=args.barrier_with_L1_time)
+        num_zeros_in_grad = self.count_zeros() if \
+                            self.log_num_zeros_in_grad else None
+        timers('optimizer-count-zeros').stop()
+
+        args = get_args()
+        if not args.overlap_offload_optimizer:
+            timers('copy-duplicate-grads-to-main-grads', log_level=1).start(
+                barrier=args.barrier_with_L1_time)
+            self._copy_duplicate_grads_to_main_grads()
+            timers('copy-duplicate-grads-to-main-grads').stop()
+
+        if not self.offoad_overlap_init:
+            self.get_fp16_group_params()
+            self.offoad_overlap_init = True
+
+        # Step the optimizer.
+        timers('optimizer-inner-step', log_level=1).start(
+            barrier=args.barrier_with_L1_time)
+        if args.overlap_offload_optimizer:
+            self.optimizer.step(self.shard_fp32_duplicate_grads, self.shard_fp16_groups_overlap)
+        else:
+            self.optimizer.step()
+
+        timers('optimizer-inner-step').stop()
+
+        # Update params from main params.
+        timers('optimizer-copy-main-to-model-params', log_level=1).start(
+            barrier=args.barrier_with_L1_time)
+        self._copy_main_params_to_model_params()
+        timers('optimizer-copy-main-to-model-params').stop()
+
+        self.shard_fp32_duplicate_grads = []
+        # Successful update.
+        return True, grad_norm, num_zeros_in_grad
