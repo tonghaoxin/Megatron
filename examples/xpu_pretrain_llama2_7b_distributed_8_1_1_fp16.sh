@@ -5,8 +5,10 @@ set -x
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 #data数据路径记得修改
-DATA_PATH=${ROOT_DIR}/../llama-13B/data/llama_00_text_document
+DATA_PATH=${ROOT_DIR}/../data/llama_00_text_document
 
+#tokenizer路径记得修改
+TOKENIZER_PATH=${ROOT_DIR}/../tokenizer
 
 #CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama_7b_checkpoint_tp4_pp1_fp16
 # VOCAB_FILE=${ROOT_DIR}/../data/gpt2-vocab.json
