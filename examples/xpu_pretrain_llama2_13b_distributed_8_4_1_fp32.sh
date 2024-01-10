@@ -86,7 +86,8 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 8 \
 OUTPUT_ARGS="--log-interval 1 \
             --save-interval 10000 \
             --eval-interval 1000 \
-            --eval-iters 10"
+            --eval-iters 10 \
+            --exit-interval 10"
 
 OTHER_ARGS="--data-path $DATA_PATH \
             --load $CHECKPOINT_PATH \
@@ -130,7 +131,7 @@ export XDNN_FC_GEMM_DTYPE=float32
 
 export XACC=1
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
-       python -m torch.distributed.launch $DISTRIBUTED_ARGS \
+       torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
        $LLAMA2_13B_ARGS \
        $OUTPUT_ARGS \
