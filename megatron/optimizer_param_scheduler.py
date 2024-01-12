@@ -149,7 +149,7 @@ class OptimizerParamScheduler(object):
             print_rank_0(' > overriding {} value to {}'.format(name, cls_value))
             return cls_value
 
-        if not self.use_checkpoint_opt_param_scheduler:
+        if self.use_checkpoint_opt_param_scheduler:
             assert cls_value == sd_value, \
                 f'OptimizerParamScheduler: class input value {cls_value} and checkpoint' \
                 f'value {sd_value} for {name} do not match'
