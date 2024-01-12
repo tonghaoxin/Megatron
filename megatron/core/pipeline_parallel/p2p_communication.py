@@ -93,10 +93,9 @@ def _communicate_shapes(tensor_send_next, tensor_send_prev,
                 get_pipeline_model_parallel_group())
             ops.append(recv_next_op)
         if len(ops) > 0:
-            if get_accelerator().backend_name() == "xpu":
-                # TODO: xpu do not support isend and irecv
-                pipeline_rank = torch.distributed.get_rank(group=get_pipeline_model_parallel_group())
-                if pipeline_rank % 2 != 0:
+            if get_accelerator().backend_name() != "cuda":
+                # Note that xpu and npu do not support isend and irecv
+                if get_pipeline_model_parallel_rank() % 2 == 1:
                     ops.reverse()
             reqs = torch.distributed.batch_isend_irecv(ops)
             for req in reqs:
@@ -149,10 +148,9 @@ def _batched_p2p_ops(*,
             group)
         ops.append(recv_next_op)
     if len(ops) > 0:
-        if get_accelerator().backend_name() == "xpu":
-            # TODO: xpu do not support isend and irecv
-            pipeline_rank = torch.distributed.get_rank(group=get_pipeline_model_parallel_group())
-            if pipeline_rank % 2 != 0:
+        if get_accelerator().backend_name() != "cuda":
+            # Note that xpu and npu do not support isend and irecv
+            if get_pipeline_model_parallel_rank() % 2 == 1:
                 ops.reverse()
         reqs = torch.distributed.batch_isend_irecv(ops)
     else:

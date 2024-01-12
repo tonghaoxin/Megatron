@@ -28,16 +28,16 @@ MASTER_PORT=${MASTER_PORT:-9999}
 NNODES=${1:-1}
 NODE_RANK=${2:-0}
 
-#export INF_NAN_MODE_ENABLE=1
-#export OMP_NUM_THREADS=96
+# export OMP_NUM_THREADS=96
+# export ASCEND_GLOBAL_LOG_LEVEL=3
+# export ASCEND_GLOBAL_EVENT_ENABLE=1
+export INF_NAN_MODE_ENABLE=1
 export HCCL_CONNECT_TIMEOUT=1200
 export HCCL_INTRA_PCIE_ENABLE=0
 export HCCL_INTRA_ROCE_ENABLE=1
 export HCCL_RDMA_TC=128
 export HCCL_RDMA_SL=4
 export COMBINED_ENABLE=1
-export ASCEND_GLOBAL_LOG_LEVEL=3
-export ASCEND_GLOBAL_EVENT_ENABLE=1
 export HCCL_SOCKET_IFNAME=xgbe0
 
 DISTRIBUTED_ARGS="--nproc_per_node $NPUS_PER_NODE
@@ -48,7 +48,7 @@ DISTRIBUTED_ARGS="--nproc_per_node $NPUS_PER_NODE
 
 LLAMA2_13B_ARGS="--tensor-model-parallel-size 4 \
                  --pipeline-model-parallel-size 1 \
-		 --num-layers 40 \
+                 --num-layers 40 \
                  --hidden-size 5120 \
                  --ffn-hidden-size 13824 \
                  --num-attention-heads 40 \
@@ -60,7 +60,7 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 4 \
                  --pad-vocab-size-to 32000 \
                  --tokenizer-type LLaMASentencePieceTokenizer \
                  --tokenizer-model $TOKENIZER_PATH \
-		 --lr 1.5e-4 \
+                 --lr 1.5e-4 \
                  --min-lr 1.5e-5 \
                  --lr-decay-style cosine \
                  --weight-decay 1e-2 \
