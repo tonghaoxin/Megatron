@@ -10,11 +10,6 @@ DATA_PATH=${ROOT_DIR}/../data/llama_00_text_document
 #tokenizer路径记得修改
 TOKENIZER_PATH=${ROOT_DIR}/../tokenizer
 
-#CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama_7b_checkpoint_tp4_pp1_fp16
-# VOCAB_FILE=${ROOT_DIR}/../data/gpt2-vocab.json
-# MERGE_FILE=${ROOT_DIR}/../data/gpt2-merges.txt
-
-
 export XPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$XPU_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
@@ -79,8 +74,6 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                #--use-flash-attn \
                #--fused-rmsnorm \
                # --sequence-parallel
-               # --vocab-file $VOCAB_FILE \
-               # --merge-file $MERGE_FILE \
 
 LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --pipeline-model-parallel-size 1 \

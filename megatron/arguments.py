@@ -294,7 +294,7 @@ def validate_args(args, defaults={}):
         if args.rank == 0:
             print('Disable gradient accumulation fusion, since the optimizer would handle it.', flush=True)
 
-    
+
     if args.cpu_offload in ('auto', 'manual'):
         assert args.use_distributed_optimizer, \
             "use-distributed-optimizer is needed when cpu-offload is not disabled."
@@ -1064,7 +1064,7 @@ def _add_training_args(parser):
                        help='Dump model to ./model.txt. Useful for debugging.')
     group.add_argument('--enable-debug', action='store_true', help='enable debug')
     group.add_argument("--enable-torch-profiler", action="store_true",
-                       help="enable torch-profiler", dest="enable_torch_profiler")
+                       help="enable torch-profiler")
     group.add_argument("--torch-profiler-log-path", type=str,
                        dest="torch_profiler_log_path", default="./profile_log",
                        help="Path to save torch profiler log files.")
@@ -1115,7 +1115,7 @@ def _add_training_args(parser):
                        help='Percent of max cuda used for optimizer.')
 
     group.add_argument('--overlap-offload-optimizer', action='store_true',
-                       help='It is only used for cpu offload. overlap the cpu adam compute and data copy.'  
+                       help='It is only used for cpu offload. overlap the cpu adam compute and data copy.'
                             'It can improve performance when used cpu offload. ')
 
     group.add_argument('--cpu-adam-threads', type=int, default=1,
