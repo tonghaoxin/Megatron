@@ -27,7 +27,13 @@ MODEL_MAPPING = {
     "qwen": {
         "model_class": "QwenModel",
         "pretrain_class": "pretrain_qwen",
-        "train_step_class": "QWenTrainStep",
+        "train_step_class": "QwenTrainStep",
+        "train_step_kwargs": {}
+    },
+    "baichuan": {
+        "model_class": "baichuanModel",
+        "pretrain_class": "pretrain_baichuan",
+        "train_step_class": "BaichuanTrainStep",
         "train_step_kwargs": {}
     }
 }

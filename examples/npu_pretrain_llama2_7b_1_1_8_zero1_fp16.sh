@@ -114,7 +114,7 @@ OTHER_ARGS="--data-path $DATA_PATH \
             #--load $CHECKPOINT_LOAD_PATH \
             #--save $CHECKPOINT_SAVE_PATH \
 
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
+PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/npu_ops':$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
        $LLAMA2_7B_ARGS \

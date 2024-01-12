@@ -545,20 +545,6 @@ def validate_args(args, defaults={}):
         assert not args.learnable_rotary_embedding, \
                 'RoPE embedding kernel is not compatible with learnable RoPE'
 
-    # check tensorboard env for baige
-    args.log_timers_to_tensorboard_interval = args.tensorboard_log_interval
-
-    _tensorboard_baige = os.getenv('TENSORBOARD_DIR', None)
-    if _tensorboard_baige is not None and _tensorboard_baige != "":
-        if args.tensorboard_dir is None or not args.log_timers_to_tensorboard:
-            if args.timing_log_level > 0 or args.log_detail:
-                args.log_timers_to_tensorboard = True
-                args.log_timers_to_tensorboard_interval = args.detail_log_interval \
-                    if args.timing_log_level < 1  else args.log_interval
-
-                if args.tensorboard_dir is None:
-                    args.tensorboard_dir = _tensorboard_baige
-
     # Print arguments.
     _print_args("arguments", args)
     retro_args = get_retro_args()

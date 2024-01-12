@@ -334,6 +334,5 @@ class Timers:
             names, reset, barrier, normalizer)
         if writer is not None:
             for name in name_to_min_max_time:
-                min_time, max_time = name_to_min_max_time[name]
-                writer.add_scalar(name + '-time-max', max_time, iteration)
-                writer.add_scalar(name + '-time-min', min_time, iteration)
+                _, max_time = name_to_min_max_time[name]
+                writer.add_scalar(name + '-time', max_time, iteration)

@@ -153,7 +153,7 @@ class Bucket:
     def reduce_scatter_grad(self, target_buffer):
         """reduce_scatter_grad"""
         assert self.is_all_grad_collected()
-        self._grad_buffer.div_(self._num_partitions)
+        self._grad_buffer /= self._num_partitions
 
         # self._grad_buffer /= self._num_partitions
         dist.reduce_scatter_tensor(output=target_buffer,

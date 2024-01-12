@@ -6,7 +6,7 @@
 #
 ################################################################################
 """
-Megatron checkpoint实现类，针对megatron框架实现模型和优化器状态的保存逻辑
+Megatron checkpoint实现类, 针对megatron框架实现模型和优化器状态的保存逻辑
 """
 import os
 import time

@@ -28,7 +28,6 @@ class LlamaTrainStep(AbstractTrainStep):
             data = next(data_iterator)
             input_ids = data['input_ids'].long()
             labels = data['labels'].long()
-            loss_mask = labels.ne(-100).long()
 
             if 'attention_mask' in data:
                 attention_mask = data['attention_mask'].long()
@@ -46,6 +45,7 @@ class LlamaTrainStep(AbstractTrainStep):
                 position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
 
             labels = torch.cat((labels[:, 1:], labels[:, :1]), dim=1)
+            loss_mask = labels.ne(-100).long()
             loss_mask[:, -1] = 0
             return [input_ids, labels, loss_mask, attention_mask, position_ids]
 

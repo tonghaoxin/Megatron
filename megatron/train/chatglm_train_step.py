@@ -41,9 +41,9 @@ class ChatGLMTrainStep(AbstractTrainStep):
             labels = data['labels'].long()
             attention_mask = get_masks(tokens)
             position_ids = pretrain_chatglm2.get_position_ids(tokens, tokens.device)
-            loss_mask = (labels != -100).long()
 
             labels = torch.cat((labels[:, 1:], labels[:, :1]), dim=1)
+            loss_mask = (labels != -100).long()
             loss_mask[:, -1] = 0
 
             return (tokens, labels, loss_mask), (attention_mask, position_ids)

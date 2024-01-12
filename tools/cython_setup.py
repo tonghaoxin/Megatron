@@ -26,14 +26,11 @@ group_num = 2
 file_groups = []
 
 
-v3_list = ["megatron/checkpointing.py",
-           "megatron/checkpoint_manager.py",
+v3_list = ["megatron/checkpoint_manager.py",
            "megatron/optimizer/optimizer.py",
            "megatron/optimizer/distrib_optimizer.py",
            "megatron/optimizer/zero_optimizer.py",
            "megatron/optimizer/clip_grads.py",
-           "megatron/optimizer/grad_scaler.py",
-           "megatron/optimizer/lion.py",
            "megatron/optimizer/chunk/chunk.py",
            "megatron/optimizer/chunk/chunk_mgr.py",
            "megatron/optimizer/memory_tracer/memory_monitor.py",
