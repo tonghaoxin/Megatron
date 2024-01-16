@@ -1302,6 +1302,14 @@ def _get_num_layers(args, is_encoder_and_decoder_model, is_decoder=False):
                     and mpu.get_pipeline_model_parallel_rank() == 0 else
                     args.num_layers // args.transformer_pipeline_model_parallel_size
                 )
+            elif args.pipeline_model_parallel_partition_method == 'customized':
+                layer_list, layer_index = utils.partition_customized(args.pipeline_model_parallel_partition_split)
+                num_layers = (
+                    0
+                    if args.standalone_embedding_stage
+                    and mpu.get_pipeline_model_parallel_rank() == 0 else
+                    layer_list[mpu.get_pipeline_model_parallel_rank()]
+                )
             else:
                 layer_list, layer_index = partition_func(args.num_layers, args.transformer_pipeline_model_parallel_size)
                 num_layers = (
