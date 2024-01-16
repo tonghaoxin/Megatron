@@ -103,6 +103,8 @@ OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx
 # Disable XFLAGS megatron mock module
 XFLAGS --disable megatron
 
+export BKCL_FORCE_SYNC=1
+
 run_cmd="PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
          $OPTIONS_NCCL \
          torchrun $DISTRIBUTED_ARGS \
