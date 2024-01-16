@@ -274,19 +274,45 @@ class NPUAccelerator(MegatronAccelerator):
     def get_bwd_profiler_ctx(self):
         """get_bwd_profiler_ctx"""
         return None
-        # return torch.autograd.profiler.emit_nvtx(record_shapes=True)
 
     def profiler_start(self, profiler_ctx):
         """profiler_start"""
         pass
-        # torch.cuda.cudart().cudaProfilerStart()
-        # profiler_ctx.__enter__()
 
     def profiler_stop(self, profiler_ctx):
         """profiler_stop"""
         pass
-        # profiler_ctx.__exit__(None, None, None)
-        # torch.cudart().cudaProfilerStop()
+
+    def get_torch_profiler(self, schedule, tensorboard_trace_handler,
+                           record_shapes=False,
+                           profile_memory=False,
+                           with_stack=False,
+                           with_flops=False,
+                           with_modules=False):
+        """get_torch_profiler"""
+        activities=[
+            torch_npu.profiler.ProfilerActivity.CPU,
+            torch_npu.profiler.ProfilerActivity.NPU
+        ]
+
+        experimental_config = torch_npu.profiler._ExperimentalConfig(
+                aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
+                profiler_level=torch_npu.profiler.ProfilerLevel.Level2,
+                l2_cache=False,
+                record_op_args=True,
+                data_simplification=False
+        )
+
+        return torch.profiler.profile(
+                activities=activities,
+                schedule=schedule,
+                on_trace_ready=tensorboard_trace_handler,
+                record_shapes=record_shapes,
+                profile_memory=profile_memory,
+                with_stack=with_stack,
+                with_flops=with_flops,
+                with_modules=with_modules,
+                experimental_config=experimental_config)
 
     def lazy_call(self, callback):
         """lazy_call"""

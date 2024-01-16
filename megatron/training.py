@@ -772,17 +772,30 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             print(f"Directory '{torch_profiler_log_path}' created.")
 
         work_name = "RANK_{}_".format(torch.distributed.get_rank())
-        prof = torch.profiler.profile(
-                schedule=torch.profiler.schedule(
-                    wait=args.torch_profiler_wait_times,
-                    warmup=args.torch_profiler_warmup_times,
-                    active=args.torch_profiler_active_times,
-                    repeat=args.torch_profiler_repeat_times),
-                on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                    dir_name=torch_profiler_log_path,
-                    worker_name=work_name),
-                record_shapes=True,
-                with_stack=True)
+
+        torch_profiler_schedule = torch.profiler.schedule(
+                wait=args.torch_profiler_wait_times,
+                warmup=args.torch_profiler_warmup_times,
+                active=args.torch_profiler_active_times,
+                repeat=args.torch_profiler_repeat_times,
+                skip_first=args.torch_profiler_skip_first_times
+        )
+
+        torch_profiler_tensorboard_trace_handler = torch.profiler.tensorboard_trace_handler(
+                dir_name=torch_profiler_log_path,
+                worker_name=work_name
+        )
+
+        prof = get_accelerator().get_torch_profiler(
+                torch_profiler_schedule,
+                torch_profiler_tensorboard_trace_handler,
+                record_shapes=args.torch_profiler_record_shapes,
+                profile_memory=args.torch_profiler_profile_memory,
+                with_stack=args.torch_profiler_with_stack,
+                with_flops=args.torch_profiler_with_flops,
+                with_modules=args.torch_profiler_with_modules
+        )
+
         prof.start() ######## tensorboad profiler
 
     """Train the model function."""
