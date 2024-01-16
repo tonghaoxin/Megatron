@@ -114,6 +114,7 @@ export ALLREDUCE_ASYNC=false
 export ALLGATHER_ASYNC=false
 export ALLREDUCE_FUSION=0
 export BKCL_TIMEOUT=1800
+export BKCL_FORCE_SYNC=1
 # export BKCL_SOCKET_IFNAME=xgbe0
 
 # debug
