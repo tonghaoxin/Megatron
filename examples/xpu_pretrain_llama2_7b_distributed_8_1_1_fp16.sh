@@ -6,9 +6,13 @@ ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 #data数据路径记得修改
 DATA_PATH=${ROOT_DIR}/../data/llama_00_text_document
+#DATA_PATH=$ROOT_DIR/../pile/pile-llama_text_document
 
 #tokenizer路径记得修改
 TOKENIZER_PATH=${ROOT_DIR}/../tokenizer
+
+#数据和tokenizer的bos 路径
+#bos:/klx-pytorch-work-bd/training/xpytorch/megatron/llama2_7b_data/
 
 export XPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$XPU_VISIBLE_DEVICES" | awk -F, '{print NF}'`
@@ -31,35 +35,35 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --master_addr $MASTER_ADDR
                   --master_port $MASTER_PORT"
 
-LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
+LLAMA_7B_ARGS="--tensor-model-parallel-size 8 \
                --pipeline-model-parallel-size 1 \
-               --num-layers 2 \
+               --num-layers 32 \
+               --exit-interval 10 \
                --hidden-size 4096 \
                --ffn-hidden-size 11008 \
                --num-attention-heads 32 \
-               --micro-batch-size 4 \
+               --micro-batch-size 1 \
                --global-batch-size 128 \
-               --exit-interval 2 \
                --seq-length 1024 \
                --max-position-embeddings 1024 \
-               --lr 1.0e-5 \
+               --lr 0.0003 \
                --min-lr 1.0e-5 \
                --clip-grad 1.0 \
                --optimizer adam \
                --adam-beta1 0.9 \
                --adam-beta2 0.95 \
-               --weight-decay 0.1 \
-               --adam-eps 1e-08 \
-               --train-iters 500000 \
+               --weight-decay 1e-2 \
+               --adam-eps 1e-05  \
+               --train-iters 50000 \
                --lr-decay-iters 320000 \
                --lr-decay-style cosine \
                --lr-warmup-fraction .01 \
                --no-async-tensor-model-parallel-allreduce \
                --tokenizer-type LLaMASentencePieceTokenizer \
-               --tokenizer-model $ROOT_DIR/../llama-13B/download/tokenizer.model \
+               --tokenizer-model $TOKENIZER_PATH/tokenizer.model \
                --activation-func swiglu \
                --use-rotary-position-embeddings \
-               --rmsnorm-epsilon 1e-6 \
+               --rmsnorm-epsilon 1e-5 \
                --no-position-embedding \
                --no-gradient-accumulation-fusion \
                --no-bias-gelu-fusion \
@@ -69,15 +73,17 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --hidden-dropout 0 \
                --embedding-dropout 0 \
                --initial-loss-scale 16 \
-               --fp16 \
-               --untie-embeddings-and-output-weights"
+               --untie-embeddings-and-output-weights \
+               --fp16"
                #--use-flash-attn \
                #--fused-rmsnorm \
                # --sequence-parallel
+               # --vocab-file $VOCAB_FILE \
+               # --merge-file $MERGE_FILE \
 
 LLAMA_13B_ARGS="--tensor-model-parallel-size 2 \
                 --pipeline-model-parallel-size 1 \
-                --num-layers 1 \
+                --num-layers 4 \
                 --hidden-size 5120 \
                 --ffn-hidden-size 13824 \
                 --num-attention-heads 40 \
@@ -262,10 +268,12 @@ export BKCL_CCIX_BUFFER_GM=1
 
 # xmlir set L3 size, default 13M
 #export XMLIR_D_XPU_L3_SIZE=1048576
+#export XACC=1
 
-PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
+PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
-       $LLAMA_13B_ARGS \
+       $LLAMA_7B_ARGS \
        $OUTPUT_ARGS \
        $OTHER_ARGS
+
