@@ -284,6 +284,22 @@ class CUDAAccelerator(MegatronAccelerator):
         profiler_ctx.__exit__(None, None, None)
         torch.cudart().cudaProfilerStop()
 
+    def get_torch_profiler(self, schedule, tensorboard_trace_handler,
+                           record_shapes=False,
+                           profile_memory=False,
+                           with_stack=False,
+                           with_flops=False,
+                           with_modules=False):
+        """get_torch_profiler"""
+        return torch.profiler.profile(
+                schedule=schedule,
+                on_trace_ready=tensorboard_trace_handler,
+                record_shapes=record_shapes,
+                profile_memory=profile_memory,
+                with_stack=with_stack,
+                with_flops=with_flops,
+                with_modules=with_modules)
+
     def lazy_call(self, callback):
         """lazy_call"""
         return torch.cuda._lazy_call(callback)

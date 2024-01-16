@@ -1085,6 +1085,18 @@ def _add_training_args(parser):
     group.add_argument('--torch-profiler-warmup-times', type=int, default=1, help='Warmup times for torch profiler.')
     group.add_argument('--torch-profiler-active-times', type=int, default=1, help='Active times for torch profiler.')
     group.add_argument('--torch-profiler-repeat-times', type=int, default=1, help='Repeat times for torch profiler.')
+    group.add_argument('--torch-profiler-skip-first-times', type=int, default=1,
+                       help='Skip first times for torch profiler.')
+    group.add_argument('--torch-profiler-record-shapes', action='store_true',
+                       help="Save information about operator's inputs shapes for torch profiler.")
+    group.add_argument('--torch-profiler-profile-memory', action='store_true',
+                       help="Track tensor memory allocation/deallocation for torch profiler.")
+    group.add_argument('--torch-profiler-with-stack', action='store_true',
+                       help="Record source information for the ops for torch profiler.")
+    group.add_argument('--torch-profiler-with-flops', action='store_true',
+                       help="Use formula to estimate the FLOPs of specific operators for torch profiler.")
+    group.add_argument('--torch-profiler-with-modules', action='store_true',
+                       help="Record module hierarchy corresponding to the callstack of the op for torch profiler.")
     group.add_argument('--debug-layer-list', type=int, default=[], nargs='+', help='index of debugging layers, e.g., 1 2 3')
     group.add_argument('--debug-tp-list', type=int, default=[], nargs='+', help='debugging tp rank, e.g., 0 1 2')
     group.add_argument('--debug-pp-list', type=int, default=[], nargs='+', help='debugging pp rank, e.g., 0 1 2')

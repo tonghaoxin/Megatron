@@ -252,6 +252,16 @@ class MegatronAccelerator(ABC):
         ...
 
     @abc.abstractmethod
+    def get_torch_profiler(self, schedule, tensorboard_trace_handler,
+                           record_shapes=False,
+                           profile_memory=False,
+                           with_stack=False,
+                           with_flops=False,
+                           with_modules=False):
+        """get_torch_profiler"""
+        ...
+
+    @abc.abstractmethod
     def lazy_call(self, callback):
         """lazy_call"""
         ...

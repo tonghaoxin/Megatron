@@ -265,6 +265,28 @@ class XPUAccelerator(MegatronAccelerator):
         """profiler_stop"""
         pass
 
+    def get_torch_profiler(self, schedule, tensorboard_trace_handler,
+                           record_shapes=False,
+                           profile_memory=False,
+                           with_stack=False,
+                           with_flops=False,
+                           with_modules=False):
+        """get_torch_profiler"""
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA
+        ]
+
+        return torch.profiler.profile(
+                activities=activities,
+                schedule=schedule,
+                on_trace_ready=tensorboard_trace_handler,
+                record_shapes=record_shapes,
+                profile_memory=profile_memory,
+                with_stack=with_stack,
+                with_flops=with_flops,
+                with_modules=with_modules)
+
     def lazy_call(self, callback):
         """lazy_call"""
         return torch.cuda._lazy_call(callback)
