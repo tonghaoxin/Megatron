@@ -74,7 +74,9 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 8 \
                --embedding-dropout 0 \
                --initial-loss-scale 16 \
                --untie-embeddings-and-output-weights \
-               --fp16"
+               --recompute-activations \
+               --recompute-method uniform \
+               --recompute-num-layers 1"
                #--use-flash-attn \
                #--fused-rmsnorm \
                # --sequence-parallel
@@ -276,4 +278,3 @@ PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        $LLAMA_7B_ARGS \
        $OUTPUT_ARGS \
        $OTHER_ARGS
-
