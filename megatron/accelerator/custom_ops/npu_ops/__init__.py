@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 
 from torch.utils import cpp_extension
+from .ascend_turbo.initialize import initialize_cfg_from_args
 
 
 def load(args):

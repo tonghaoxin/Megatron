@@ -97,6 +97,10 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['sync_batch_norm'] = None # TODO(changtao02): add xpu custom SyncBatchNorm
         self._custom_ops['custom_flash_attn'] = None #TODO(changtao02): add xpu custom flashattn
 
+    def _monkey_patch(self, args):
+        """_monkey_patch"""
+        pass
+
     def register_ops(self, args):
         """register_ops"""
         from .xpu_ops import load
@@ -112,6 +116,9 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
 
         self._custom_ops['custom_parallel_attention'] = self._custom_interface_manager.\
                 get_interface('custom_parallel_attention')(parallel_attention)
+
+        # Monkey patch custom classes and modules
+        self._monkey_patch(args)
 
     def get_operator(self, op_name):
         """get_operator"""

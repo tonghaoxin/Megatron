@@ -763,13 +763,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
     if is_torch_profiler_enabled:
         if os.path.exists(torch_profiler_log_path):
-            if not os.path.isdir(torch_profiler_log_path):
-                print(f"'{torch_profiler_log_path}' is not a directory.")
-            else:
-                print(f"Directory '{torch_profiler_log_path}' already exists.")
+            assert os.path.isdir(torch_profiler_log_path)
         else:
-            os.makedirs(torch_profiler_log_path)
-            print(f"Directory '{torch_profiler_log_path}' created.")
+            if args.local_rank == 0:
+                os.makedirs(torch_profiler_log_path)
+                print(f"Directory '{torch_profiler_log_path}' created.")
 
         work_name = "RANK_{}_".format(torch.distributed.get_rank())
 

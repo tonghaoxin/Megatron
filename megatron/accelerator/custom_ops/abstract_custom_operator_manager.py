@@ -17,6 +17,11 @@ class MegatronCustomOperatorManager(ABC):
         self._custom_interface_manager = None
 
     @abc.abstractmethod
+    def _monkey_patch(self, args):
+        """_monkey_patch"""
+        ...
+
+    @abc.abstractmethod
     def register_ops(self, args):
         """register_ops"""
         ...

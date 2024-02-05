@@ -29,17 +29,18 @@ MASTER_ADDR=${1:-"127.0.0.1"}
 NNODES=${2:-1}
 NODE_RANK=${3:-0}
 
-#export OMP_NUM_THREADS=96
-#export ASCEND_GLOBAL_LOG_LEVEL=3
-#export ASCEND_GLOBAL_EVENT_ENABLE=1
-export INF_NAN_MODE_ENABLE=1
+# export OMP_NUM_THREADS=96
+# export ASCEND_GLOBAL_LOG_LEVEL=3
+# export ASCEND_GLOBAL_EVENT_ENABLE=1
+# export INF_NAN_MODE_ENABLE=1
 export HCCL_CONNECT_TIMEOUT=1200
-export HCCL_INTRA_PCIE_ENABLE=0
-export HCCL_INTRA_ROCE_ENABLE=1
-export HCCL_RDMA_TC=128
-export HCCL_RDMA_SL=4
+# export HCCL_INTRA_PCIE_ENABLE=0
+# export HCCL_INTRA_ROCE_ENABLE=1
+# export HCCL_RDMA_TC=128
+# export HCCL_RDMA_SL=4
 export COMBINED_ENABLE=1
-export HCCL_SOCKET_IFNAME=xgbe0
+# export HCCL_SOCKET_IFNAME=xgbe0
+export MULTI_STREAM_MEMORY_REUSE=1
 
 DISTRIBUTED_ARGS="--nproc_per_node $NPUS_PER_NODE
                   --nnodes $NNODES
@@ -89,17 +90,25 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size 8 \
                  --attention-softmax-in-fp32 \
                  --no-query-key-layer-scaling \
                  --no-gradient-accumulation-fusion \
-                 --recompute-granularity full \
-                 --recompute-method block \
-                 --recompute-num-layers 2 \
                  --multi-query-attention \
                  --multi-query-group-num 8 \
                  --ffn-dim-multiplier 1.3 \
                  --multiple-of 4096 \
+                 --tp-gemm-parallel \
                  --use-flash-attn \
                  --fused-rmsnorm \
 		             --memory-saving \
                  --fp16"
+                 #--enable-torch-profiler \
+                 #--torch-profiler-log-path ./result_dir \
+                 #--torch-profiler-wait-times 1 \
+                 #--torch-profiler-warmup-times 1 \
+                 #--torch-profiler-active-times 1 \
+                 #--torch-profiler-repeat-times 1 \
+                 #--torch-profiler-skip-first-times 1 \
+                 #--recompute-granularity full \
+                 #--recompute-method block \
+                 #--recompute-num-layers 2 \
 		             #--enable-debug \
 		             #--debug-layer-list 1 \
 		             #--debug-tp-list 0 \

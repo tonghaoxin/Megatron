@@ -62,6 +62,10 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_flash_attn'] = self._custom_interface_manager.\
                 get_interface('custom_flash_attn')(flashattn_func_cuda, rearrange_cuda)
 
+    def _monkey_patch(self, args):
+        """_monkey_patch"""
+        pass
+
     def register_ops(self, args):
         """register_ops"""
         from .cuda_ops import load
@@ -125,6 +129,9 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
                 get_interface('custom_apply_rope_with_idx')
         self._custom_ops['custom_parallel_attention'] = self._custom_interface_manager.\
                 get_interface('custom_parallel_attention')(parallel_attention)
+
+        # Monkey patch custom classes and modules
+        self._monkey_patch(args)
 
     def get_operator(self, op_name):
         """get_operator"""
