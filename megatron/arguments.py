@@ -163,8 +163,10 @@ def validate_args(args, defaults={}):
             ' must be setting --tensor-model-parallel-size > 1 '
         assert args.tp_kernel_split_num >= 1, 'when using --tp-gemm-parallel option,'\
             ' must be setting --tp-kernel-split-num >= 1'
-        assert not args.async_tensor_model_parallel_allreduce, 'when using --tp-gemm-parallel option,'\
-            ' must be setting --no-async-tensor-model-parallel-allreduce '
+        if get_accelerator().backend_name() == "cuda":
+            assert not args.async_tensor_model_parallel_allreduce, \
+                    'when using --tp-gemm-parallel option and accelerator backend is set to cuda,'\
+                    ' must be setting --no-async-tensor-model-parallel-allreduce '
 
     if args.pipeline_model_parallel_partition_balanced:
         args.pipeline_model_parallel_partition_method = 'balanced'

@@ -66,7 +66,8 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
     def _monkey_patch(self, args):
         """_monkey_patch"""
         from .npu_ops import initialize_cfg_from_args
-        initialize_cfg_from_args(args)
+        if args.tp_gemm_parallel:
+            initialize_cfg_from_args(args)
 
     def register_ops(self, args):
         """register_ops"""

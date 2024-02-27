@@ -16,7 +16,7 @@ DATA_PATH=${ROOT_DIR}/../data/alpaca_text_document
 TOKENIZER_PATH=${ROOT_DIR}/../tokenizer/tokenizer.model
 CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16
 CHECKPOINT_SAVE_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16_save
-TENSORBOARD_PATH='./llama7b_tp8_pp1_fp16_tensorboard'
+TENSORBOARD_PATH='./llama2_7b_tp2_pp1_dp4_zero1_fp16_tensorboard'
 
 #export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
 export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
@@ -31,14 +31,15 @@ NODE_RANK=${2:-0}
 # export OMP_NUM_THREADS=96
 # export ASCEND_GLOBAL_LOG_LEVEL=3
 # export ASCEND_GLOBAL_EVENT_ENABLE=1
-export INF_NAN_MODE_ENABLE=1
+# export INF_NAN_MODE_ENABLE=1
 export HCCL_CONNECT_TIMEOUT=1200
-export HCCL_INTRA_PCIE_ENABLE=0
-export HCCL_INTRA_ROCE_ENABLE=1
-export HCCL_RDMA_TC=128
-export HCCL_RDMA_SL=4
+# export HCCL_INTRA_PCIE_ENABLE=0
+# export HCCL_INTRA_ROCE_ENABLE=1
+# export HCCL_RDMA_TC=128
+# export HCCL_RDMA_SL=4
 export COMBINED_ENABLE=1
-export HCCL_SOCKET_IFNAME=xgbe0
+# export HCCL_SOCKET_IFNAME=xgbe0
+export MULTI_STREAM_MEMORY_REUSE=1
 
 DISTRIBUTED_ARGS="--nproc_per_node $NPUS_PER_NODE
                   --nnodes $NNODES
@@ -54,7 +55,7 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 2 \
                 --num-attention-heads 32 \
                 --init-method-std 0.01 \
                 --micro-batch-size 1 \
-                --global-batch-size 8 \
+                --global-batch-size 128 \
                 --seq-length 4096 \
                 --max-position-embeddings 4096 \
                 --pad-vocab-size-to 32000 \
@@ -74,7 +75,6 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 2 \
                 --sequence-parallel \
                 --rmsnorm-epsilon 1e-6 \
                 --activation-func swiglu \
-                --use-distributed-optimizer \
                 --use-rotary-position-embeddings \
                 --untie-embeddings-and-output-weights \
                 --attention-dropout 0 \
@@ -86,13 +86,14 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 2 \
                 --no-masked-softmax-fusion \
                 --attention-softmax-in-fp32 \
                 --no-query-key-layer-scaling \
-                --apply-rotary-positional-embedding-kernel \
-                --use-flash-attn \
+                --no-gradient-accumulation-fusion \
                 --fused-rmsnorm \
-                --bf16"
+                --use-flash-attn \
+                --apply-rotary-positional-embedding-kernel \
+                --use-distributed-optimizer \
+                --fp16"
                 #--reset-attention-mask \
                 #--recompute-activations \
-                #--no-gradient-accumulation-fusion \
                 #--mlp-layer-fusion \
                 #--make-vocab-size-divisible-by 128 \
                 #--no-async-tensor-model-parallel-allreduce \
@@ -105,10 +106,10 @@ OUTPUT_ARGS="--log-interval 1 \
 OTHER_ARGS="--data-path $DATA_PATH \
             --split 100,0,0 \
             --DDP-impl local \
-            --load $CHECKPOINT_LOAD_PATH \
+            --data-impl mmap \
             --distributed-backend nccl"
-            #--data-impl mmap \
-            #--save $CHECKPOINT_SAVE_PATH \
+            # --load $CHECKPOINT_LOAD_PATH \
+            # --save $CHECKPOINT_SAVE_PATH \
 
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/npu_ops':$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \

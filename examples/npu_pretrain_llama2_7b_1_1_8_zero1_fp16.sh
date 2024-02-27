@@ -14,9 +14,9 @@ ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 DATA_PATH=${ROOT_DIR}/../data/alpaca_text_document
 TOKENIZER_PATH=${ROOT_DIR}/../tokenizer/tokenizer.model
-CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16
-CHECKPOINT_SAVE_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16_save
-TENSORBOARD_PATH='./llama7b_tp8_pp1_fp16_tensorboard'
+CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp1_pp1_dp8_zero1_fp16
+CHECKPOINT_SAVE_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp1_pp1_dp8_zero1_fp16_save
+TENSORBOARD_PATH='./llama2_7b_tp1_pp1_dp8_zero1_fp16_tensorboard'
 
 #export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
 export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
@@ -74,7 +74,6 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 1 \
     		        --lr-warmup-iters 2000   \
                 --rmsnorm-epsilon 1e-6 \
                 --activation-func swiglu \
-                --use-distributed-optimizer \
                 --use-rotary-position-embeddings \
                 --untie-embeddings-and-output-weights \
                 --attention-dropout 0 \
@@ -86,10 +85,11 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 1 \
                 --no-masked-softmax-fusion \
                 --attention-softmax-in-fp32 \
                 --no-query-key-layer-scaling \
-                --apply-rotary-positional-embedding-kernel \
                 --initial-loss-scale 16 \
-                --use-flash-attn \
                 --fused-rmsnorm \
+                --use-flash-attn \
+                --apply-rotary-positional-embedding-kernel \
+                --use-distributed-optimizer \
 		            --recompute-granularity full \
 		            --recompute-method block \
 		            --recompute-num-layers 24 \
@@ -110,8 +110,8 @@ OUTPUT_ARGS="--log-interval 1 \
 OTHER_ARGS="--data-path $DATA_PATH \
             --split 100,0,0 \
             --DDP-impl local \
+            --data-impl mmap \
             --distributed-backend nccl"
-            #--data-impl mmap \
             #--load $CHECKPOINT_LOAD_PATH \
             #--save $CHECKPOINT_SAVE_PATH \
 

@@ -14,9 +14,9 @@ ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 DATA_PATH=${ROOT_DIR}/../data/alpaca_text_document
 TOKENIZER_PATH=${ROOT_DIR}/../tokenizer/tokenizer.model
-CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16
-CHECKPOINT_SAVE_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16_save
-TENSORBOARD_PATH='./llama7b_tp8_pp1_fp16_tensorboard'
+CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_70b_checkpoint_tp8_pp4_dp1_zero1_fp16
+CHECKPOINT_SAVE_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_70b_checkpoint_tp8_pp4_dp1_zero1_fp16_save
+TENSORBOARD_PATH='./llama2_70b_tp8_pp4_dp1_zero1_fp16_tensorboard'
 
 export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
 #export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
@@ -78,7 +78,6 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size 8 \
         	       --rmsnorm-epsilon 1e-6 \
         	       --activation-func swiglu \
         	       --use-rotary-position-embeddings \
-                 --apply-rotary-positional-embedding-kernel \
                  --untie-embeddings-and-output-weights \
                  --attention-dropout 0 \
                  --hidden-dropout 0 \
@@ -94,9 +93,10 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size 8 \
                  --multi-query-group-num 8 \
                  --ffn-dim-multiplier 1.3 \
                  --multiple-of 4096 \
-                 --tp-gemm-parallel \
-                 --use-flash-attn \
                  --fused-rmsnorm \
+                 --use-flash-attn \
+                 --apply-rotary-positional-embedding-kernel \
+                 --use-distributed-optimizer \
 		             --memory-saving \
                  --fp16"
                  #--enable-torch-profiler \
@@ -115,7 +115,6 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size 8 \
 		             #--debug-pp-list 0 \
 		             #--debug-dp-list 0 \
                  #--reset-attention-mask \
-                 #--use-distributed-optimizer \
                  #--make-vocab-size-divisible-by 128 \
                  #--no-async-tensor-model-parallel-allreduce \
 
@@ -127,8 +126,8 @@ OUTPUT_ARGS="--log-interval 1 \
 OTHER_ARGS="--data-path $DATA_PATH \
             --split 100,0,0 \
             --DDP-impl local \
+            --data-impl mmap \
             --distributed-backend nccl"
-            #--data-impl mmap \
             #--save $CHECKPOINT_SAVE_PATH \
             #--load $CHECKPOINT_LOAD_PATH \
 

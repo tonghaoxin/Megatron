@@ -60,9 +60,7 @@ def initialize_cfg_from_framework():
 
 def initialize_cfg_from_args(args):
     """initialize_cfg_from_args"""
-    if not args.tp_gemm_parallel or \
-            not args.sequence_parallel or \
-            args.tensor_model_parallel_size == 1:
+    if not args.sequence_parallel or args.tensor_model_parallel_size == 1:
         return
 
     ascend_turbo_cfg.set_sequence_parallel(args.sequence_parallel)

@@ -14,9 +14,9 @@ ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 DATA_PATH=${ROOT_DIR}/../data/alpaca_text_document
 TOKENIZER_PATH=${ROOT_DIR}/../tokenizer/tokenizer.model
-CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16
-CHECKPOINT_SAVE_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_7b_checkpoint_tp2_pp1_dp4_zero1_fp16_save
-TENSORBOARD_PATH='./llama7b_tp8_pp1_fp16_tensorboard'
+CHECKPOINT_LOAD_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_13b_checkpoint_tp4_pp1_dp2_zero1_fp16
+CHECKPOINT_SAVE_PATH=${ROOT_DIR}/../checkpoints/megatron_llama2_13b_checkpoint_tp4_pp1_dp2_zero1_fp16_save
+TENSORBOARD_PATH='./llama2_13b_tp4_pp1_dp2_zero1_fp16_tensorboard'
 
 #export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
 export NPU_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
@@ -87,10 +87,9 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 4 \
                  --no-masked-softmax-fusion \
                  --attention-softmax-in-fp32 \
                  --no-query-key-layer-scaling \
-                 --apply-rotary-positional-embedding-kernel \
-                 --tp-gemm-parallel \
-                 --use-flash-attn \
                  --fused-rmsnorm \
+                 --use-flash-attn \
+                 --apply-rotary-positional-embedding-kernel \
                  --memory-saving \
                  --fp16"
                 #--reset-attention-mask \
@@ -108,8 +107,8 @@ OUTPUT_ARGS="--log-interval 1 \
 OTHER_ARGS="--data-path $DATA_PATH \
             --split 100,0,0 \
             --DDP-impl local \
+            --data-impl mmap \
             --distributed-backend nccl"
-            #--data-impl mmap \
             #--save $CHECKPOINT_SAVE_PATH \
             #--load $CHECKPOINT_LOAD_PATH \
 
