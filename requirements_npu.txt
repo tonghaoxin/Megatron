@@ -1,0 +1,11 @@
+transformers==4.28.1
+einops==0.6.0
+pre-commit==3.2.2
+accelerate
+sentencepiece==0.1.98
+# flash-attn==2.0.4
+datasets==2.14.6
+jsonlines==4.0.0 # for aquila_7b
+ftfy==6.1.3 # for aquila_7b
+py-cpuinfo==9.0.0
+tiktoken==0.5.2
