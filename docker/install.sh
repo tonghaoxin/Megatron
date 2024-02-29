@@ -25,10 +25,10 @@ function install_pip_config() {
 function install_base_env() {
     local COMPILE_ENV
     read COMPILE_ENV<<< $*
-    
+
     cd ${CURRENT_DIR}
     rm -rf /opt/conda/pip.conf /root/.config/pip/pip.conf /root/.pip/pip.conf /etc/pip.conf /etc/xdg/pip/pip.conf /usr/pip.conf
-    
+
     requirements_file="requirements.txt"
     if  [[ "$COMPILE_ENV" == "npu" ]];then
         requirements_file="requirements_npu.txt"
@@ -74,6 +74,8 @@ function download_megatron_binary_compile() {
 
     # 替换 __init__.py 和 cuda_ops 下的二进制
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/*
+    rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/*
+    rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/*
     mv /workspace/Megatron-LM/docker/__init__.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/__init__.py
     cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
     cp ${CURRENT_DIR}/${compile_folder_name}/scaled_masked_softmax_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
@@ -107,13 +109,10 @@ function download_megatron_binary_compile_for_npu() {
 
     # 替换 __init__NPU.py 和 cuda_ops 下的二进制
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/*
+    rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/*
+    rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/*
     mv /workspace/Megatron-LM/docker/__init__NPU.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/__init__.py
-    cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
-    # cp ${CURRENT_DIR}/${compile_folder_name}/scaled_masked_softmax_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
-    # cp ${CURRENT_DIR}/${compile_folder_name}/scaled_softmax_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
-    # cp ${CURRENT_DIR}/${compile_folder_name}/scaled_upper_triang_masked_softmax_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
-    # cp ${CURRENT_DIR}/${compile_folder_name}/rotary_positional_embedding_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
-    # cp ${CURRENT_DIR}/${compile_folder_name}/matmul_reduce_parallel_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
+    cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/
 
     # 替换 data 下的 helpers.cpython-38-x86_64-linux-gnu.so 二进制
     cp ${CURRENT_DIR}/${compile_folder_name}/helpers.cpython-*.so /workspace/Megatron-LM/megatron/data/
