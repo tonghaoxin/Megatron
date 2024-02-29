@@ -76,7 +76,7 @@ function download_megatron_binary_compile() {
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/*
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/*
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/*
-    mv /workspace/Megatron-LM/docker/__init__.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/__init__.py
+    mv /workspace/Megatron-LM/docker/__init__GPU.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/__init__.py
     cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
     cp ${CURRENT_DIR}/${compile_folder_name}/scaled_masked_softmax_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
     cp ${CURRENT_DIR}/${compile_folder_name}/scaled_softmax_cuda.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/
@@ -110,8 +110,10 @@ function download_megatron_binary_compile_for_npu() {
     # 替换 __init__NPU.py 和 cuda_ops 下的二进制
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/*
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/*
+    cp -r /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/ascend_turbo /workspace/ascend_turbo
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/*
-    mv /workspace/Megatron-LM/docker/__init__NPU.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/__init__.py
+    mv /workspace/Megatron-LM/docker/__init__NPU.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/__init__.py
+    mv /workspace/ascend_turbo /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/ascend_turbo
     cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/
 
     # 替换 data 下的 helpers.cpython-38-x86_64-linux-gnu.so 二进制

@@ -1,6 +1,6 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
-"""XPU Custom Operators"""
+"""NPU Custom Operators"""
 
 import os
 import pathlib
