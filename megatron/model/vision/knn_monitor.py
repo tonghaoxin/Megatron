@@ -36,6 +36,7 @@ def build_data_loader(dataset, drop_last=True, shuffle=False):
 
 
 def compute_feature_bank(model):
+    """compute_feature_bank"""
     args = get_args()
     global _FEATURE_BANK
     feature_bank = []
@@ -70,18 +71,30 @@ def compute_feature_bank(model):
 
     feature_banks = [torch.zeros_like(feature_bank)
                      for i in range(mpu.get_data_parallel_world_size())]
+    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+        feature_bank = get_accelerator().d2h_copy(feature_bank)
+        feature_banks = get_accelerator().d2h_copy(feature_banks)
     torch.distributed.all_gather(feature_banks,
                                  feature_bank,
                                  group=mpu.get_data_parallel_group())
+    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+        feature_bank = get_accelerator().h2d_copy(feature_bank)
+        feature_banks = get_accelerator().h2d_copy(feature_banks)
 
     assert torch.all(torch.eq(feature_banks[mpu.get_data_parallel_rank()],
                               feature_bank))
 
     feature_labels = [torch.zeros_like(feature_label)
                       for i in range(mpu.get_data_parallel_world_size())]
+    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+        feature_label = get_accelerator().d2h_copy(feature_label)
+        feature_labels = get_accelerator().d2h_copy(feature_labels)
     torch.distributed.all_gather(feature_labels,
                                  feature_label,
                                  group=mpu.get_data_parallel_group())
+    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+        feature_label = get_accelerator().h2d_copy(feature_label)
+        feature_labels = get_accelerator().h2d_copy(feature_labels)
 
     # [D, N]
     feature_banks = torch.cat(feature_banks, dim=0).t().contiguous()

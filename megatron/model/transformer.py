@@ -1340,6 +1340,7 @@ class ParallelTransformer(MegatronModule):
                  pre_process=True, post_process=True,
                  drop_path_rate=0.0,
                  norm_type='layernorm'):
+        """__init__"""
         super(ParallelTransformer, self).__init__()
         args = get_args()
 
@@ -1446,6 +1447,8 @@ class ParallelTransformer(MegatronModule):
                 'num_layers_per_stage must be divisible by ' \
                 'virtual_pipeline_model_parallel_size'
             assert args.model_type != ModelType.encoder_and_decoder
+            assert args.hetero_mode != "pp", \
+                "Heterogenous pipeline parallelism is not supported for virtual pipeline model parallel."
             # Number of layers in each model chunk is the number of layers in the stage,
             # divided by the number of model chunks in a stage.
             self.num_layers = self.num_layers // args.virtual_pipeline_model_parallel_size
@@ -1468,6 +1471,8 @@ class ParallelTransformer(MegatronModule):
             # Each stage gets a contiguous set of layers.
             if args.model_type == ModelType.encoder_and_decoder and \
                     mpu.get_pipeline_model_parallel_world_size() > 1:
+                assert args.hetero_mode != "pp", \
+                    "Heterogenous pipeline parallelism is not supported for encoder-decoder models."
                 pipeline_rank = mpu.get_pipeline_model_parallel_rank()
                 if layer_type == LayerType.encoder:
                     if args.pipeline_model_parallel_partition_method is None:
@@ -1481,10 +1486,23 @@ class ParallelTransformer(MegatronModule):
                     else:
                         offset = self.prefix_sum_inc[pipeline_rank - num_ranks_in_enc]
             else:
-                if args.pipeline_model_parallel_partition_method is None:
-                    offset = mpu.get_pipeline_model_parallel_rank() * self.num_layers
+                if args.hetero_mode != "pp":
+                    if args.pipeline_model_parallel_partition_method is None:
+                        offset = mpu.get_pipeline_model_parallel_rank() * self.num_layers
+                    else:
+                        offset = self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
                 else:
-                    offset = self.prefix_sum_inc[mpu.get_pipeline_model_parallel_rank()]
+                    pipeline_rank = mpu.get_pipeline_model_parallel_rank()
+                    pipeline_stages = [item for sublist in args.hetero_pipeline_stages for item in sublist]
+                    offset = sum(([0] + pipeline_stages)[: pipeline_rank + 1])
+                    self.num_layers = pipeline_stages[pipeline_rank]
+                    torch.distributed.barrier()
+                    for i in range(torch.distributed.get_world_size()):
+                        if i == torch.distributed.get_rank():
+                            print("pipeline_rank:", pipeline_rank,
+                                  "offset:", offset,
+                                  "num_layers:", self.num_layers, flush=True)
+                        torch.distributed.barrier()
 
         if self.num_layers == 0:
             # When a standalone embedding stage is used (e.g.,

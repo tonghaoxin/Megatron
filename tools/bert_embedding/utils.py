@@ -149,8 +149,12 @@ def get_missing_blocks_by_rank(workdir, n_samples, block_size,
     # Extend rank's missing blocks (with None) such that all ranks have equal
     # length lists. This allows for easier tracking of global progress.
     n_missing_tensor = get_accelerator().LongTensor([len(rank_missing_blocks)])
+    if torch.distributed.get_backend(group=None) == "gloo":
+        n_missing_tensor = get_accelerator().d2h_copy(n_missing_tensor)
     torch.distributed.all_reduce(n_missing_tensor,
                                  op=torch.distributed.ReduceOp.MAX)
+    if torch.distributed.get_backend(group=None) == "gloo":
+        n_missing_tensor = get_accelerator().h2d_copy(n_missing_tensor)
     max_n_missing = n_missing_tensor.item()
     rank_missing_blocks += [None] * (max_n_missing - len(rank_missing_blocks))
 

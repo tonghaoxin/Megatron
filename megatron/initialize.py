@@ -20,6 +20,7 @@ from megatron.core import mpu, tensor_parallel
 from megatron.arguments import (parse_args, validate_args)
 from megatron.checkpointing import load_args_from_checkpoint
 from megatron.global_vars import set_global_variables
+from megatron.global_vars import (set_hetero_context, get_hetero_context)
 from megatron.model.transformer import bias_dropout_add_fused_train
 from megatron.model.fused_bias_gelu import bias_gelu
 from megatron.accelerator import get_accelerator
@@ -132,7 +133,6 @@ def _compile_dependencies():
     # Always build on rank zero first.
     if torch.distributed.get_rank() == 0:
         start_time = time.time()
-        print('> compiling and loading fused kernels ...', flush=True)
         get_accelerator().load_custom_ops(args)
         torch.distributed.barrier()
     else:
@@ -169,25 +169,37 @@ def _initialize_distributed():
             print('> initializing torch distributed ...', flush=True)
         # Manually set the device ids.
         if device_count > 0:
-            device = args.rank % device_count
-            if args.local_rank is not None:
-                assert args.local_rank == device, \
-                    'expected local-rank to be the same as rank % device-count.'
+            # FIXME(changtao02): requires local_rank for xplatform hetero training for now
+            if args.hetero_cross_platform:
+                assert args.local_rank is not None, \
+                        'expected local-rank not None for xplatform hetero training'
+                device = args.local_rank
             else:
-                args.local_rank = device
+                device = args.rank % device_count
+                if args.local_rank is not None:
+                    assert args.local_rank == device, \
+                        'expected local-rank to be the same as rank % device-count.'
+                else:
+                    args.local_rank = device
             get_accelerator().set_device(device)
     # Call the init process
-    # init_method = "env://"
-    # if get_accelerator().backend_name() == "npu":
-    #     init_method = "tcp://"
-    #     master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    #     master_port = os.getenv('MASTER_PORT', '6000')
-    #     init_method += master_ip + ':' + master_port
-    torch.distributed.init_process_group(
-        backend=args.distributed_backend,
-        world_size=args.world_size, rank=args.rank,
-        timeout=timedelta(minutes=args.distributed_timeout_minutes))
-        # init_method=init_method,
+    if args.hetero_cross_platform:
+        torch.distributed.init_process_group(
+            backend='gloo',
+            world_size=args.world_size, rank=args.rank,
+            timeout=timedelta(minutes=args.distributed_timeout_minutes))
+    else:
+        torch.distributed.init_process_group(
+            backend=args.distributed_backend,
+            world_size=args.world_size, rank=args.rank,
+            timeout=timedelta(minutes=args.distributed_timeout_minutes))
+
+    if args.hetero_mode is not None:
+        # Build the heterogenous context after torch.distributed is initialized and
+        # before model parallel is initialized.
+        set_hetero_context(args)
+        if torch.distributed.get_rank() == 0:
+            print(get_hetero_context(), flush=True)
 
     # Set the tensor model-parallel, pipeline model-parallel, and
     # data-parallel communicators.

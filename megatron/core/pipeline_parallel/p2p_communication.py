@@ -6,7 +6,7 @@ from typing import Optional, List, Union, Callable, Tuple
 
 import torch
 
-from megatron import core
+from megatron import core, get_args
 from megatron.core.parallel_state import (
     get_pipeline_model_parallel_group,
     get_pipeline_model_parallel_rank,
@@ -39,6 +39,8 @@ def _communicate_shapes(tensor_send_next, tensor_send_prev,
         (recv_prev_shape, recv_next_shape)
     """
 
+    args = get_args()
+
     recv_prev_shape_tensor = None
     recv_next_shape_tensor = None
     send_prev_shape_tensor = None
@@ -59,6 +61,12 @@ def _communicate_shapes(tensor_send_next, tensor_send_prev,
         send_next_shape_tensor = torch.tensor(tensor_send_next.size(),
                                               device=get_accelerator().current_device(),
                                               dtype=torch.int64)
+
+    if torch.distributed.get_backend(group=get_pipeline_model_parallel_group()) == "gloo":
+        send_prev_shape_tensor = get_accelerator().d2h_copy(send_prev_shape_tensor)
+        recv_prev_shape_tensor = get_accelerator().d2h_copy(recv_prev_shape_tensor)
+        send_next_shape_tensor = get_accelerator().d2h_copy(send_next_shape_tensor)
+        recv_next_shape_tensor = get_accelerator().d2h_copy(recv_next_shape_tensor)
 
     if use_ring_exchange_p2p:
         torch.distributed.ring_exchange(tensor_send_prev=send_prev_shape_tensor,
@@ -104,6 +112,12 @@ def _communicate_shapes(tensor_send_next, tensor_send_prev,
         # To protect against race condition when using batch_isend_irecv().
         # should take this out once the bug with batch_isend_irecv is resolved.
         get_accelerator().synchronize()
+
+    if torch.distributed.get_backend(group=get_pipeline_model_parallel_group()) == "gloo":
+        send_prev_shape_tensor = get_accelerator().h2d_copy(send_prev_shape_tensor)
+        recv_prev_shape_tensor = get_accelerator().h2d_copy(recv_prev_shape_tensor)
+        send_next_shape_tensor = get_accelerator().h2d_copy(send_next_shape_tensor)
+        recv_next_shape_tensor = get_accelerator().h2d_copy(recv_next_shape_tensor)
 
     recv_prev_shape = [0, 0, 0]
     if recv_prev_shape_tensor is not None:
@@ -300,6 +314,8 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
 
     """
 
+    args = get_args()
+
     # Create placeholder tensors for receive in forward and backward directions
     # if needed.
     tensor_recv_prev = None
@@ -357,6 +373,13 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
     else:
         p2p_func = _p2p_ops
 
+
+    if torch.distributed.get_backend(group=get_pipeline_model_parallel_group()) == "gloo":
+        tensor_send_prev = get_accelerator().d2h_copy(tensor_send_prev)
+        tensor_recv_prev = get_accelerator().d2h_copy(tensor_recv_prev)
+        tensor_send_next = get_accelerator().d2h_copy(tensor_send_next)
+        tensor_recv_next = get_accelerator().d2h_copy(tensor_recv_next)
+
     reqs = p2p_func(tensor_send_prev=tensor_send_prev,
                     tensor_recv_prev=tensor_recv_prev,
                     tensor_send_next=tensor_send_next,
@@ -367,6 +390,12 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
         for req in reqs:
             req.wait()
         reqs = None
+
+    if torch.distributed.get_backend(group=get_pipeline_model_parallel_group()) == "gloo":
+        tensor_send_prev = get_accelerator().h2d_copy(tensor_send_prev)
+        tensor_recv_prev = get_accelerator().h2d_copy(tensor_recv_prev)
+        tensor_send_next = get_accelerator().h2d_copy(tensor_send_next)
+        tensor_recv_next = get_accelerator().h2d_copy(tensor_recv_next)
 
     if batch_p2p_comm and batch_p2p_sync:
         # To protect against race condition when using batch_isend_irecv().

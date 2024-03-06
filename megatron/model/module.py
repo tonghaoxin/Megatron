@@ -101,8 +101,14 @@ class MegatronModule(torch.nn.Module):
         # Ensure that first and last stages have the same initial parameter
         # values.
         if mpu.is_rank_in_embedding_group():
+            if torch.distributed.get_backend(group=mpu.get_embedding_group()) == "gloo":
+                self.word_embeddings_weight().data = \
+                        get_accelerator().d2h_copy(self.word_embeddings_weight().data)
             torch.distributed.all_reduce(self.word_embeddings_weight().data,
                                          group=mpu.get_embedding_group())
+            if torch.distributed.get_backend(group=mpu.get_embedding_group()) == "gloo":
+                self.word_embeddings_weight().data = \
+                        get_accelerator().h2d_copy(self.word_embeddings_weight().data)
 
         # Ensure that encoder(first stage) and decoder(split stage) position
         # embeddings have the same initial parameter values
@@ -110,10 +116,14 @@ class MegatronModule(torch.nn.Module):
         if mpu.is_rank_in_position_embedding_group() and \
                 args.pipeline_model_parallel_split_rank is not None:
             # TODO: Support tokentype embedding.
-            get_accelerator().h2d_copy(self.language_model.embedding)
             position_embeddings = self.language_model.embedding.position_embeddings
+            if torch.distributed.get_backend(group=mpu.get_position_embedding_group()) == "gloo":
+                position_embeddings.weight.data = get_accelerator().d2h_copy(position_embeddings.weight.data)
             torch.distributed.all_reduce(position_embeddings.weight.data,
                                          group=mpu.get_position_embedding_group())
+            if torch.distributed.get_backend(group=mpu.get_position_embedding_group()) == "gloo":
+                position_embeddings.weight.data = \
+                        get_accelerator().h2d_copy(position_embeddings.weight.data)
 
 
 def conversion_helper(val, conversion):

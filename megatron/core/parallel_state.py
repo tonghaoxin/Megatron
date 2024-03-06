@@ -6,6 +6,8 @@ import torch
 from typing import Optional
 
 from .utils import GlobalMemoryBuffer
+from megatron import get_args
+from megatron.accelerator import get_accelerator
 
 # Intra-layer model parallel group that the current rank belongs to.
 _TENSOR_MODEL_PARALLEL_GROUP = None
@@ -60,7 +62,7 @@ def initialize_model_parallel(
     tensor_model_parallel_size: int = 1,
     pipeline_model_parallel_size: int = 1,
     virtual_pipeline_model_parallel_size: Optional[int] = None,
-    pipeline_model_parallel_split_rank: Optional[int] = None,
+    pipeline_model_parallel_split_rank: Optional[int] = None
 ) -> None:
     """
     Initialize model data parallel groups.
@@ -117,6 +119,13 @@ def initialize_model_parallel(
     with a total of 16 GPUs, rank 0 to 7 belong to the first box and
     ranks 8 to 15 belong to the second box.
     """
+
+    args = get_args()
+    # Get hetero context for rank info
+    if args.hetero_mode:
+        from megatron.global_vars import get_hetero_context
+        hetero_context = get_hetero_context()
+
     # Get world size and rank. Ensure some consistencies.
     assert torch.distributed.is_initialized()
     world_size: int = torch.distributed.get_world_size()
@@ -143,6 +152,10 @@ def initialize_model_parallel(
         _VIRTUAL_PIPELINE_MODEL_PARALLEL_RANK = 0
         _VIRTUAL_PIPELINE_MODEL_PARALLEL_WORLD_SIZE = virtual_pipeline_model_parallel_size
 
+    if args.hetero_mode is not None and pipeline_model_parallel_split_rank is not None:
+        pipeline_model_parallel_split_rank = \
+                hetero_context.to_physical_ranks([pipeline_model_parallel_split_rank])[0]
+
     if pipeline_model_parallel_split_rank is not None:
         global _PIPELINE_MODEL_PARALLEL_SPLIT_RANK
         _PIPELINE_MODEL_PARALLEL_SPLIT_RANK = pipeline_model_parallel_split_rank
@@ -160,7 +173,15 @@ def initialize_model_parallel(
         for j in range(tensor_model_parallel_size):
             ranks = range(start_rank + j, end_rank, tensor_model_parallel_size)
             all_data_parallel_group_ranks.append(list(ranks))
-            group = torch.distributed.new_group(ranks)
+            if args.hetero_mode is not None:
+                ranks = hetero_context.to_physical_ranks(ranks)
+            if args.hetero_cross_platform and args.hetero_mode == "pp":
+                group = torch.distributed.new_group(
+                    ranks,
+                    backend=get_accelerator().communication_backend_name()
+                )
+            else:
+                group = torch.distributed.new_group(ranks)
             if rank in ranks:
                 _DATA_PARALLEL_GROUP = group
                 _DATA_PARALLEL_GLOBAL_RANKS = ranks
@@ -171,7 +192,15 @@ def initialize_model_parallel(
     for i in range(data_parallel_size):
         ranks = [data_parallel_group_ranks[i]
                  for data_parallel_group_ranks in all_data_parallel_group_ranks]
-        group = torch.distributed.new_group(ranks)
+        if args.hetero_mode is not None:
+            ranks = hetero_context.to_physical_ranks(ranks)
+        if args.hetero_cross_platform and args.hetero_mode == "dp":
+            group = torch.distributed.new_group(
+                ranks,
+                backend=get_accelerator().communication_backend_name()
+            )
+        else:
+            group = torch.distributed.new_group(ranks)
         if rank in ranks:
             _MODEL_PARALLEL_GROUP = group
 
@@ -182,7 +211,12 @@ def initialize_model_parallel(
     for i in range(num_tensor_model_parallel_groups):
         ranks = range(i * tensor_model_parallel_size,
                       (i + 1) * tensor_model_parallel_size)
-        group = torch.distributed.new_group(ranks)
+        if args.hetero_mode is not None:
+            ranks = hetero_context.to_physical_ranks(ranks)
+        group = torch.distributed.new_group(
+            ranks,
+            backend=get_accelerator().communication_backend_name()
+        )
         if rank in ranks:
             _TENSOR_MODEL_PARALLEL_GROUP = group
 
@@ -201,7 +235,15 @@ def initialize_model_parallel(
         'position embedding group is already initialized'
     for i in range(num_pipeline_model_parallel_groups):
         ranks = range(i, world_size, num_pipeline_model_parallel_groups)
-        group = torch.distributed.new_group(ranks)
+        if args.hetero_mode is not None:
+            ranks = hetero_context.to_physical_ranks(ranks)
+        if args.hetero_cross_platform and args.hetero_mode == "dp":
+            group = torch.distributed.new_group(
+                ranks,
+                backend=get_accelerator().communication_backend_name()
+            )
+        else:
+            group = torch.distributed.new_group(ranks)
         if rank in ranks:
             _PIPELINE_MODEL_PARALLEL_GROUP = group
             _PIPELINE_GLOBAL_RANKS = ranks
@@ -222,13 +264,25 @@ def initialize_model_parallel(
             embedding_ranks = ranks
             position_embedding_ranks = ranks
 
-        group = torch.distributed.new_group(embedding_ranks)
+        if args.hetero_cross_platform and args.hetero_mode == "dp":
+            group = torch.distributed.new_group(
+                embedding_ranks,
+                backend=get_accelerator().communication_backend_name()
+            )
+        else:
+            group = torch.distributed.new_group(embedding_ranks)
         if rank in embedding_ranks:
             _EMBEDDING_GROUP = group
         if rank in ranks:
             _EMBEDDING_GLOBAL_RANKS = embedding_ranks
 
-        group = torch.distributed.new_group(position_embedding_ranks)
+        if args.hetero_cross_platform and args.hetero_mode == "dp":
+            group = torch.distributed.new_group(
+                position_embedding_ranks,
+                backend=get_accelerator().communication_backend_name()
+            )
+        else:
+            group = torch.distributed.new_group(position_embedding_ranks)
         if rank in position_embedding_ranks:
             _POSITION_EMBEDDING_GROUP = group
         if rank in ranks:
@@ -255,6 +309,7 @@ def initialize_zero_secondary_parallel(group_size):
     assert _ZERO_SECONDARY_PARALLEL_INTER_GROUP is None, \
         'ZeRO secondary parallel group (inter) is already initialized'
 
+    args = get_args()
     group = get_data_parallel_group()
     world_size = get_data_parallel_world_size()
     rank = get_data_parallel_rank()
@@ -277,7 +332,15 @@ def initialize_zero_secondary_parallel(group_size):
     for i in range(world_size // zero_secondary_parallel_size_):
         intra_ranks = range(i * zero_secondary_parallel_size_, (i + 1) * zero_secondary_parallel_size_)
         intra_ranks = [torch.distributed.get_global_rank(group, i) for i in intra_ranks]
-        intra_group = torch.distributed.new_group(intra_ranks)
+        if args.hetero_mode is not None:
+            intra_ranks = hetero_context.to_physical_ranks(intra_ranks)
+        if args.hetero_cross_platform:
+            intra_group = torch.distributed.new_group(
+                intra_ranks,
+                backend=get_accelerator().communication_backend_name()
+            )
+        else:
+            intra_group = torch.distributed.new_group(intra_ranks)
         if i == (rank // zero_secondary_parallel_size_):
             _ZERO_SECONDARY_PARALLEL_INTRA_GROUP = intra_group
 
@@ -285,7 +348,15 @@ def initialize_zero_secondary_parallel(group_size):
     for i in range(zero_secondary_parallel_size_):
         inter_ranks = range(i, world_size, zero_secondary_parallel_size_)
         inter_ranks = [torch.distributed.get_global_rank(group, i) for i in inter_ranks]
-        inter_group = torch.distributed.new_group(inter_ranks)
+        if args.hetero_mode is not None:
+            inter_ranks = hetero_context.to_physical_ranks(inter_ranks)
+        if args.hetero_cross_platform and args.hetero_mode == "pp":
+            inter_group = torch.distributed.new_group(
+                inter_ranks,
+                backend=get_accelerator().communication_backend_name()
+            )
+        else:
+            inter_group = torch.distributed.new_group(inter_ranks)
         if i == (rank % zero_secondary_parallel_size_):
             _ZERO_SECONDARY_PARALLEL_INTER_GROUP = inter_group
 

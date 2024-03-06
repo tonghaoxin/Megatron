@@ -201,22 +201,32 @@ class DistributedDataParallel(DistributedDataParallelBase):
 
 
     def broadcast_params(self):
+        """broadcast_params"""
         for param in self.module.parameters():
+            if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                param.data = get_accelerator().d2h_copy(param.data)
             torch.distributed.broadcast(param.data,
                                         src=mpu.get_data_parallel_src_rank(),
                                         group=mpu.get_data_parallel_group())
+            if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                param.data = get_accelerator().h2d_copy(param.data)
 
 
     def allreduce_gradients(self):
         """Reduce gradients across data parallel ranks."""
+        args = get_args()
         # If we have buffers, simply reduce the data in the buffer.
         if self._grad_buffers is not None:
             for _, buffer_ in self._grad_buffers.items():
                 coeff = 1 / mpu.get_data_parallel_world_size()
                 buffer_.data *= coeff
                 if mpu.get_data_parallel_world_size() > 1:
+                    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                        buffer_.data = get_accelerator().d2h_copy(buffer_.data)
                     torch.distributed.all_reduce(
                         buffer_.data, group=mpu.get_data_parallel_group())
+                    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                        buffer_.data = get_accelerator().h2d_copy(buffer_.data)
         else:
             # Otherwise, bucketize and all-reduce
             buckets = {}
@@ -234,12 +244,16 @@ class DistributedDataParallel(DistributedDataParallelBase):
                 bucket = buckets[tp]
                 grads = [param.grad.data for param in bucket]
                 coeff = 1 / mpu.get_data_parallel_world_size()
-                if not get_args().memory_saving:
+                if not args.memory_saving:
                     coalesced = _flatten_dense_tensors(grads)
                     coalesced *= coeff
                     if mpu.get_data_parallel_world_size() > 1:
+                        if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                            coalesced = get_accelerator().d2h_copy(coalesced)
                         torch.distributed.all_reduce(
                             coalesced, group=mpu.get_data_parallel_group())
+                        if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                            coalesced = get_accelerator().h2d_copy(coalesced)
                     for buf, synced in zip(grads, _unflatten_dense_tensors(
                             coalesced, grads)):
                         buf.copy_(synced)
@@ -247,5 +261,9 @@ class DistributedDataParallel(DistributedDataParallelBase):
                     for grad in grads:
                         grad *= coeff
                         if mpu.get_data_parallel_world_size() > 1:
+                            if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                                grad = get_accelerator().d2h_copy(grad)
                             torch.distributed.all_reduce(
                                 grad, group=mpu.get_data_parallel_group())
+                            if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+                                grad = get_accelerator().h2d_copy(grad)

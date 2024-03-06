@@ -63,9 +63,14 @@ def calc_params_l2_norm(model):
     )
     norm_2 = norm * norm
     # Sum across all model-parallel GPUs.
+    if torch.distributed.get_backend(group=mpu.get_model_parallel_group()) == "gloo":
+        norm_2 = get_accelerator().d2h_copy(norm_2)
     torch.distributed.all_reduce(norm_2,
                                  op=torch.distributed.ReduceOp.SUM,
                                  group=mpu.get_model_parallel_group())
+    if torch.distributed.get_backend(group=mpu.get_model_parallel_group()) == "gloo":
+        norm_2 = get_accelerator().h2d_copy(norm_2)
+
     return norm_2.item() ** 0.5
 
 
@@ -74,8 +79,12 @@ def average_losses_across_data_parallel_group(losses):
     averaged_losses = torch.cat(
         [loss.clone().detach().view(1) for loss in losses])
     if mpu.get_data_parallel_world_size() > 1:
+        if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+            averaged_losses = get_accelerator().d2h_copy(averaged_losses)
         torch.distributed.all_reduce(averaged_losses,
                                     group=mpu.get_data_parallel_group())
+        if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+            averaged_losses = get_accelerator().h2d_copy(averaged_losses)
     averaged_losses = averaged_losses / \
         torch.distributed.get_world_size(group=mpu.get_data_parallel_group())
 

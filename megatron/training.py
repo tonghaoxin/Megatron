@@ -39,6 +39,7 @@ from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.utils import check_adlr_autoresume_termination
 from megatron.utils import unwrap_model
 from megatron.data.data_samplers import build_pretraining_data_loader
+from megatron.data.data_samplers_hetero import build_pretraining_data_loader_hetero
 from megatron.utils import calc_params_l2_norm
 from megatron.core.pipeline_parallel import get_forward_backward_func
 from megatron.utils import report_memory
@@ -104,9 +105,15 @@ def pretrain(train_valid_test_dataset_provider,
     # image ... launches.
     if args.init_megatron_time:
         global _TRAIN_START_TIME
-        start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
+        # FIXME(changtao02): NPU do not support DoubleTensor for now, use FloatTensor instead
+        start_time_tensor = get_accelerator().FloatTensor([_TRAIN_START_TIME])
+        # start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
+        if torch.distributed.get_backend(group=None) == "gloo":
+            start_time_tensor = get_accelerator().d2h_copy(start_time_tensor)
         torch.distributed.all_reduce(start_time_tensor,
                                      op=torch.distributed.ReduceOp.MIN)
+        if torch.distributed.get_backend(group=None) == "gloo":
+            start_time_tensor = get_accelerator().h2d_copy(start_time_tensor)
         _TRAIN_START_TIME = start_time_tensor.item()
         print_rank_0('time to initialize megatron (seconds): {:.3f}'.format(
             time.time() - _TRAIN_START_TIME))
@@ -521,9 +528,13 @@ def train_step(forward_step_func, data_iterator,
 
     # Update learning rate.
     if update_successful:
-        increment = get_num_microbatches() * \
-                    args.micro_batch_size * \
-                    args.data_parallel_size
+        if args.hetero_mode != "dp":
+            increment = get_num_microbatches() * \
+                        args.micro_batch_size * \
+                        args.data_parallel_size
+        else:
+            increment = get_num_microbatches() * \
+                        args.micro_batch_for_all_data_parallel
         opt_param_scheduler.step(increment=increment)
         skipped_iter = 0
     else:
@@ -622,8 +633,12 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         'optimizer']
 
     # Calculate batch size.
-    batch_size = args.micro_batch_size * args.data_parallel_size * \
-        get_num_microbatches()
+    if args.hetero_mode != "dp":
+        batch_size = args.micro_batch_size * args.data_parallel_size * \
+            get_num_microbatches()
+    else:
+        batch_size = args.micro_batch_for_all_data_parallel * \
+                get_num_microbatches()
 
     total_iterations = total_loss_dict[advanced_iters_key] + \
                        total_loss_dict[skipped_iters_key]
@@ -888,9 +903,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                        opt_param_scheduler,
                        memory_monitor)
         iteration += 1
-        args.consumed_train_samples += mpu.get_data_parallel_world_size() * \
-                                       args.micro_batch_size * \
-                                       get_num_microbatches()
+        if args.hetero_mode != "dp":
+            args.consumed_train_samples += mpu.get_data_parallel_world_size() * \
+                                           args.micro_batch_size * \
+                                           get_num_microbatches()
+        else:
+            args.consumed_train_samples += args.micro_batch_for_all_data_parallel * \
+                                           get_num_microbatches()
 
         # Logging.
         loss_scale = optimizer.get_loss_scale().item()
@@ -941,8 +960,12 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             train_time = (time.time() - _TRAIN_START_TIME) / 60.0
             done_tensor = get_accelerator().IntTensor(
                 [train_time > args.exit_duration_in_mins])
+            if torch.distributed.get_backend(group=None) == "gloo":
+                done_tensor = get_accelerator().d2h_copy(done_tensor)
             torch.distributed.all_reduce(
                 done_tensor, op=torch.distributed.ReduceOp.MAX)
+            if torch.distributed.get_backend(group=None) == "gloo":
+                done_tensor = get_accelerator().h2d_copy(done_tensor)
             done = done_tensor.item()
             if done:
                 if not saved_checkpoint:
@@ -1133,11 +1156,18 @@ def build_train_valid_test_data_loaders(
             train_val_test_num_samples)
 
         # Build dataloders.
-        train_dataloader = build_pretraining_data_loader(
-            train_ds, args.consumed_train_samples)
-        valid_dataloader = build_pretraining_data_loader(
-            valid_ds, args.consumed_valid_samples)
-        test_dataloader = build_pretraining_data_loader(test_ds, 0)
+        if args.hetero_mode != "dp":
+            train_dataloader = build_pretraining_data_loader(
+                train_ds, args.consumed_train_samples)
+            valid_dataloader = build_pretraining_data_loader(
+                valid_ds, args.consumed_valid_samples)
+            test_dataloader = build_pretraining_data_loader(test_ds, 0)
+        else:
+            train_dataloader = build_pretraining_data_loader_hetero(
+                train_ds, args.consumed_train_samples)
+            valid_dataloader = build_pretraining_data_loader_hetero(
+                valid_ds, args.consumed_valid_samples)
+            test_dataloader = build_pretraining_data_loader_hetero(test_ds, 0)
 
         # Flags to know if we need to do training/validation/testing.
         do_train = train_dataloader is not None and args.train_iters > 0

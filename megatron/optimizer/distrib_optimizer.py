@@ -645,20 +645,57 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for index, (model_index, dtype, gbuf, gbuf_views) \
             in enumerate(gbuf_view_items):
 
-            if mpu.zero_secondary_parallel_is_initialized():
-                torch.distributed._reduce_scatter_base(
-                    gbuf_views[zero_secondary_parallel_intra_rank],
-                    gbuf,
-                    group = zero_secondary_parallel_intra_group,
-                )
-                # Inter-allreduce for ZeRO secondary parallel
-                torch.distributed.all_reduce(gbuf_views[zero_secondary_parallel_intra_rank], group=zero_secondary_parallel_inter_group)
+            if torch.distributed.get_backend(group=data_parallel_group) == "gloo":
+                if mpu.zero_secondary_parallel_is_initialized():
+                    torch.distributed._reduce_scatter_base(
+                        gbuf_views[zero_secondary_parallel_intra_rank],
+                        gbuf,
+                        group=zero_secondary_parallel_intra_group,
+                    )
+
+                    for i in range(len(gbuf_views)):
+                        gbuf_views[i] = get_accelerator().d2h_copy(gbuf_views[i])
+                    gbuf = get_accelerator().d2h_copy(gbuf)
+
+                    # Inter-allreduce for ZeRO secondary parallel
+                    torch.distributed.all_reduce(
+                        gbuf_views[zero_secondary_parallel_intra_rank],
+                        group=zero_secondary_parallel_inter_group
+                    )
+                else:
+                    for i in range(len(gbuf_views)):
+                        gbuf_views[i] = get_accelerator().d2h_copy(gbuf_views[i])
+                    gbuf = get_accelerator().d2h_copy(gbuf)
+
+                    # FIXME(changtao02): _reduce_scatter_base is not supported by Gloo process group
+                    torch.distributed.all_reduce(
+                        gbuf,
+                        group=data_parallel_group,
+                    )
+                    gbuf_views[data_parallel_rank] = \
+                            list(gbuf.chunk(data_parallel_world_size, dim=0))[data_parallel_rank]
+
+                for i in range(len(gbuf_views)):
+                    gbuf_views[i] = get_accelerator().h2d_copy(gbuf_views[i])
+                gbuf = get_accelerator().h2d_copy(gbuf)
             else:
-                torch.distributed._reduce_scatter_base(
-                    gbuf_views[data_parallel_rank],
-                    gbuf,
-                    group = data_parallel_group,
-                )
+                if mpu.zero_secondary_parallel_is_initialized():
+                    torch.distributed._reduce_scatter_base(
+                        gbuf_views[zero_secondary_parallel_intra_rank],
+                        gbuf,
+                        group=zero_secondary_parallel_intra_group,
+                    )
+                    # Inter-allreduce for ZeRO secondary parallel
+                    torch.distributed.all_reduce(
+                        gbuf_views[zero_secondary_parallel_intra_rank],
+                        group=zero_secondary_parallel_inter_group
+                    )
+                else:
+                    torch.distributed._reduce_scatter_base(
+                        gbuf_views[data_parallel_rank],
+                        gbuf,
+                        group=data_parallel_group,
+                    )
 
         timers('grads-reduce-scatter').stop()
 
@@ -677,6 +714,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
         data_parallel_rank = mpu.get_zero_secondary_parallel_intra_rank() \
                 if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_rank()
+        data_parallel_world_size = mpu.get_zero_secondary_parallel_intra_world_size() \
+                if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_world_size()
         data_parallel_group = mpu.get_zero_secondary_parallel_intra_group() \
                 if mpu.zero_secondary_parallel_is_initialized() else mpu.get_data_parallel_group()
 
@@ -690,11 +729,27 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for index, (model_index, dtype, pbuf, pbuf_views) \
             in enumerate(pbuf_view_items):
 
-            torch.distributed._all_gather_base(
-                pbuf,
-                pbuf_views[data_parallel_rank],
-                group = data_parallel_group,
-            )
+            if torch.distributed.get_backend(group=data_parallel_group) == "gloo":
+                for i in range(len(pbuf_views)):
+                    pbuf_views[i] = get_accelerator().d2h_copy(pbuf_views[i])
+                pbuf = get_accelerator().d2h_copy(pbuf)
+
+                # FIXME(changtao02): _all_gather_base is not supported by Gloo process group
+                torch.distributed.all_gather(
+                    list(pbuf.chunk(data_parallel_world_size, dim=0)),
+                    pbuf_views[data_parallel_rank],
+                    group=data_parallel_group,
+                )
+
+                for i in range(len(pbuf_views)):
+                    pbuf_views[i] = get_accelerator().h2d_copy(pbuf_views[i])
+                pbuf = get_accelerator().h2d_copy(pbuf)
+            else:
+                torch.distributed._all_gather_base(
+                    pbuf,
+                    pbuf_views[data_parallel_rank],
+                    group=data_parallel_group,
+                )
 
         # Copy from param buffer to each param.
         for model_id, model in enumerate(self.models):

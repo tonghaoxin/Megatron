@@ -184,7 +184,11 @@ class CheckpointManager():
         self._save_to_storage_done[0] = 0 if acq else 1
         if torch.distributed.is_initialized():
             try:
+                if torch.distributed.get_backend(group=None) == "gloo":
+                    self._save_to_storage_done = get_accelerator().d2h_copy(self._save_to_storage_done)
                 torch.distributed.all_reduce(self._save_to_storage_done, op=torch.distributed.ReduceOp.SUM)
+                if torch.distributed.get_backend(group=None) == "gloo":
+                    self._save_to_storage_done = get_accelerator().h2d_copy(self._save_to_storage_done)
             except Exception as e:
                 message = 'Exit exception when do all_reduce in save_to_memory_buffer: {}'.format(e)
                 print_rank_0(message)

@@ -231,8 +231,15 @@ class Timers:
                     reset=reset)
 
         # See the note above for why we are not using gather.
-        torch.distributed._all_gather_base(rank_name_to_time.view(-1),
-                                           rank_name_to_time[rank, :].view(-1))
+        # FIXME(changtao02): _all_gather_base is not supported by Gloo process group for cpu comm
+        if torch.distributed.get_backend(group=None) == "gloo":
+            rank_name_to_time = get_accelerator().d2h_copy(rank_name_to_time)
+            torch.distributed.all_gather(list(rank_name_to_time.view(-1).chunk(world_size, dim=0)),
+                                               rank_name_to_time[rank, :].view(-1))
+            rank_name_to_time = get_accelerator().h2d_copy(rank_name_to_time)
+        else:
+            torch.distributed._all_gather_base(rank_name_to_time.view(-1),
+                                               rank_name_to_time[rank, :].view(-1))
 
         return rank_name_to_time
 

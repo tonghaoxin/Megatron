@@ -66,9 +66,13 @@ def clip_grad_norm_fp32(parameters, grads_for_norm,
         total_norm = max(grad.abs().max() for grad in grads_for_norm)
         total_norm = get_accelerator().FloatTensor([float(total_norm)])
         # Take max across all model-parallel accelerators.
+        if torch.distributed.get_backend(group=model_parallel_group) == "gloo":
+            total_norm = get_accelerator().d2h_copy(total_norm)
         torch.distributed.all_reduce(total_norm,
                                      op=torch.distributed.ReduceOp.MAX,
                                      group=model_parallel_group)
+        if torch.distributed.get_backend(group=model_parallel_group) == "gloo":
+            total_norm = get_accelerator().h2d_copy(total_norm)
         total_norm = total_norm[0].item()
 
     else:
@@ -97,9 +101,13 @@ def clip_grad_norm_fp32(parameters, grads_for_norm,
                 total_norm += grad_norm ** norm_type
 
         # Sum across all model-parallel GPUs.
+        if torch.distributed.get_backend(group=model_parallel_group) == "gloo":
+            total_norm = get_accelerator().d2h_copy(total_norm)
         torch.distributed.all_reduce(total_norm,
                                      op=torch.distributed.ReduceOp.SUM,
                                      group=model_parallel_group)
+        if torch.distributed.get_backend(group=model_parallel_group) == "gloo":
+            total_norm = get_accelerator().h2d_copy(total_norm)
         total_norm = total_norm.item() ** (1.0 / norm_type)
 
     # Scale.
@@ -117,6 +125,9 @@ def clip_grad_norm_fp32(parameters, grads_for_norm,
 
 
 def count_zeros_fp32(parameters, model_parallel_group):
+    """count_zeros_fp32"""
+
+    args = get_args()
 
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
@@ -136,9 +147,13 @@ def count_zeros_fp32(parameters, model_parallel_group):
             total_num_zeros = num_zeros + total_num_zeros
 
     # Sum across all model-parallel GPUs.
+    if torch.distributed.get_backend(group=model_parallel_group) == "gloo":
+        total_num_zeros = get_accelerator().d2h_copy(total_num_zeros)
     torch.distributed.all_reduce(total_num_zeros,
                                  op=torch.distributed.ReduceOp.SUM,
                                  group=model_parallel_group)
+    if torch.distributed.get_backend(group=model_parallel_group) == "gloo":
+        total_num_zeros = get_accelerator().h2d_copy(total_num_zeros)
 
     total_num_zeros = total_num_zeros.item()
 

@@ -139,6 +139,7 @@ def get_checkpoint_tracker_filename(checkpoints_path):
 
 
 def read_metadata(tracker_filename):
+    """read_metadata"""
     # Read the tracker file and either set the iteration or
     # mark it as a release checkpoint.
     iteration = 0
@@ -159,7 +160,11 @@ def read_metadata(tracker_filename):
     # Get the max iteration retrieved across the ranks.
     if torch.distributed.is_initialized():
         iters_accelerator = get_accelerator().LongTensor([iteration])
+        if torch.distributed.get_backend(group=None) == "gloo":
+            iters_accelerator = get_accelerator().d2h_copy(iters_accelerator)
         torch.distributed.all_reduce(iters_accelerator, op=torch.distributed.ReduceOp.MAX)
+        if torch.distributed.get_backend(group=None) == "gloo":
+            iters_accelerator = get_accelerator().h2d_copy(iters_accelerator)
         max_iter = iters_accelerator[0].item()
         rank = torch.distributed.get_rank()
 
@@ -195,10 +200,16 @@ def get_rng_state():
             args.data_parallel_random_init:
         rng_state_list = \
             [None for i in range(mpu.get_data_parallel_world_size())]
+        if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+            rng_state = get_accelerator().d2h_copy(rng_state)
+            rng_state_list = get_accelerator().d2h_copy(rng_state_list)
         torch.distributed.all_gather_object(
             rng_state_list,
             rng_state,
             group=mpu.get_data_parallel_group())
+        if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+            rng_state = get_accelerator().h2d_copy(rng_state)
+            rng_state_list = get_accelerator().h2d_copy(rng_state_list)
     else:
         rng_state_list = [rng_state]
 

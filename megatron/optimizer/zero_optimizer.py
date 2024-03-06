@@ -155,11 +155,16 @@ class Bucket:
         assert self.is_all_grad_collected()
         self._grad_buffer /= self._num_partitions
 
+        if torch.distributed.get_backend(group=self._dp_group) == "gloo":
+            self._grad_buffer = get_accelerator().d2h_copy(self._grad_buffer)
+            target_buffer = get_accelerator().d2h_copy(target_buffer)
         # self._grad_buffer /= self._num_partitions
         dist.reduce_scatter_tensor(output=target_buffer,
                                             input=self._grad_buffer,
                                             group=self._dp_group,
                                             async_op=False)
+        if torch.distributed.get_backend(group=self._dp_group) == "gloo":
+            target_buffer = get_accelerator().h2d_copy(target_buffer)
 
         Bucket._grad_buffer_pool.return_buffer(self._borrowed_grad_buffer)
         self._borrowed_grad_buffer = None
@@ -561,6 +566,7 @@ class ParameterBuffer:
                                  bucket_assignment: BucketAssignment,
                                  async_handler_manager: AsyncHandlerManager=None):
         """gather_partitioned_param"""
+        args = get_args()
         for bucket in bucket_assignment.get_buckets():
             bucket_range = self._bucket_ranges[bucket]
             bucket_partitioned_range = self._bucket_partitioned_ranges[bucket]
@@ -570,6 +576,9 @@ class ParameterBuffer:
                 0, bucket_partitioned_range.start, bucket_partitioned_range.size)
 
             # 有同步改成异步
+            if torch.distributed.get_backend(group=self._dp_group) == "gloo":
+                source = get_accelerator().d2h_copy(source)
+                target = get_accelerator().d2h_copy(target)
             if self._overlap_param:
                 handle = torch.distributed.all_gather_into_tensor(
                     target, source, group=self._dp_group, async_op=True)
@@ -578,6 +587,9 @@ class ParameterBuffer:
                     async_handler_manager.set_bucket_handle(bucket=bucket, handle=handle)
             else:
                 torch.distributed.all_gather_into_tensor(target, source, group=self._dp_group)
+                if torch.distributed.get_backend(group=self._dp_group) == "gloo":
+                    source = get_accelerator().h2d_copy(source)
+                    target = get_accelerator().h2d_copy(target)
 
     def zero_grad(self):
         """zero_grad"""
@@ -847,6 +859,8 @@ class ZeroOptimizer(MixedPrecisionOptimizer):
                 return
             for param in module.parameters():
                 async_handler_manager.get_param_handle(param).wait()
+                if torch.distributed.get_backend(group=self._dp_group) == "gloo":
+                    param = get_accelerator().h2d_copy(param)
 
     def _register_forward_async_hooks(self):
         """_register_forward_async_hooks"""

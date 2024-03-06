@@ -378,12 +378,16 @@ class CUDAAccelerator(MegatronAccelerator):
 
     def h2d_copy(self, obj, device=None):
         """h2d_copy"""
+        if obj is None:
+            return
         if device is None:
             device = torch.cuda.current_device()
         return obj.cuda(device)
 
     def d2h_copy(self, obj):
         """d2h_copy"""
+        if obj is None:
+            return
         return obj.cpu()
 
     def on_accelerator(self, tensor):

@@ -387,8 +387,16 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
     # device_index=rank which is not the case for model
     # parallel case
     counts = get_accelerator().LongTensor([1])
+    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+        counts = get_accelerator().d2h_copy(counts)
     torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
+    if torch.distributed.get_backend(group=mpu.get_data_parallel_group()) == "gloo":
+        counts = get_accelerator().h2d_copy(counts)
+    if torch.distributed.get_backend(group=mpu.get_pipeline_model_parallel_group()) == "gloo":
+        counts = get_accelerator().d2h_copy(counts)
     torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
+    if torch.distributed.get_backend(group=mpu.get_pipeline_model_parallel_group()) == "gloo":
+        counts = get_accelerator().h2d_copy(counts)
     assert counts[0].item() == (
         torch.distributed.get_world_size() //
         torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()))

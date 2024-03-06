@@ -16,6 +16,7 @@ def get_device(local_rank=None):
 
 
 def all_gather_item(item, dtype, group=None, async_op=False, local_rank=None):
+    """all_gather_item"""
     if not torch.distributed.is_available() or \
        not torch.distributed.is_initialized():
         return [item]
@@ -32,7 +33,13 @@ def all_gather_item(item, dtype, group=None, async_op=False, local_rank=None):
         torch.zeros(1, dtype=tensor.dtype, device=tensor.device)
         for _ in range(group_size)
     ]
+    if torch.distributed.get_backend(group=group) == "gloo":
+        tensor = get_accelerator().d2h_copy(tensor)
+        output_tensors = get_accelerator().d2h_copy(output_tensors)
     torch.distributed.all_gather(output_tensors, tensor, group, async_op)
+    if torch.distributed.get_backend(group=group) == "gloo":
+        tensor = get_accelerator().h2d_copy(tensor)
+        output_tensors = get_accelerator().h2d_copy(output_tensors)
     output = [elem.item() for elem in output_tensors]
     return output
 

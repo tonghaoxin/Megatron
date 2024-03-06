@@ -17,6 +17,7 @@ from megatron.model.vision.vit_backbone import VitBackbone
 from megatron.model.module import MegatronModule
 from megatron.model.vision.mit_backbone import mit_b5_avg
 from megatron.model.vision.esvit_swin_backbone import get_swin
+from megatron.accelerator import get_accelerator
 
 
 class DINOLoss(torch.nn.Module):
@@ -73,8 +74,13 @@ class DINOLoss(torch.nn.Module):
         """
         Update center used for teacher output.
         """
+        args = get_args()
         batch_center = torch.sum(teacher_output, dim=0, keepdim=True)
+        if torch.distributed.get_backend(group=None) == "gloo":
+            batch_center = get_accelerator().d2h_copy(batch_center)
         torch.distributed.all_reduce(batch_center)
+        if torch.distributed.get_backend(group=None) == "gloo":
+            batch_center = get_accelerator().h2d_copy(batch_center)
         batch_center = batch_center / (len(teacher_output) * torch.distributed.get_world_size())
         self.center = self.center * self.center_momentum + batch_center * (1 - self.center_momentum)
 

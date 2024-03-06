@@ -248,7 +248,11 @@ class MegatronOptimizer(ABC):
                     grad = word_embeddings_weight.main_grad
                 else:
                     grad = word_embeddings_weight.grad
+                if torch.distributed.get_backend(group=mpu.get_embedding_group()) == "gloo":
+                    grad = get_accelerator().d2h_copy(grad)
                 torch.distributed.all_reduce(grad, group=mpu.get_embedding_group())
+                if torch.distributed.get_backend(group=mpu.get_embedding_group()) == "gloo":
+                    grad = get_accelerator().h2d_copy(grad)
 
 
     def allreduce_position_embedding_grads(self, args):
@@ -268,7 +272,11 @@ class MegatronOptimizer(ABC):
                 grad = unwrapped_model.language_model.embedding.position_embeddings.weight.main_grad
             else:
                 grad = unwrapped_model.language_model.embedding.position_embeddings.weight.grad
+            if torch.distributed.get_backend(group=mpu.get_position_embedding_group()) == "gloo":
+                grad = get_accelerator().d2h_copy(grad)
             torch.distributed.all_reduce(grad, group=mpu.get_position_embedding_group())
+            if torch.distributed.get_backend(group=mpu.get_position_embedding_group()) == "gloo":
+                grad = get_accelerator().h2d_copy(grad)
 
 
     def allreduce_embedding_grads(self, args):
@@ -406,7 +414,9 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
 
 
     def _unscale_main_grads_and_check_for_nan(self):
+        """_unscale_main_grads_and_check_for_nan"""
 
+        args = get_args()
         # Collect main grads.
         main_grads = self._collect_main_grad_data_for_unscaling()
 
@@ -418,9 +428,13 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
             main_grads, self.found_inf, self.grad_scaler.inv_scale)
 
         # Update across all model parallel instances.
+        if torch.distributed.get_backend(group=self.get_model_parallel_group()) == "gloo":
+            self.found_inf = get_accelerator().d2h_copy(self.found_inf)
         torch.distributed.all_reduce(self.found_inf,
                                      op=torch.distributed.ReduceOp.MAX,
                                      group=self.get_model_parallel_group())
+        if torch.distributed.get_backend(group=self.get_model_parallel_group()) == "gloo":
+            self.found_inf = get_accelerator().h2d_copy(self.found_inf)
 
         # Check for nan.
         found_inf_flag = (self.found_inf.item() > 0)
