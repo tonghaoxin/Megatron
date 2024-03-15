@@ -156,7 +156,7 @@ class ComplexRotaryEmbedding(nn.Module):
         return freqs_cis
 
 
-def apply_rotary_pos_emb(t, freqs):
+def apply_rotary_pos_emb(q, k, freqs):
     """
     input tensor t is of shape [seq_length, ..., dim]
     rotary positional embeding tensor freqs is of shape [seq_length, ..., dim]
@@ -164,27 +164,29 @@ def apply_rotary_pos_emb(t, freqs):
     """
     rot_dim = freqs.shape[-1]
     # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
-    t, t_pass = t[..., :rot_dim], t[..., rot_dim:]
+    q, q_pass = q[..., :rot_dim], q[..., rot_dim:]
+    k, k_pass = k[..., :rot_dim], k[..., rot_dim:]
 
     # first part is cosine component
     # second part is sine component, need to change signs with _rotate_half method
-    t = custom_apply_rope_with_freqs(t, freqs)
-    return torch.cat((t, t_pass), dim=-1)
+    q, k = custom_apply_rope_with_freqs(q, k, freqs)
+    return torch.cat((q, q_pass), dim=-1), torch.cat((k, k_pass), dim=-1)
 
 
-def apply_rotary_pos_emb_fused(t, freqs):
+def apply_rotary_pos_emb_fused(q, k, freqs):
     """
     Fused RoPE function
     """
     rot_dim = freqs.shape[-1]
     # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
-    t, t_pass = t[..., :rot_dim], t[..., rot_dim:]
+    q, q_pass = q[..., :rot_dim], q[..., rot_dim:]
+    k, k_pass = k[..., :rot_dim], k[..., rot_dim:]
 
-    cos_ = torch.cos(freqs).to(t.dtype)
-    sin_ = torch.sin(freqs).to(t.dtype)
-    t = custom_apply_rope_no_freqs(t, cos_, sin_)
+    cos_ = torch.cos(freqs).to(q.dtype)
+    sin_ = torch.sin(freqs).to(q.dtype)
+    q, k = custom_apply_rope_no_freqs(q, k, cos_, sin_)
 
-    return torch.cat((t, t_pass), dim=-1)
+    return torch.cat((q, q_pass), dim=-1), torch.cat((k, k_pass), dim=-1)
 
 
 def apply_rotary_pos_emb_index(q, k, cos, sin, position_id, original=False):
@@ -224,9 +226,11 @@ def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     return freqs_cis.view(*shape)
 
 
-def apply_complex_rotary_pos_emb(t, freqs):
+def apply_complex_rotary_pos_emb(q, k, freqs):
     """apply_complex_rotary_pos_emb"""
-    t_ = torch.view_as_complex(t.float().reshape(*t.shape[:-1], -1, 2))
-    freqs = _reshape_for_broadcast(freqs, t_)
-    t_out = torch.view_as_real(t_ * freqs).flatten(3)
-    return t_out.type_as(t)
+    q_ = torch.view_as_complex(q.float().reshape(*q.shape[:-1], -1, 2))
+    k_ = torch.view_as_complex(k.float().reshape(*k.shape[:-1], -1, 2))
+    freqs = _reshape_for_broadcast(freqs, q_)
+    q_out = torch.view_as_real(q_ * freqs).flatten(3)
+    k_out = torch.view_as_real(k_ * freqs).flatten(3)
+    return q_out.type_as(q), k_out.type_as(k)

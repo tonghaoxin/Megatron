@@ -32,6 +32,8 @@ custom_bmm = get_accelerator().get_operator('custom_bmm')
 custom_baddbmm = get_accelerator().get_operator('custom_baddbmm')
 custom_flash_attn = get_accelerator().get_operator('custom_flash_attn')
 custom_profiler_decorator = get_accelerator().get_operator('custom_profiler_decorator')
+custom_bias_dropout_add_fused_train = get_accelerator().get_operator('custom_bias_dropout_add_fused_train')
+custom_bias_dropout_add_fused_inference = get_accelerator().get_operator('custom_bias_dropout_add_fused_inference')
 
 
 """ We use the following notation throughout this file:
@@ -849,8 +851,8 @@ class ParallelAttention(MegatronModule):
                                                             position_ids)
             # call apply_rotary_fn without position_ids
             else:
-                query_layer = apply_rotary_fn(query_layer, q_pos_emb)
-                key_layer = apply_rotary_fn(key_layer, k_pos_emb)
+                ### q_pos_emb is equal to k_pos_emb ###
+                query_layer, key_layer = apply_rotary_fn(query_layer, key_layer, q_pos_emb)
             # TODO, can apply positional embedding to value_layer so it has
             # absolute positional embedding.
             # otherwise, only relative positional embedding takes effect
@@ -879,7 +881,6 @@ class ParallelAttention(MegatronModule):
 
         return output, bias
 
-
 def bias_dropout_add(x, bias, residual, prob, training):
     # type: (Tensor, Optional[Tensor], Tensor, float, bool) -> Tensor
     if bias is not None:
@@ -893,24 +894,6 @@ def get_bias_dropout_add(training):
     def _bias_dropout_add(x, bias, residual, prob):
         return bias_dropout_add(x, bias, residual, prob, training)
     return _bias_dropout_add
-
-
-@torch.jit.script
-def bias_dropout_add_fused_train(x: torch.Tensor,
-                                 bias: Optional[torch.Tensor],
-                                 residual: torch.Tensor,
-                                 prob: float) -> torch.Tensor:
-    return bias_dropout_add(x, bias, residual, prob, True)
-
-
-@torch.jit.script
-def bias_dropout_add_fused_inference(x: torch.Tensor,
-                                     bias: Optional[torch.Tensor],
-                                     residual: torch.Tensor,
-                                     prob: float) -> torch.Tensor:
-    return bias_dropout_add(x, bias, residual, prob, False)
-
-
 class ParallelTransformerLayer(MegatronModule):
     """A single transformer layer.
 
@@ -1091,9 +1074,9 @@ class ParallelTransformerLayer(MegatronModule):
             # dropout semantics during training and inference phases.
             if self.bias_dropout_fusion:
                 if self.training:
-                    bias_dropout_add_func = bias_dropout_add_fused_train
+                    bias_dropout_add_func = custom_bias_dropout_add_fused_train
                 else:
-                    bias_dropout_add_func = bias_dropout_add_fused_inference
+                    bias_dropout_add_func = custom_bias_dropout_add_fused_inference
             else:
                 bias_dropout_add_func = get_bias_dropout_add(self.training)
 

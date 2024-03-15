@@ -25,7 +25,7 @@ def get_accelerator():
     global accelerator
     if accelerator is not None:
         return accelerator
-
+    
     MEGATRON_ACCELERATOR_LIST = ["cuda", "xpu", "npu"]
     accelerator_name = None
 

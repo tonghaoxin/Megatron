@@ -180,7 +180,7 @@ export BKCL_FORCE_SYNC=1
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
 # Disable XFLAGS megatron mock module
-XFLAGS --disable megatron
+# XFLAGS --disable megatron
 
 PYTHONPATH=${ROOT_DIR}/../megatron/data
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \

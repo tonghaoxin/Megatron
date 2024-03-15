@@ -8,16 +8,53 @@ import os
 import pkgutil
 import importlib
 import torch
+from typing import Optional
 
 from .abstract_interface_manager import MegatronInterfaceManager
 from .abstract_interface_manager import _INTERFACE_INNER_FUNCS
 from .abstract_interface_manager import _rotate_half_v1, _rotate_half_v2
+    
 
-
-def _apply_rope_with_freqs(t, freqs):
+def _apply_rope_with_freqs(q, k, freqs):
     """_apply_rope_with_freqs"""
-    t = (t * freqs.cos()) + (_rotate_half_v1(t) * freqs.sin())
-    return t
+    q = (q * freqs.cos()) + (_rotate_half_v1(q) * freqs.sin())
+    k = (k * freqs.cos()) + (_rotate_half_v1(k) * freqs.sin())
+    return q, k
+
+
+def bias_dropout_add(x, bias, residual, prob, training):
+    """bias_dropout_add"""
+    # type: (Tensor, Optional[Tensor], Tensor, float, bool) -> Tensor
+    if bias is not None:
+        x = x + bias
+    out = torch.nn.functional.dropout(x, p=prob, training=training)
+    out = residual + out
+    return out
+
+
+def get_bias_dropout_add(training):
+    """get_bias_dropout_add"""
+    def _bias_dropout_add(x, bias, residual, prob):
+        return bias_dropout_add(x, bias, residual, prob, training)
+    return _bias_dropout_add
+
+
+@torch.jit.script
+def bias_dropout_add_fused_train(x: torch.Tensor,
+                                 bias: Optional[torch.Tensor],
+                                 residual: torch.Tensor,
+                                 prob: float) -> torch.Tensor:
+    """bias_dropout_add_fused_train"""
+    return bias_dropout_add(x, bias, residual, prob, True)
+
+
+@torch.jit.script
+def bias_dropout_add_fused_inference(x: torch.Tensor,
+                                     bias: Optional[torch.Tensor],
+                                     residual: torch.Tensor,
+                                     prob: float) -> torch.Tensor:
+    """bias_dropout_add_fused_inference"""
+    return bias_dropout_add(x, bias, residual, prob, False)
 
 
 def _apply_rope_with_idx(q, k, cos, sin, original=False):
@@ -183,6 +220,16 @@ class CustomApplyRoPEWrapper(object):
         """__call__"""
         return self.rope_func(*args, **kwargs)
 
+class CustomDropoutAddWrapper(object):
+    """CustomDropoutAdd wrapper"""
+
+    def __init__(self, dropout_add_func):
+        """__init__"""
+        self.dropout_add_func = dropout_add_func
+
+    def __call__(self, *args, **kwargs):
+        """__call__"""
+        return self.dropout_add_func(*args, **kwargs)
 
 class CustomFlashAttnWrapper(object):
     """CustomFlashAttn wrapper"""
@@ -342,29 +389,36 @@ class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
     """CustomRotaryPositionalEmbeddingFunction"""
 
     @staticmethod
-    def forward(ctx, q, cos, sin):
+    def forward(ctx, q, k, cos, sin):
         """forward"""
         global _INTERFACE_INNER_FUNCS
         q_ = q.contiguous()
+        k_ = k.contiguous()
         cos_ = cos.contiguous()
         sin_ = sin.contiguous()
-        output = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).forward(
+        output_q = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).forward(
             q_, cos_, sin_, False
+        )
+        output_k = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).forward(
+            k_, cos_, sin_, False
         )
         ctx.save_for_backward(cos_, sin_)
 
-        return output
+        return output_q, output_k
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, dq_emb, dk_emb):
         """backward"""
         global _INTERFACE_INNER_FUNCS
         cos_, sin_ = ctx.saved_tensors
         grad_q = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).backward(
-            grad_output, cos_, sin_, False
+            dq_emb, cos_, sin_, False
+        )
+        grad_k = _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb', None).backward(
+            dk_emb, cos_, sin_, False
         )
 
-        return grad_q, None, None
+        return grad_q, grad_k, None, None
 
 
 class CUDAInterfaceManager(MegatronInterfaceManager):
@@ -390,6 +444,10 @@ class CUDAInterfaceManager(MegatronInterfaceManager):
         self._custom_interfaces['custom_apply_rope_with_idx'] = \
                 CustomApplyRoPEWrapper(_apply_rope_with_idx)
         self._custom_interfaces['custom_rms_norm'] = CustomRMSNormWrapper
+        self._custom_interfaces['custom_bias_dropout_add_fused_train'] = \
+                CustomDropoutAddWrapper(bias_dropout_add_fused_train)
+        self._custom_interfaces['custom_bias_dropout_add_fused_inference'] = \
+                CustomDropoutAddWrapper(bias_dropout_add_fused_inference)
 
     def set_inner_func(self, interface_name, inner_func):
         """set_inner_func"""

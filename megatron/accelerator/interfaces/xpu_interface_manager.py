@@ -7,6 +7,7 @@
 import inspect
 import torch
 import os
+from typing import Optional
 
 from functools import wraps
 from .abstract_interface_manager import MegatronInterfaceManager
@@ -21,6 +22,43 @@ def _apply_rope_with_idx(q, k, cos, sin, original=False):
     else:
         q, k = (q * cos) + (_rotate_half_v2(q) * sin), (k * cos) + (_rotate_half_v2(k) * sin)
     return q, k
+
+
+def bias_dropout_add(x, bias, residual, prob, training):
+    """bias_dropout_add"""
+    if bias is not None:
+        x = x + bias
+
+    if abs(prob) < 1e-5:
+        out = residual + x
+        return out
+
+    out = _INTERFACE_INNER_FUNCS.get('dropout_add')(x.view(x.shape[0], -1), \
+            residual.view(x.shape[0], -1), prob, not training)
+    return out.view(x.shape)
+
+
+def get_bias_dropout_add(training):
+    """get_bias_dropout_add"""
+    def _bias_dropout_add(x, bias, residual, prob):
+        return bias_dropout_add(x, bias, residual, prob, training)
+    return _bias_dropout_add
+
+
+def bias_dropout_add_fused_train(x: torch.Tensor,
+                                 bias: Optional[torch.Tensor],
+                                 residual: torch.Tensor,
+                                 prob: float) -> torch.Tensor:
+    """bias_dropout_add_fused_train"""
+    return bias_dropout_add(x, bias, residual, prob, True)
+
+
+def bias_dropout_add_fused_inference(x: torch.Tensor,
+                                     bias: Optional[torch.Tensor],
+                                     residual: torch.Tensor,
+                                     prob: float) -> torch.Tensor:
+    """bias_dropout_add_fused_inference"""
+    return bias_dropout_add(x, bias, residual, prob, False)
 
 
 class CustomLayerNormWrapper(object):
@@ -139,36 +177,106 @@ class CustomFCWrapper(object):
 class CustomGradAccumWrapper(object):
     """CustomGradAccum wrapper"""
 
-    def __init__(self, fc_fusion):
+    def __init__(self, fused_func):
         """__init__"""
-        self.fc_fusion = fc_fusion
+        self.fused_func = fused_func
 
     def __call__(self, *args, **kwargs):
         """__call__"""
-        ctx = args[0]
         total_input = args[1]
         grad_output = args[2]
-        # weight_grad = args[3]
-        grad_weight = grad_output.new_empty(grad_output.shape[1], total_input.shape[1])
-        if kwargs.get('findmax_opt', False):
-            self.fc_fusion(grad_output, total_input, self_trans=True,
-                           self_max=ctx.grad_output_max,
-                           other_max=ctx.input_max,
-                           out=grad_weight)
+        weight_grad = args[3]
+        if kwargs.get('to_fuse', False):
+            if weight_grad.dtype == torch.float32:
+                self.fused_func.wgrad_gemm_accum_fp32(total_input, grad_output, weight_grad)
+            elif weight_grad.dtype == torch.float16:
+                self.fused_func.wgrad_gemm_accum_fp16(total_input, grad_output, weight_grad)
+            else:
+                raise RuntimeError("Unsupported gradient type for gradient accumulation fusion")
+            grad_weight = None
         else:
-            self.fc_fusion(grad_output, total_input, self_trans=True, out=grad_weight)
+            grad_weight = grad_output.t().matmul(total_input)
         return grad_weight
+
+class CustomFlashAttnWrapper(object):
+    """Implement the scaled dot product attention with softmax.
+    Arguments
+    ---------
+        softmax_scale: The temperature to use for the softmax attention.
+                      (default: 1/sqrt(d_keys) where d_keys is computed at
+                      runtime)
+        attention_dropout: The dropout rate to apply to the attention
+                           (default: 0.0)
+    """
+    def __init__(self, flashattn_func, rearrange):
+        """__init__"""
+        self.flashattn_func = flashattn_func
+        self.rearrange = rearrange
+
+    def __call__(self, *args, **kwargs):
+        """__call__"""
+        q = args[0]
+        k = args[1]
+        v = args[2]
+        # attention_mask = args[3]
+        nheads = args[4]
+        is_training = args[5]
+        is_causal = args[6]
+        softmax_scale = args[7]
+        dropout_p = args[8]
+
+
+        q, k, v = [self.rearrange(x, 's b ... -> b s ...').contiguous()
+                   for x in (q, k, v)]
+        batch_size, seqlen_q = q.shape[0], q.shape[1]
+        seqlen_k = k.shape[1]
+
+        q, k, v = [self.rearrange(x, 'b s ... -> (b s) ...') for x in [q, k, v]]
+        # cu_seqlens_q = torch.arange(0, (batch_size + 1) * seqlen_q, step=seqlen_q, dtype=torch.int32,
+        #                             device=q.device)
+        # WARN(wangfangfei): moved the tensor from cuda to cpu
+        cu_seqlens_q = torch.arange(0, (batch_size + 1) * seqlen_q, step=seqlen_q, dtype=torch.int32)
+
+        if is_training:
+            # during training q,k,v always have same seqlen
+            assert seqlen_k == seqlen_q
+
+            # is_causal = self.causal
+            cu_seqlens_k = cu_seqlens_q
+        else:
+            # turn off FA causal mask after first inference autoregressive iteration
+            # only on first autoregressive step q,k,v have same seqlen
+            is_causal = seqlen_q == seqlen_k
+            cu_seqlens_k = torch.arange(0, (batch_size + 1) * seqlen_k, step=seqlen_k, dtype=torch.int32,
+                        device=q.device)
+            dropout_p = 0
+
+        output = self.flashattn_func(
+            q, k, v, cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
+            dropout_p,
+            softmax_scale=softmax_scale, causal=is_causal
+        )
+
+        context_layer = self.rearrange(output, '(b s) ... -> b s ...', b=batch_size)
+        output = self.rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
+        return output
+
+    def extra_repr(self):
+        """extra_repr"""
+        return 'causal={}, softmax_scale={}, attention_dropout={}'.format(
+                self.causal, self.softmax_scale, self.dropout_p)
 
 
 class CustomMultiTensorApplyWrapper(object):
     """CustomMultiTensorApply wrapper"""
 
-    def __init__(self):
+    def __init__(self, multi_tensor_applier, multi_tensor_ops):
         """__init__"""
-        pass
+        self.multi_tensor_applier = multi_tensor_applier
+        self.multi_tensor_ops = multi_tensor_ops
 
     def __call__(self, *args, **kwargs):
-        """__call__"""
+        """__call__"""                                                                                                                                                                                                                                                                                                                                 
         grads_for_norm = args[1][0]
         grad_norm = None
         if kwargs.get('op', 'scale') == 'l2norm':
@@ -181,7 +289,7 @@ class CustomMultiTensorApplyWrapper(object):
             clip_coeff = args[2]
             [grad.mul_(clip_coeff) for grad in grads_for_norm]
             return
-
+        #return self.multi_tensor_applier(self.multi_tensor_ops[kwargs.get('op', 'scale')], *args)  # TO FIX: error 700
 
 class CustomParallelAttentionWrapper(object):
     """CustomParallelAttention wrapper"""
@@ -211,28 +319,121 @@ class CustomProfilerDecoratorWrapper(object):
 
         return inner
 
-
 class CustomSoftmaxWrapper(object):
     """CustomSoftmax wrapper"""
 
-    def __init__(self, custom_softmax_func):
+    def __init__(self, autograd_func):
         """__init__"""
-        self.custom_softmax_func = custom_softmax_func
+        self.autograd_func = autograd_func
 
     def __call__(self, *args, **kwargs):
         """__call__"""
-        inputs = args[0]
-        mask = args[1]
-        scale = args[2]
+        return self.autograd_func.apply(*args)
 
-        if scale is None:
-            scale = 1.0
+    def get_batch_per_block(self, sq, sk, b, np):
+        """get_batch_per_block"""
+        return self.autograd_func.get_batch_per_block(sq, sk, b, np)
 
-        return self.custom_softmax_func.apply(inputs, mask, scale)
+class ScaledUpperTriangMaskedSoftmax(torch.autograd.Function):
+    """
+    Fused operation which performs following three operations in sequence
+    1. Scale the tensor.
+    2. Apply upper triangular mask (typically used in gpt models).
+    3. Perform softmax.
+    """
 
-    def is_kernel_available(self, *args, **kwargs):
-        """is_kernel_available"""
-        return (kwargs.get('scaled_masked_softmax_fusion', False) and kwargs.get('without_scale', False))
+    @staticmethod
+    def forward(ctx, inputs, scale):
+        """forward"""
+        global _INTERFACE_INNER_FUNCS
+        scale_t = torch.tensor([scale])
+        softmax_results = _INTERFACE_INNER_FUNCS.get('scaled_upper_triang_masked_softmax', None).forward(
+            inputs, scale_t[0]
+        )
+
+        ctx.save_for_backward(softmax_results, scale_t)
+        return softmax_results
+
+    @staticmethod
+    def backward(ctx, output_grads):
+        """backward"""
+        global _INTERFACE_INNER_FUNCS
+        softmax_results, scale_t = ctx.saved_tensors
+        input_grads = _INTERFACE_INNER_FUNCS.get('scaled_upper_triang_masked_softmax', None).backward(
+            output_grads, softmax_results, scale_t[0]
+        )
+
+        return input_grads, None
+
+
+class ScaledMaskedSoftmax(torch.autograd.Function):
+    """
+    Fused operation which performs following three operations in sequence
+    1. Scale the tensor.
+    2. Apply the mask.
+    3. Perform softmax.
+    """
+
+    @staticmethod
+    def forward(ctx, inputs, mask, scale):
+        """forward"""
+        global _INTERFACE_INNER_FUNCS
+        scale_t = torch.tensor([scale])
+
+        softmax_results = _INTERFACE_INNER_FUNCS.get('scaled_masked_softmax', None).forward(
+            inputs, mask, scale_t[0]
+        )
+        ctx.save_for_backward(softmax_results, scale_t)
+        return softmax_results
+
+    @staticmethod
+    def backward(ctx, output_grads):
+        """backward"""
+        global _INTERFACE_INNER_FUNCS
+        softmax_results, scale_t = ctx.saved_tensors
+
+        input_grads = _INTERFACE_INNER_FUNCS.get('scaled_masked_softmax', None).backward(
+            output_grads, softmax_results, scale_t[0]
+        )
+        return input_grads, None, None
+
+    @staticmethod
+    def get_batch_per_block(sq, sk, b, np):
+        """get_batch_per_block"""
+        global _INTERFACE_INNER_FUNCS
+        return _INTERFACE_INNER_FUNCS.get('scaled_masked_softmax', None).get_batch_per_block(sq, sk, b, np)
+
+
+class ScaledSoftmax(torch.autograd.Function):
+    """
+    Fused operation which performs following two operations in sequence
+    1. Scale the tensor.
+    2. Perform softmax.
+    """
+
+    @staticmethod
+    def forward(ctx, inputs, scale):
+        """forward"""
+        global _INTERFACE_INNER_FUNCS
+        scale_t = torch.tensor([scale])
+
+        softmax_results = _INTERFACE_INNER_FUNCS.get('scaled_softmax', None).forward(
+            inputs, scale_t[0]
+        )
+        ctx.save_for_backward(softmax_results, scale_t)
+        return softmax_results
+
+    @staticmethod
+    def backward(ctx, output_grads):
+        """backward"""
+        global _INTERFACE_INNER_FUNCS
+        softmax_results, scale_t = ctx.saved_tensors
+
+        input_grads = _INTERFACE_INNER_FUNCS.get('scaled_softmax', None).backward(
+            output_grads, softmax_results, scale_t[0]
+        )
+        return input_grads, None, None
+
 
 
 class CustomSwiGLUWrapper(object):
@@ -262,58 +463,68 @@ class CustomApplyRoPEWrapper(object):
         """__call__"""
         return self.rope_func(*args, **kwargs)
 
+class CustomDropoutAddWrapper(object):
+    """CustomDropoutAdd wrapper"""
+
+    def __init__(self, dropout_add_func):
+        """__init__"""
+        self.dropout_add_func = dropout_add_func
+
+    def __call__(self, *args, **kwargs):
+        """__call__"""
+        return self.dropout_add_func(*args, **kwargs)
+
 
 class RotaryPositionalEmbeddingFunction(torch.autograd.Function):
     """RotaryPositionalEmbeddingFunction"""
 
     @staticmethod
-    def forward(ctx, q, cos, sin):
+    def forward(ctx, q, k, cos, sin):
         """forward"""
         global _INTERFACE_INNER_FUNCS
-        output = q.new_empty(q.shape)
-        _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb_forward', None)(q, cos, sin, out = output)
+        output_q = q.new_empty(q.shape)
+        output_k = k.new_empty(k.shape)
+        _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb_forward', None)(q, cos, sin, out=output_q)
+        _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb_forward', None)(k, cos, sin, out=output_k)
         ctx.save_for_backward(cos, sin)
 
-        return output
+        return output_q, output_k
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, dq_emb, dk_emb):
         """backward"""
         global _INTERFACE_INNER_FUNCS
         cos_, sin_ = ctx.saved_tensors
-        grad_q = grad_output.new_empty(grad_output.shape)
-        _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb_backward', None)(grad_output, cos_, sin_, out = grad_q)
+        grad_q = dq_emb.new_empty(dq_emb.shape)
+        grad_k = dk_emb.new_empty(dk_emb.shape)
+        _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb_backward', None)(dq_emb, cos_, sin_, out=grad_q)
+        _INTERFACE_INNER_FUNCS.get('rotary_no_freqs_pos_emb_backward', None)(dk_emb, cos_, sin_, out=grad_k)
 
-        return grad_q, None, None
+        return grad_q, grad_k, None, None
 
 
 class RotaryPositionalEmbeddingWithFreqsFunction(torch.autograd.Function):
     """RotaryPositionalEmbeddingWithFreqsFunction"""
 
     @staticmethod
-    def forward(ctx, t, freqs):
+    def forward(ctx, q, k, freqs):
         """forward"""
         global _INTERFACE_INNER_FUNCS
-        if True:
-            t_ = t.contiguous()
-            freqs_ = freqs.contiguous()
-            output = t_.new_empty(t_.shape)
-            _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_forward', None)(t_, freqs_, out = output)
-            ctx.freqs = freqs_
-        else:
-            output = t.new_empty(t.shape)
-            _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_forward', None)(t, freqs, out = output)
-            ctx.freqs = freqs
-        return output
+        q_emb = q.new_empty(q.shape)
+        k_emb = k.new_empty(k.shape)
+        _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_qk_forward', None)(q, k, freqs, q_emb=q_emb, k_emb=k_emb)
+        ctx.freqs = freqs
+        return q_emb, k_emb
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, dq_emb, dk_emb):
         """backward"""
         global _INTERFACE_INNER_FUNCS
         freqs_ = ctx.freqs
-        grad_t = grad_output.new_empty(grad_output.shape)
-        _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_backward', None)(grad_output, freqs_, out = grad_t)
-        return grad_t, None
+        dq = dq_emb.new_empty(dq_emb.shape)
+        dk = dk_emb.new_empty(dk_emb.shape)
+        _INTERFACE_INNER_FUNCS.get('rotary_with_freqs_pos_emb_qk_backward', None)(dq_emb, dk_emb, freqs_, dq=dq, dk=dk)
+        return dq, dk, None
 
 
 class XPUInterfaceManager(MegatronInterfaceManager):
@@ -330,8 +541,8 @@ class XPUInterfaceManager(MegatronInterfaceManager):
         self._custom_interfaces['custom_grad_accum'] = CustomGradAccumWrapper
         self._custom_interfaces['custom_multi_tensor_applier'] = CustomMultiTensorApplyWrapper
         self._custom_interfaces['custom_parallel_attention'] = CustomParallelAttentionWrapper
+        self._custom_interfaces['custom_flash_attn'] = CustomFlashAttnWrapper
         self._custom_interfaces['custom_profiler_decorator'] = CustomProfilerDecoratorWrapper
-        self._custom_interfaces['custom_softmax'] = CustomSoftmaxWrapper
         self._custom_interfaces['custom_swiglu'] = CustomSwiGLUWrapper
         self._custom_interfaces['custom_apply_rope_with_freqs'] = \
                 CustomApplyRoPEWrapper(RotaryPositionalEmbeddingWithFreqsFunction.apply)
@@ -339,6 +550,14 @@ class XPUInterfaceManager(MegatronInterfaceManager):
                 CustomApplyRoPEWrapper(RotaryPositionalEmbeddingFunction.apply)
         self._custom_interfaces['custom_apply_rope_with_idx'] = \
                 CustomApplyRoPEWrapper(_apply_rope_with_idx)
+        self._custom_interfaces['custom_scaled_upper_triang_masked_softmax'] = \
+                CustomSoftmaxWrapper(ScaledUpperTriangMaskedSoftmax)
+        self._custom_interfaces['custom_scaled_masked_softmax'] = CustomSoftmaxWrapper(ScaledMaskedSoftmax)
+        self._custom_interfaces['custom_scaled_softmax'] = CustomSoftmaxWrapper(ScaledSoftmax)
+        self._custom_interfaces['custom_bias_dropout_add_fused_train'] = \
+                CustomDropoutAddWrapper(bias_dropout_add_fused_train)
+        self._custom_interfaces['custom_bias_dropout_add_fused_inference'] = \
+                CustomDropoutAddWrapper(bias_dropout_add_fused_inference)
 
     def set_inner_func(self, interface_name, inner_func):
         """set_inner_func"""

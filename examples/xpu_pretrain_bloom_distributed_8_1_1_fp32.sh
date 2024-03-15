@@ -75,8 +75,6 @@ BLOOM_7B_ARGS="--tensor-model-parallel-size 8 \
                --layernorm-epsilon 1e-05 \
                --add-embed-layernorm \
                --no-async-tensor-model-parallel-allreduce \
-               --no-contiguous-buffers-in-local-ddp \
-               --no-gradient-accumulation-fusion \
                --no-load-optim \
                --no-load-rng \
                --no-masked-softmax-fusion \
@@ -85,7 +83,8 @@ BLOOM_7B_ARGS="--tensor-model-parallel-size 8 \
                --initial-loss-scale 16 \
                --memory-saving \
                --exit-interval 2 \
-               "
+               --no-contiguous-buffers-in-local-ddp \
+               --no-gradient-accumulation-fusion"
 
 OUTPUT_ARGS="--log-interval 1 \
              --save-interval 100 \
@@ -106,7 +105,7 @@ TENSORBOARD_ARGS="--tensorboard-dir $TENSORBOARD_PATH \
                   --log-validation-ppl-to-tensorboard"
 
 # Disable XFLAGS megatron mock module
-XFLAGS --disable megatron
+# XFLAGS --disable megatron
 
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \

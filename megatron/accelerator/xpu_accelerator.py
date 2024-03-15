@@ -25,16 +25,11 @@ class XPUAccelerator(MegatronAccelerator):
         self._communication_backend_name = 'xccl'
         self._optimizers = {}
 
-        try:
-            from torch_xmlir.optimizer.fused_adamw import FusedAdamW as adam_optimizer
-            from torch.optim import SGD as sgd_optimizer
-        except ImportError:
-            raise RuntimeError(
-                "Failed to import optimizers."
-            )
+        from apex.optimizers import FusedAdam as adam_optimizer_cuda
+        from apex.optimizers import FusedSGD as sgd_optimizer_cuda
 
-        self._optimizers['adam'] = adam_optimizer
-        self._optimizers['sgd'] = sgd_optimizer
+        self._optimizers['adam'] = adam_optimizer_cuda
+        self._optimizers['sgd'] = sgd_optimizer_cuda
 
         self._custom_operator_manager = XPUCustomOperatorManager()
 

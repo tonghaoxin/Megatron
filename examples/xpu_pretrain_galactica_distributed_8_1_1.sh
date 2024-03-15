@@ -73,9 +73,9 @@ GALACTICA_7B_ARGS="--tensor-model-parallel-size 8 \
                    --embedding-dropout 0 \
                    --use-learned-position-embeddings \
                    --disable-bias-linear \
-                   --no-gradient-accumulation-fusion \
                    --no-bias-gelu-fusion \
-                   --no-contiguous-buffers-in-local-ddp "
+                   --no-contiguous-buffers-in-local-ddp \
+                   --no-gradient-accumulation-fusion"
                    # --sequence-parallel
 
 GALACTICA_30B_ARGS="--tensor-model-parallel-size 2 \
@@ -188,7 +188,7 @@ export BKCL_TREE_THRESHOLD=1
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
 # Disable XFLAGS megatron mock module
-XFLAGS --disable megatron
+# XFLAGS --disable megatron
 
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \

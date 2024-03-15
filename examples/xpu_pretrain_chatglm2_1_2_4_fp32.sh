@@ -90,7 +90,6 @@ TRAINING_ARGS="--train-iters 5 \
                --distributed-backend nccl \
                --no-async-tensor-model-parallel-allreduce \
                --no-position-embedding \
-               --no-gradient-accumulation-fusion\
                --tokenizer-model $TOKENIZER_PATH \
                --tokenizer-type ChatGLM2Tokenizer \
                --initial-loss-scale 65536 \
@@ -105,7 +104,8 @@ TRAINING_ARGS="--train-iters 5 \
                --no-bias-dropout-fusion \
                --dataloader-type cyclic \
                --memory-saving \
-               --untie-embeddings-and-output-weights"
+               --untie-embeddings-and-output-weights\
+               --no-gradient-accumulation-fusion"
 #   --fp16-lm-cross-entropy \
 #                --fp16 \--use-distributed-optimizer \--no-contiguous-buffers-in-local-ddp\
 ulimit -c 0
@@ -140,7 +140,7 @@ export BKCL_CCIX_BUFFER_GM=1
 # python -m xacc.install
 
 # Disable XFLAGS megatron mock module
-XFLAGS --disable megatron
+# XFLAGS --disable megatron
 
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \

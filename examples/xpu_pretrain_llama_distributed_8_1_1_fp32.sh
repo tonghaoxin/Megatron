@@ -78,7 +78,6 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 8 \
                --use-rotary-position-embeddings \
                --rmsnorm-epsilon 1e-6 \
                --no-position-embedding \
-               --no-gradient-accumulation-fusion \
                --no-bias-gelu-fusion \
                --no-masked-softmax-fusion \
                --disable-bias-linear \
@@ -86,7 +85,8 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 8 \
                --hidden-dropout 0 \
                --embedding-dropout 0 \
                --initial-loss-scale 16 \
-               --untie-embeddings-and-output-weights"
+               --untie-embeddings-and-output-weights\
+               --no-gradient-accumulation-fusion"
                #--tensorboard-dir $TENSORBOARD_PATH \
                #--tensorboard-queue-size 5 \
                #--log-timers-to-tensorboard \
@@ -197,7 +197,6 @@ LLAMA_65B_ARGS="--tensor-model-parallel-size 4 \
                 --use-rotary-position-embeddings \
                 --rmsnorm-epsilon 1e-6 \
                 --no-position-embedding \
-                --no-gradient-accumulation-fusion \
                 --no-bias-gelu-fusion \
                 --disable-bias-linear \
                 --attention-dropout 0 \
@@ -261,7 +260,7 @@ export BKCL_CCIX_BUFFER_GM=1
 #export XMLIR_D_XPU_L3_SIZE=1048576
 
 # Disable XFLAGS megatron mock module
-XFLAGS --disable megatron
+# XFLAGS --disable megatron
 
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \

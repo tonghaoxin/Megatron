@@ -85,7 +85,6 @@ TRAINING_ARGS="--train-iters 5000 \
                --init-method-std 0.0052 \
                --no-async-tensor-model-parallel-allreduce \
                --no-position-embedding \
-               --no-gradient-accumulation-fusion \
                --no-masked-softmax-fusion \
                --tokenizer-model $TOKENIZER_MODEL_PATH \
                --initial-loss-scale 16 \
@@ -94,14 +93,15 @@ TRAINING_ARGS="--train-iters 5000 \
                --dataloader-type cyclic \
                --attention-dropout 0 \
                --embedding-dropout 0 \
-               --no-contiguous-buffers-in-local-ddp"
+               --no-contiguous-buffers-in-local-ddp \
+               --no-gradient-accumulation-fusion"
 
 OPTIONS_NCCL="NCCL_IB_GID_INDEX=3 NCCL_SOCKET_IFNAME=eth0 NCCL_IB_HCA=mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8 NCCL_IB_DISABLE=0"
 
 #DISTRIBUTED_ARGS="--hostfile $HOST_FILE_PATH"
 
 # Disable XFLAGS megatron mock module
-XFLAGS --disable megatron
+# XFLAGS --disable megatron
 
 export BKCL_FORCE_SYNC=1
 
