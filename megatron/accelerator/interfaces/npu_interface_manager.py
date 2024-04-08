@@ -5,6 +5,7 @@
 """NPUInterfaceManager."""
 
 import torch
+import inspect
 
 from functools import wraps
 from .abstract_interface_manager import MegatronInterfaceManager
@@ -144,7 +145,12 @@ class CustomMultiTensorApplyWrapper(object):
         grad_norm = None
         if kwargs.get('op', 'scale') == 'l2norm':
             if not kwargs.get('memory_saving', False):
-                grad_norm = torch.cat([item.reshape(1, -1) for item in grads_for_norm], 1).to('cuda').norm()
+                grad_norm = 0.0
+                norm_type = 2.0
+                for item in grads_for_norm:
+                    grad_norm += torch.norm(item, norm_type) ** norm_type
+                grad_norm = grad_norm ** (1 / norm_type)
+                # grad_norm = torch.cat([item.reshape(1, -1) for item in grads_for_norm], 1).to('cuda').norm()
             else:
                 grad_norm = sum([item.square().sum() for item in grads_for_norm]).sqrt()
             return grad_norm, None
@@ -273,13 +279,30 @@ class CustomFlashAttnWrapper(object):
                 padding_mask=None,
                 atten_mask=attention_mask,
                 scale=scale,
-                pre_tockens=seqlen_k,  # seq_len
+                pre_tockens=65536,  # seq_len
                 next_tockens=0,  # 0
-                keep_prob=1 - dropout_p)[0]
+                keep_prob=1 - dropout_p,
+                inner_precise=0)[0]
         else:
             raise Exception("Non-causal attention type is not support!")
 
         return output
+
+
+class CustomSwiGLUWrapper(object):
+    """CustomSwiGLUWrapper wrapper"""
+
+    def __init__(self, swiglu):
+        """__init__"""
+        if inspect.isclass(swiglu):
+            self.swiglu = swiglu()
+        elif callable(swiglu):
+            self.swiglu = swiglu
+
+    def __call__(self, *args, **kwargs):
+        """__call__"""
+        x = args[0]
+        return self.swiglu(x, dim=-1)
 
 
 class NPUInterfaceManager(MegatronInterfaceManager):
@@ -298,6 +321,7 @@ class NPUInterfaceManager(MegatronInterfaceManager):
         self._custom_interfaces['custom_profiler_decorator'] = CustomProfilerDecoratorWrapper
         self._custom_interfaces['custom_softmax'] = CustomSoftmaxWrapper
         self._custom_interfaces['custom_flash_attn'] = CustomFlashAttnWrapper
+        self._custom_interfaces['custom_swiglu'] = CustomSwiGLUWrapper
         self._custom_interfaces['custom_apply_rope_no_freqs'] = CustomApplyRoPEWrapper
         self._custom_interfaces['custom_apply_rope_with_freqs'] = \
                 CustomApplyRoPEWrapper(_apply_rope_with_freqs)

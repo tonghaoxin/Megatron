@@ -260,18 +260,15 @@ class VocabParallelEmbedding(torch.nn.Module):
                 _initialize_affine_weight_gpu(self.weight, init_method,
                                               partition_dim=0, stride=1)
 
-        import parallel_attention
-        self.update_func = parallel_attention.update
-
-        import parallel_attention
-        self.update_func = parallel_attention.update
+        # import parallel_attention
+        # self.update_func = parallel_attention.update
 
     def forward(self, input_):
         """forward"""
         # update state
-        if torch.distributed.is_initialized():
-            if torch.distributed.get_rank() == 0:
-                self.update_func()
+        # if torch.distributed.is_initialized():
+        #     if torch.distributed.get_rank() == 0:
+        #         self.update_func()
 
         assert not torch.any(
             (input_ < 0) | (input_ >= self.num_embeddings)

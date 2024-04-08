@@ -607,7 +607,10 @@ def validate_args(args, defaults={}):
     # model parallel memory optimization is enabled
     if args.sequence_parallel:
         args.async_tensor_model_parallel_allreduce = False
-        args.tp_gemm_parallel = False
+        if get_accelerator().backend_name() == "cuda":
+            # Currently tp-gemm-parallel is only enabled for allreduce
+            # given the cuda backend
+            args.tp_gemm_parallel = False
 
     if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1" and \
         get_accelerator().backend_name() == "cuda" and \

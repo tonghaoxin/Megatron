@@ -1,14 +1,15 @@
 #!/bin/bash
 
-set -x
-
+# export LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib:/root/miniconda3/lib:$LD_LIBRARY_PATH
+# export PATH=$PATH:/opt/rh/devtoolset-7/root/usr/bin
+# export LD_LIBRARY_PATH=/usr/local/python3.8.18/lib:$LD_LIBRARY_PATH
+# export PATH=/usr/local/python3.8.18/bin:$PATH
+# export PATH=/usr/local/python3.8.18/bin/pip:$PATH
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64/driver
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
-export LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib:/root/miniconda3/lib:$LD_LIBRARY_PATH
-export PATH=$PATH:/opt/rh/devtoolset-7/root/usr/bin
-export LD_LIBRARY_PATH=/usr/local/python3.8.18/lib:$LD_LIBRARY_PATH
-export PATH=/usr/local/python3.8.18/bin:$PATH
-export PATH=/usr/local/python3.8.18/bin/pip:$PATH
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64/driver
+export LD_PRELOAD=/usr/local/lib/libtcmalloc.so
+echo 0 > /proc/sys/kernel/numa_balancing
+rm -rf /root/ascend/log/debug/plog/
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
@@ -32,14 +33,17 @@ NODE_RANK=${2:-0}
 # export ASCEND_GLOBAL_LOG_LEVEL=3
 # export ASCEND_GLOBAL_EVENT_ENABLE=1
 # export INF_NAN_MODE_ENABLE=1
-export HCCL_CONNECT_TIMEOUT=1200
+# export HCCL_CONNECT_TIMEOUT=1200
 # export HCCL_INTRA_PCIE_ENABLE=0
 # export HCCL_INTRA_ROCE_ENABLE=1
 # export HCCL_RDMA_TC=128
 # export HCCL_RDMA_SL=4
-export COMBINED_ENABLE=1
+# export COMBINED_ENABLE=1
 # export HCCL_SOCKET_IFNAME=xgbe0
+# export ASCEND_RT_VISIBLE_DEVICES=8,9,10,11,12,13,14,15
 export MULTI_STREAM_MEMORY_REUSE=1
+export CUDA_DEVICE_MAX_CONNECTIONS=1
+export NPU_ASD_ENABLE=0
 
 DISTRIBUTED_ARGS="--nproc_per_node $NPUS_PER_NODE
                   --nnodes $NNODES
@@ -89,6 +93,7 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 4 \
                  --no-query-key-layer-scaling \
                  --fused-rmsnorm \
                  --use-flash-attn \
+                 --tp-gemm-parallel \
                  --apply-rotary-positional-embedding-kernel \
                  --memory-saving \
                  --fp16"
@@ -112,6 +117,7 @@ OTHER_ARGS="--data-path $DATA_PATH \
             #--save $CHECKPOINT_SAVE_PATH \
             #--load $CHECKPOINT_LOAD_PATH \
 
+pkill -9 python
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/npu_ops':$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \

@@ -89,6 +89,7 @@ OTHER_ARGS="--save $CHECKPOINT_PATH \
             --split 100,0,0 \
             --distributed-backend nccl"
 
+pkill -9 python
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/cuda_ops':$PYTHONPATH \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \

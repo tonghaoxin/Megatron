@@ -13,6 +13,24 @@ from .abstract_custom_operator_manager import MegatronCustomOperatorManager
 from ..interfaces import NPUInterfaceManager
 
 
+def ensure_contiguous(fn):
+    """ensure_contiguous"""
+    def wrapper(tensor, *args, **kwargs):
+        """wrapper"""
+        if not tensor.is_contiguous():
+            tensor = tensor.contiguous()
+        return fn(tensor, *args, **kwargs)
+
+    return wrapper
+
+def repeat_interleave(inputs, repeats, dim):
+    """repeat_interleave"""
+    shape = inputs.shape
+    new_shape = shape[:dim + 1] + (repeats,) + shape[dim + 1:]
+    out_shape = shape[:dim] + (shape[dim] * repeats,) + shape[dim + 1:]
+    return inputs.unsqueeze(dim + 1).expand(new_shape).reshape(out_shape)
+
+
 class NPUCustomOperatorManager(MegatronCustomOperatorManager):
     """NPUCustomOperatorManager"""
 
@@ -31,6 +49,7 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
             from torch_npu import npu_fusion_attention as flashattn_func_npu
             from torch_npu import npu_rotary_mul as rotary_mul_npu
             from torch_npu import npu_rms_norm as rms_norm_npu
+            from torch_npu import npu_swiglu as swiglu_npu
             from einops import rearrange as rearrange_npu
         except ImportError:
             raise RuntimeError(
@@ -62,12 +81,19 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
                 get_interface('custom_profiler_decorator')
         self._custom_ops['custom_flash_attn'] = self._custom_interface_manager.\
                 get_interface('custom_flash_attn')(flashattn_func_npu, rearrange_npu)
+        self._custom_ops['custom_swiglu'] = self._custom_interface_manager.\
+                get_interface('custom_swiglu')(swiglu_npu)
 
     def _monkey_patch(self, args):
         """_monkey_patch"""
         from .npu_ops import initialize_cfg_from_args
         if args.tp_gemm_parallel:
             initialize_cfg_from_args(args)
+
+        # patch view to ensure tensor is contiguous
+        torch.Tensor.view = ensure_contiguous(torch.Tensor.view)
+        # replace npu implementation of torch.repeat_interleave
+        torch.Tensor.repeat_interleave = repeat_interleave
 
     def register_ops(self, args):
         """register_ops"""

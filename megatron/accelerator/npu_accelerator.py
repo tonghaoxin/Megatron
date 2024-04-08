@@ -28,11 +28,8 @@ class NPUAccelerator(MegatronAccelerator):
         self._optimizers = {}
 
         try:
-            from .npu_adam import AdamW as adam_optimizer_npu
             from torch.optim import SGD as sgd_optimizer_npu
-            #from torch.optim import AdamW as adam_optimizer_npu
-            # from apex.optimizers import NpuFusedAdam as adam_optimizer_npu
-            # from apex.optimizers import NpuFusedSGD as sgd_optimizer_npu
+            from torch.optim import AdamW as adam_optimizer_npu
         except ImportError:
             raise RuntimeError(
                 "Failed to import optimizers."
@@ -42,6 +39,8 @@ class NPUAccelerator(MegatronAccelerator):
         self._optimizers['sgd'] = sgd_optimizer_npu
 
         self._custom_operator_manager = NPUCustomOperatorManager()
+
+        torch.npu.set_compile_mode(jit_compile=False)
 
     def backend_name(self):
         """backend_name"""

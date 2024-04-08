@@ -464,8 +464,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             [ g["orig_group"] for g in self.opt_group_ranges ]
         self.optimizer.load_state_dict(self.optimizer.state_dict())
 
-        import parallel_attention
-        self.update_func = parallel_attention.update
+        # import parallel_attention
+        # self.update_func = parallel_attention.update
 
     def get_model_param_range_map(self, param):
         """
@@ -797,9 +797,9 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         from the grad buffer to the main shard's grad field.
         """
         # update state
-        if torch.distributed.is_initialized():
-            if torch.distributed.get_rank() == 0:
-                self.update_func()
+        # if torch.distributed.is_initialized():
+        #     if torch.distributed.get_rank() == 0:
+        #         self.update_func()
 
         # Utility method for copying group grads.
         args = get_args()

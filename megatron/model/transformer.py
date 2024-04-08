@@ -475,7 +475,7 @@ class ParallelAttention(MegatronModule):
             assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
                                                                 'supports causal mask for now')
 
-        self.update_func = get_accelerator().get_operator('custom_parallel_attention')
+        # self.update_func = get_accelerator().get_operator('custom_parallel_attention')
 
         projection_size = args.kv_channels * args.num_attention_heads
 
@@ -679,9 +679,9 @@ class ParallelAttention(MegatronModule):
                     inference_params.key_value_memory_dict[self.layer_number]
 
         # update state
-        if torch.distributed.is_initialized():
-            if torch.distributed.get_rank() == 0:
-                self.update_func()
+        # if torch.distributed.is_initialized():
+        #     if torch.distributed.get_rank() == 0:
+        #         self.update_func()
 
         # =====================
         # Query, Key, and Value
