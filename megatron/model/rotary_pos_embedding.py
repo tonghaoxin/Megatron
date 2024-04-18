@@ -23,7 +23,7 @@ __all__ = ['RotaryEmbedding',
            'RotaryEmbeddingWithPositionIds',
            'ComplexRotaryEmbedding',
            'apply_rotary_pos_emb',
-           'apply_rotary_pos_emb_fused',
+           'apply_rotary_pos_emb_with_freqs',
            'apply_rotary_pos_emb_index',
            'apply_rotary_pos_emb_index_fused']
 
@@ -158,6 +158,22 @@ class ComplexRotaryEmbedding(nn.Module):
 
 def apply_rotary_pos_emb(q, k, freqs):
     """
+    Fused RoPE function
+    """
+    rot_dim = freqs.shape[-1]
+    # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
+    q, q_pass = q[..., :rot_dim], q[..., rot_dim:]
+    k, k_pass = k[..., :rot_dim], k[..., rot_dim:]
+
+    cos_ = torch.cos(freqs).to(q.dtype)
+    sin_ = torch.sin(freqs).to(q.dtype)
+    q, k = custom_apply_rope_no_freqs(q, k, cos_, sin_)
+
+    return torch.cat((q, q_pass), dim=-1), torch.cat((k, k_pass), dim=-1)
+
+
+def apply_rotary_pos_emb_with_freqs(q, k, freqs):
+    """
     input tensor t is of shape [seq_length, ..., dim]
     rotary positional embeding tensor freqs is of shape [seq_length, ..., dim]
     check https://kexue.fm/archives/8265 for detailed formulas
@@ -170,22 +186,6 @@ def apply_rotary_pos_emb(q, k, freqs):
     # first part is cosine component
     # second part is sine component, need to change signs with _rotate_half method
     q, k = custom_apply_rope_with_freqs(q, k, freqs)
-    return torch.cat((q, q_pass), dim=-1), torch.cat((k, k_pass), dim=-1)
-
-
-def apply_rotary_pos_emb_fused(q, k, freqs):
-    """
-    Fused RoPE function
-    """
-    rot_dim = freqs.shape[-1]
-    # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
-    q, q_pass = q[..., :rot_dim], q[..., rot_dim:]
-    k, k_pass = k[..., :rot_dim], k[..., rot_dim:]
-
-    cos_ = torch.cos(freqs).to(q.dtype)
-    sin_ = torch.sin(freqs).to(q.dtype)
-    q, k = custom_apply_rope_no_freqs(q, k, cos_, sin_)
-
     return torch.cat((q, q_pass), dim=-1), torch.cat((k, k_pass), dim=-1)
 
 

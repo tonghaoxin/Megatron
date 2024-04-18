@@ -21,52 +21,6 @@ def _apply_rope_with_freqs(q, k, freqs):
     return q, k
 
 
-def bias_dropout_add(x, bias, residual, prob, training):
-    """bias_dropout_add"""
-    # type: (Tensor, Optional[Tensor], Tensor, float, bool) -> Tensor
-    if bias is not None:
-        x = x + bias
-    out = torch.nn.functional.dropout(x, p=prob, training=training)
-    out = residual + out
-    return out
-
-
-def get_bias_dropout_add(training):
-    """get_bias_dropout_add"""
-    def _bias_dropout_add(x, bias, residual, prob):
-        return bias_dropout_add(x, bias, residual, prob, training)
-    return _bias_dropout_add
-
-
-@torch.jit.script
-def bias_dropout_add_fused_train(x: torch.Tensor,
-                                 bias: Optional[torch.Tensor],
-                                 residual: torch.Tensor,
-                                 prob: float) -> torch.Tensor:
-    """bias_dropout_add_fused_train"""
-    return bias_dropout_add(x, bias, residual, prob, True)
-
-
-@torch.jit.script
-def bias_dropout_add_fused_inference(x: torch.Tensor,
-                                     bias: Optional[torch.Tensor],
-                                     residual: torch.Tensor,
-                                     prob: float) -> torch.Tensor:
-    """bias_dropout_add_fused_inference"""
-    return bias_dropout_add(x, bias, residual, prob, False)
-
-
-class CustomDropoutAddWrapper(object):
-    """CustomDropoutAdd wrapper"""
-
-    def __init__(self, dropout_add_func):
-        """__init__"""
-        self.dropout_add_func = dropout_add_func
-
-    def __call__(self, *args, **kwargs):
-        """__call__"""
-        return self.dropout_add_func(*args, **kwargs)
-
 def _apply_rope_with_idx(q, k, cos, sin, original=False):
     """_apply_rope_with_idx"""
     if original:
@@ -375,10 +329,6 @@ class NPUInterfaceManager(MegatronInterfaceManager):
                 CustomApplyRoPEWrapper(_apply_rope_with_freqs)
         self._custom_interfaces['custom_apply_rope_with_idx'] = \
                 CustomApplyRoPEWrapper(_apply_rope_with_idx)
-        self._custom_interfaces['custom_bias_dropout_add_fused_train'] = \
-                CustomDropoutAddWrapper(bias_dropout_add_fused_train)
-        self._custom_interfaces['custom_bias_dropout_add_fused_inference'] = \
-                CustomDropoutAddWrapper(bias_dropout_add_fused_inference)
 
     def set_inner_func(self, interface_name, inner_func):
         """set_inner_func"""

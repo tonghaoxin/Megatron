@@ -34,11 +34,11 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
             from torch_xmlir.nn.swiglu import SwiGLU as swiglu_xpu
             from torch_xmlir.nn.linear import linear as linear_xpu
             from torch_xmlir.nn.rotary_pos_emb_index import RotaryPosEmbIdx
-            from apex.multi_tensor_apply import multi_tensor_applier as multi_tensor_applier_cuda
-            from amp_C import multi_tensor_l2norm as multi_tensor_l2norm_cuda
-            from amp_C import multi_tensor_scale as multi_tensor_scale_cuda
-            from flash_attn.flash_attn_interface import flash_attn_varlen_func as flashattn_func_cuda
-            from einops import rearrange as rearrange_cuda # pip install einops'
+            from apex.multi_tensor_apply import multi_tensor_applier as multi_tensor_applier_xpu
+            from amp_C import multi_tensor_l2norm as multi_tensor_l2norm_xpu
+            from amp_C import multi_tensor_scale as multi_tensor_scale_xpu
+            from flash_attn.flash_attn_interface import flash_attn_varlen_func as flashattn_func_xpu
+            from einops import rearrange as rearrange_xpu # pip install einops'
             from torch_xmlir.nn.dropout_add import DropoutAddFunction
             # TODO(changtao02): try to check them they are importable
             findmax_xpu = torch.ops.custom_ops.findmax
@@ -85,12 +85,12 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
             'rotary_no_freqs_pos_emb_forward',
             rotary_no_freqs_pos_emb_forward_xpu
         )
-        
+
         self._custom_interface_manager.set_inner_func(
             'rotary_with_freqs_pos_emb_qk_forward',
             rotary_with_freqs_pos_emb_qk_forward_xpu
         )
-        
+
         self._custom_interface_manager.set_inner_func(
             'rotary_with_freqs_pos_emb_qk_backward',
             rotary_with_freqs_pos_emb_qk_backward_xpu
@@ -105,7 +105,7 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
             'rotary_with_idx_pos_emb',
             rotary_with_idx_pos_emb_xpu
         )
-        
+
         self._custom_interface_manager.set_inner_func(
             'dropout_add',
             dropout_add_xpu
@@ -118,8 +118,8 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_bmm'] = bmm_xpu
         self._custom_ops['custom_baddbmm'] = baddbmm_xpu
         self._custom_ops['custom_multi_tensor_applier'] = self._custom_interface_manager.\
-                get_interface('custom_multi_tensor_applier')(multi_tensor_applier_cuda, \
-                    {'l2norm': multi_tensor_l2norm_cuda, 'scale': multi_tensor_scale_cuda})
+                get_interface('custom_multi_tensor_applier')(multi_tensor_applier_xpu, \
+                    {'l2norm': multi_tensor_l2norm_xpu, 'scale': multi_tensor_scale_xpu})
         self._custom_ops['scaled_upper_triang_masked_softmax'] = self._custom_interface_manager.\
                 get_interface('custom_scaled_upper_triang_masked_softmax')
         self._custom_ops['scaled_masked_softmax'] = self._custom_interface_manager.\
@@ -142,7 +142,7 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
                 get_interface('custom_profiler_decorator')
         self._custom_ops['sync_batch_norm'] = None # TODO(changtao02): add xpu custom SyncBatchNorm
         self._custom_ops['custom_flash_attn'] = self._custom_interface_manager.\
-                get_interface('custom_flash_attn')(flashattn_func_cuda, rearrange_cuda)
+                get_interface('custom_flash_attn')(flashattn_func_xpu, rearrange_xpu)
         self._custom_ops['custom_bias_dropout_add_fused_train'] = self._custom_interface_manager.\
                 get_interface('custom_bias_dropout_add_fused_train')
         self._custom_ops['custom_bias_dropout_add_fused_inference'] = self._custom_interface_manager.\

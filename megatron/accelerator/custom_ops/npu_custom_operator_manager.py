@@ -83,10 +83,6 @@ class NPUCustomOperatorManager(MegatronCustomOperatorManager):
                 get_interface('custom_flash_attn')(flashattn_func_npu, rearrange_npu)
         self._custom_ops['custom_swiglu'] = self._custom_interface_manager.\
                 get_interface('custom_swiglu')(swiglu_npu)
-        self._custom_ops['custom_bias_dropout_add_fused_train'] = self._custom_interface_manager.\
-                get_interface('custom_bias_dropout_add_fused_train')
-        self._custom_ops['custom_bias_dropout_add_fused_inference'] = self._custom_interface_manager.\
-                get_interface('custom_bias_dropout_add_fused_inference')
 
     def _monkey_patch(self, args):
         """_monkey_patch"""

@@ -17,7 +17,7 @@ NODE_RANK=${2:-0}
 
 # export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_SUBSYS=ALL
-export NCCL_SOCKET_IFNAME=eth0
+export NCCL_SOCKET_IFNAME=xgbe0
 export NCCL_IB_HCA=mlx5
 export NCCL_IB_GID_INDEX=3
 

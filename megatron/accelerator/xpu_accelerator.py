@@ -25,11 +25,11 @@ class XPUAccelerator(MegatronAccelerator):
         self._communication_backend_name = 'xccl'
         self._optimizers = {}
 
-        from apex.optimizers import FusedAdam as adam_optimizer_cuda
-        from apex.optimizers import FusedSGD as sgd_optimizer_cuda
+        from apex.optimizers import FusedAdam as adam_optimizer_xpu
+        from apex.optimizers import FusedSGD as sgd_optimizer_xpu
 
-        self._optimizers['adam'] = adam_optimizer_cuda
-        self._optimizers['sgd'] = sgd_optimizer_cuda
+        self._optimizers['adam'] = adam_optimizer_xpu
+        self._optimizers['sgd'] = sgd_optimizer_xpu
 
         self._custom_operator_manager = XPUCustomOperatorManager()
 

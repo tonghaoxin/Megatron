@@ -61,10 +61,6 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
         )
         self._custom_ops['custom_flash_attn'] = self._custom_interface_manager.\
                 get_interface('custom_flash_attn')(flashattn_func_cuda, rearrange_cuda)
-        self._custom_ops['custom_bias_dropout_add_fused_train'] = self._custom_interface_manager.\
-                get_interface('custom_bias_dropout_add_fused_train')
-        self._custom_ops['custom_bias_dropout_add_fused_inference'] = self._custom_interface_manager.\
-                get_interface('custom_bias_dropout_add_fused_inference')
 
     def _monkey_patch(self, args):
         """_monkey_patch"""
@@ -133,10 +129,7 @@ class CUDACustomOperatorManager(MegatronCustomOperatorManager):
                 get_interface('custom_apply_rope_with_idx')
         self._custom_ops['custom_parallel_attention'] = self._custom_interface_manager.\
                 get_interface('custom_parallel_attention')(parallel_attention)
-        self._custom_ops['custom_bias_dropout_add_fused_train'] = self._custom_interface_manager.\
-                get_interface('custom_bias_dropout_add_fused_train')
-        self._custom_ops['custom_bias_dropout_add_fused_inference'] = self._custom_interface_manager.\
-                get_interface('custom_bias_dropout_add_fused_inference')
+
         # Monkey patch custom classes and modules
         self._monkey_patch(args)
 
