@@ -28,7 +28,7 @@ TOKENIZER_PATH=$ROOT_DIR/../tokenizer/tokenizer.model
 CHECKPOINT_LOAD_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_7b_checkpoint_tp1_pp1_dp8_zero1_fp16
 CHECKPOINT_SAVE_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_7b_checkpoint_tp1_pp1_dp8_zero1_fp16_saved
 
-export LD_LIBRARY_PATH=$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH
 
 # bkcl new, runtime old
 #export LD_LIBRARY_PATH=/workspace/13b/bkcl_so_20240306_ipipe/output/xccl_socket_ubuntu_x86_64/so:/workspace/13b/runtime-close/runtime_kl3_515.58_20240222165034/so_relwithdebinfo:$LD_LIBRARY_PATH
@@ -62,10 +62,10 @@ export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
 # Change for multinode config
-MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
+MASTER_ADDR=${1:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-9999}
-NNODES=${1:-1}
-NODE_RANK=${2:-0}
+NNODES=${2:-1}
+NODE_RANK=${3:-0}
 
 # export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_SUBSYS=ALL
@@ -236,9 +236,12 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 1 \
                 #--fuse-qk-rotary-pos-emb \
 
 OUTPUT_ARGS="--log-interval 1 \
+             --detail-log-interval 3 \
+             --timing-log-option all \
              --save-interval 500 \
              --eval-interval 50000 \
              --eval-iters 0"
+             # --timing-log-level 2 \
 
 OTHER_ARGS="--data-path $DATA_PATH \
             --split 100,0,0 \
@@ -248,7 +251,10 @@ OTHER_ARGS="--data-path $DATA_PATH \
             --save $CHECKPOINT_SAVE_PATH \
             --distributed-backend nccl"
 
-XFLAGS --disable megatron
+XFLAGS --disable megatron_23_05
+XFLAGS --disable megatron_aiak
+# XFLAGS --disable megatron
+# XFLAGS --enable megatron_aiak
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \

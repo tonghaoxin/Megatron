@@ -2,6 +2,7 @@
 
 import torch
 
+from megatron import get_timers
 from megatron.accelerator import get_accelerator
 from megatron.core.parallel_state import (
     get_tensor_model_parallel_rank,
@@ -150,7 +151,15 @@ class _ReduceFromModelParallelRegion(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, input_):
-        return _reduce(input_)
+        """forward"""
+        ctx.timers = get_timers()
+        if ctx.timers is not None:
+            ctx.timers('forward-all-reduce', log_level=2).start()
+        # return _reduce(input_)
+        input_ = _reduce(input_)
+        if ctx.timers is not None:
+            ctx.timers('forward-all-reduce').stop()
+        return input_
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -240,11 +249,26 @@ class _ReduceScatterToSequenceParallelRegion(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, input_):
-        return _reduce_scatter_along_first_dim(input_)
+        """forward"""
+        ctx.timers = get_timers()
+        if ctx.timers is not None:
+            ctx.timers('forward-reduce-scatter', log_level=2).start()
+        # return _reduce_scatter_along_first_dim(input_)
+        output = _reduce_scatter_along_first_dim(input_)
+        if ctx.timers is not None:
+            ctx.timers('forward-reduce-scatter').stop()
+        return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        return _gather_along_first_dim(grad_output)
+        """backward"""
+        if ctx.timers is not None:
+            ctx.timers('backward-all-gather', log_level=2).start()
+        # return _gather_along_first_dim(grad_output)
+        output = _gather_along_first_dim(grad_output)
+        if ctx.timers is not None:
+            ctx.timers('backward-all-gather').stop()
+        return output
 
 
 # -----------------

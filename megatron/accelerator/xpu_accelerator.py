@@ -324,7 +324,8 @@ class XPUAccelerator(MegatronAccelerator):
     @property
     def LongTensor(self):
         """LongTensor"""
-        return torch.cuda.LongTensor
+        # return torch.cuda.LongTensor
+        return torch.cuda.IntTensor
 
     def BFloat16Tensor_name(self):
         """BFloat16Tensor_name"""

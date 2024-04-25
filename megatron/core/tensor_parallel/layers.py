@@ -8,6 +8,7 @@ import os
 from typing import Optional
 import warnings
 from functools import partial
+from math import ceil
 
 import torch
 import torch.nn.functional as F
@@ -32,7 +33,7 @@ from megatron.core.parallel_state import (
     get_data_parallel_rank,
 )
 from random import random
-from megatron import get_args
+from megatron import get_args, get_timers
 from .mappings import (
     copy_to_tensor_model_parallel_region,
     gather_from_tensor_model_parallel_region,
@@ -326,29 +327,112 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         ctx.kernel_split_num = kernel_split_num
         ctx.is_row_parallel = is_row_parallel
         ctx.use_normhead = use_normhead
+        ctx.batch_parallel_enabled  = args.batch_parallel
+        ctx.timers = get_timers()
 
         if sequence_parallel:
             world_size = get_tensor_model_parallel_world_size()
-            dim_size = list(input.size())
-            dim_size[0] = dim_size[0] * world_size
+            if not ctx.batch_parallel_enabled or input.size()[1] == 1:
+                dim_size = list(input.size())
+                dim_size[0] = dim_size[0] * world_size
 
-            all_gather_buffer = \
-                get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
-            torch.distributed._all_gather_base(
-                all_gather_buffer,
-                input,
-                group=get_tensor_model_parallel_group())
-            total_input = all_gather_buffer
+                if ctx.timers is not None:
+                    ctx.timers('forward-all-gather', log_level=2).start()
+                all_gather_buffer = \
+                    get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
+                torch.distributed._all_gather_base(
+                    all_gather_buffer,
+                    input,
+                    group=get_tensor_model_parallel_group())
+                if ctx.timers is not None:
+                    ctx.timers('forward-all-gather').stop()
+                total_input = all_gather_buffer
+                if ctx.timers is not None:
+                    ctx.timers('forward-gemm', log_level=2).start()
+                output = custom_fc(ctx, total_input, weight, bias,
+                                   transpose=True,
+                                   is_forward=True,
+                                   findmax_opt=ctx.findmax_opt,
+                                   tp_gemm_parallel=tp_gemm_parallel,
+                                   kernel_split_num=kernel_split_num,
+                                   is_row_parallel=is_row_parallel)
+                if ctx.timers is not None:
+                    ctx.timers('forward-gemm').stop()
+            else:
+                # we think 1st dim represents batch, so split two chunk.
+                (input_chunk0, input_chunk1) = torch.split(
+                    input, ceil(input.size()[1] / 2), dim=1
+                )
+
+                dim_size = list(input_chunk0.size())
+                dim_size[0] = dim_size[0] * world_size
+                all_gather_buffer_chunk0 = torch.empty(
+                    dim_size,
+                    dtype=input_chunk0.dtype,
+                    device=input_chunk0.device,
+                )
+
+                handle0 = torch.distributed._all_gather_base(
+                    all_gather_buffer_chunk0,
+                    input_chunk0.contiguous(),
+                    group=get_tensor_model_parallel_group(),
+                    async_op=True,
+                )
+
+                all_gather_buffer_chunk1 = torch.empty(
+                    dim_size,
+                    dtype=input_chunk1.dtype,
+                    device=input_chunk1.device,
+                )
+                handle1 = torch.distributed._all_gather_base(
+                    all_gather_buffer_chunk1,
+                    input_chunk1.contiguous(),
+                    group=get_tensor_model_parallel_group(),
+                    async_op=True,
+                )
+                handle0.wait()
+                if ctx.timers is not None:
+                    ctx.timers('forward-gemm', log_level=2).start()
+                output_chunk0 = custom_fc(ctx,
+                                          all_gather_buffer_chunk0,
+                                          weight, bias,
+                                          transpose=True,
+                                          is_forward=True,
+                                          findmax_opt=ctx.findmax_opt,
+                                          tp_gemm_parallel=tp_gemm_parallel,
+                                          kernel_split_num=kernel_split_num,
+                                          is_row_parallel=is_row_parallel)
+                if ctx.timers is not None:
+                    ctx.timers('forward-gemm').stop()
+                handle1.wait()
+                if ctx.timers is not None:
+                    ctx.timers('forward-gemm', log_level=2).start()
+                output_chunk1 = custom_fc(ctx,
+                                          all_gather_buffer_chunk1,
+                                          weight, bias,
+                                          transpose=True,
+                                          is_forward=True,
+                                          findmax_opt=ctx.findmax_opt,
+                                          tp_gemm_parallel=tp_gemm_parallel,
+                                          kernel_split_num=kernel_split_num,
+                                          is_row_parallel=is_row_parallel)
+                if ctx.timers is not None:
+                    ctx.timers('forward-gemm').stop()
+                output = torch.cat((output_chunk0, output_chunk1), dim=1)
         else:
+            if ctx.timers is not None:
+                ctx.timers('forward-gemm', log_level=2).start()
             total_input = input
+            output = custom_fc(ctx, total_input, weight, bias,
+                               transpose=True,
+                               is_forward=True,
+                               findmax_opt=ctx.findmax_opt,
+                               tp_gemm_parallel=tp_gemm_parallel,
+                               kernel_split_num=kernel_split_num,
+                               is_row_parallel=is_row_parallel)
+            if ctx.timers is not None:
+                ctx.timers('forward-gemm').stop()
 
-        output = custom_fc(ctx, total_input, weight, bias,
-                           transpose=True,
-                           is_forward=True,
-                           findmax_opt=ctx.findmax_opt,
-                           tp_gemm_parallel=tp_gemm_parallel,
-                           kernel_split_num=kernel_split_num,
-                           is_row_parallel=is_row_parallel)
 
         if args.enable_debug:
             debug(dict(__class__=dict(__name__='LinearWithGradAccumulationAndAsyncCommunication')),
@@ -372,6 +456,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             dim_size = list(input.size())
             dim_size[0] = dim_size[0] * world_size
 
+            if ctx.timers is not None:
+                ctx.timers('backward-all-gather', log_level=2).start()
             all_gather_buffer = \
                 get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
             handle = torch.distributed._all_gather_base(
@@ -385,6 +471,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         else:
             total_input = input
 
+        if ctx.timers is not None:
+            ctx.timers('backward-gemm-input-grad', log_level=2).start()
         grad_input = custom_fc(ctx, grad_output, weight, None,
                                transpose=False,
                                is_forward=False,
@@ -392,9 +480,13 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
                                tp_gemm_parallel=ctx.tp_gemm_parallel,
                                kernel_split_num=ctx.kernel_split_num,
                                is_row_parallel=not ctx.is_row_parallel)
+        if ctx.timers is not None:
+            ctx.timers('backward-gemm-input-grad').stop()
 
         if ctx.sequence_parallel:
             handle.wait()
+            if ctx.timers is not None:
+                ctx.timers('backward-all-gather').stop()
 
         # Doing gather + slicing during the NeMo forward pass can make this tensor
         # not be contiguous. PyTorch only checks if the tensor is contiguous, and only
@@ -409,6 +501,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
         if ctx.async_grad_allreduce:
             # Asynchronous all-reduce
+            if ctx.timers is not None:
+                ctx.timers('backward-all-reduce', log_level=2).start()
             handle = torch.distributed.all_reduce(
                     grad_input, group=get_tensor_model_parallel_group(), async_op=True)
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
@@ -421,16 +515,22 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
                                          device=get_accelerator().current_device(),
                                          requires_grad=False)
             # reduce_scatter
+            if ctx.timers is not None:
+                ctx.timers('backward-reduce-scatter', log_level=2).start()
             handle = torch.distributed._reduce_scatter_base(sub_grad_input, grad_input,
                                                             group=get_tensor_model_parallel_group(),
                                                             async_op=True)
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # reduce scatter is scheduled before the weight gradient computation
 
+        if ctx.timers is not None:
+            ctx.timers('backward-gemm-weight-grad', log_level=2).start()
         grad_weight = custom_grad_accum(ctx, total_input, grad_output,
                                         weight.main_grad if ctx.use_contiguous_buffers else weight.grad,
                                         to_fuse=ctx.gradient_accumulation_fusion,
                                         findmax_opt=ctx.findmax_opt)
+        if ctx.timers is not None:
+            ctx.timers('backward-gemm-weight-grad').stop()
         grad_bias = grad_output.sum(dim=0) if use_bias else None
         if ctx.use_normhead:
             rs = torch.sum(weight, axis=1).reshape(weight.size(0), 1).expand(-1, weight.size(1))
@@ -438,10 +538,14 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             grad_weight = grad_weight * scale
         if ctx.sequence_parallel:
             handle.wait()
+            if ctx.timers is not None:
+                ctx.timers('backward-reduce-scatter').stop()
             return sub_grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None
 
         if ctx.async_grad_allreduce:
             handle.wait()
+            if ctx.timers is not None:
+                ctx.timers('backward-all-reduce').stop()
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, None, None, None
 
@@ -775,6 +879,7 @@ class RowParallelLinear(torch.nn.Module):
         self.sequence_parallel_enabled = sequence_parallel_enabled
         if self.sequence_parallel_enabled and not self.input_is_parallel:
             raise RuntimeError("To enable `sequence_parallel_enabled`, `input_is_parallel` must be `True`")
+        self.batch_parallel_enabled = args.batch_parallel
 
         # Parameters.
         # Note: torch.nn.functional.linear performs XA^T + b and as a result
@@ -830,32 +935,113 @@ class RowParallelLinear(torch.nn.Module):
         else:
             assert not self.sequence_parallel_enabled
             input_parallel = scatter_to_tensor_model_parallel_region(input_)
-        # Matrix multiply.
-        output_parallel = linear_with_grad_accumulation_and_async_allreduce(
-            input=input_parallel,
-            weight=self.weight,
-            bias=None,
-            gradient_accumulation_fusion=self.gradient_accumulation_fusion,
-            async_grad_allreduce=False,
-            sequence_parallel_enabled=False,
-            tp_gemm_parallel=self.tp_gemm_parallel,
-            kernel_split_num=self.kernel_split_num,
-            is_row_parallel=True
-        )
-        if self.enable_debug:
-            debug(self, "RowParallelLinear || after linear_with_grad_accumulation_and_async_allreduce",
-                  output_parallel=output_parallel, output_parallel_shape=output_parallel.shape)
-
-        # All-reduce across all the partitions.
         if self.sequence_parallel_enabled:
-            output_ = reduce_scatter_to_sequence_parallel_region(output_parallel)
+            if not self.batch_parallel_enabled or input_parallel.size()[1] == 1:
+                output_parallel = linear_with_grad_accumulation_and_async_allreduce(
+                        input=input_parallel,
+                        weight=self.weight,
+                        bias=None,
+                        gradient_accumulation_fusion=self.gradient_accumulation_fusion,
+                        async_grad_allreduce=False,
+                        sequence_parallel_enabled=False,
+                        tp_gemm_parallel=self.tp_gemm_parallel,
+                        kernel_split_num=self.kernel_split_num,
+                        is_row_parallel=True,
+                    )
+                if self.enable_debug:
+                    debug(self, "RowParallelLinear || after linear_with_grad_accumulation_and_async_allreduce",
+                          output_parallel=output_parallel, output_parallel_shape=output_parallel.shape)
+
+                output_ = reduce_scatter_to_sequence_parallel_region(output_parallel)
+                if self.enable_debug:
+                    debug(self, "RowParallelLinear || after reduce_scatter_to_sequence_parallel_region",
+                          output_=output_, output_shape=output_.shape)
+            else:
+                # we think 1st dim represents batch, so split two chunk.
+                (input_parallel_chunk0, input_parallel_chunk1) = torch.split(
+                    input_parallel, ceil(input_parallel.size()[1] / 2), dim=1
+                )
+
+                output_parallel_chunk0 = linear_with_grad_accumulation_and_async_allreduce(
+                    input=input_parallel_chunk0.contiguous(),
+                    weight=self.weight,
+                    bias=None,
+                    gradient_accumulation_fusion=self.gradient_accumulation_fusion,
+                    async_grad_allreduce=False,
+                    sequence_parallel_enabled=False,
+                    tp_gemm_parallel=self.tp_gemm_parallel,
+                    kernel_split_num=self.kernel_split_num,
+                    is_row_parallel=True,
+                )
+
+                world_size = get_tensor_model_parallel_world_size()
+                dim_size = list(output_parallel_chunk0.size())
+                dim_size[0] = dim_size[0] // world_size
+                output_chunk0 = torch.empty(
+                    dim_size,
+                    dtype=output_parallel_chunk0.dtype,
+                    device=torch.cuda.current_device(),
+                )
+                handle = torch.distributed._reduce_scatter_base(
+                    output_chunk0,
+                    output_parallel_chunk0.contiguous(),
+                    group=get_tensor_model_parallel_group(),
+                    async_op=True,
+                )
+
+                output_parallel_chunk1 = linear_with_grad_accumulation_and_async_allreduce(
+                    input=input_parallel_chunk1.contiguous(),
+                    weight=self.weight,
+                    bias=None,
+                    gradient_accumulation_fusion=self.gradient_accumulation_fusion,
+                    async_grad_allreduce=False,
+                    sequence_parallel_enabled=False,
+                )
+                output_chunk1 = reduce_scatter_to_sequence_parallel_region(
+                    output_parallel_chunk1
+                )
+                # pipeline output_parallel_chunk1 computation stream (sdnn core)
+                # and reduce_scatter stream (cluster core).
+                handle.wait()
+                output_ = torch.cat((output_chunk0, output_chunk1), dim=1)
         elif self.tp_gemm_parallel:
+            output_parallel = linear_with_grad_accumulation_and_async_allreduce(
+                input=input_parallel,
+                weight=self.weight,
+                bias=None,
+                gradient_accumulation_fusion=self.gradient_accumulation_fusion,
+                async_grad_allreduce=False,
+                sequence_parallel_enabled=False,
+                tp_gemm_parallel=self.tp_gemm_parallel,
+                kernel_split_num=self.kernel_split_num,
+                is_row_parallel=True
+            )
+            if self.enable_debug:
+                debug(self, "RowParallelLinear || after linear_with_grad_accumulation_and_async_allreduce",
+                      output_parallel=output_parallel, output_parallel_shape=output_parallel.shape)
+
             output_ = output_parallel
         else:
+            output_parallel = linear_with_grad_accumulation_and_async_allreduce(
+                input=input_parallel,
+                weight=self.weight,
+                bias=None,
+                gradient_accumulation_fusion=self.gradient_accumulation_fusion,
+                async_grad_allreduce=False,
+                sequence_parallel_enabled=False,
+                tp_gemm_parallel=self.tp_gemm_parallel,
+                kernel_split_num=self.kernel_split_num,
+                is_row_parallel=True
+            )
+            if self.enable_debug:
+                debug(self, "RowParallelLinear || after linear_with_grad_accumulation_and_async_allreduce",
+                      output_parallel=output_parallel, output_parallel_shape=output_parallel.shape)
+
             output_ = reduce_from_tensor_model_parallel_region(output_parallel)
             if self.enable_debug:
                 debug(self, "RowParallelLinear || after reduce_from_tensor_model_parallel_region",
                       output_=output_, output_shape=output_.shape)
+
         if not self.skip_bias_add:
             output = output_ + self.bias if self.bias is not None else output_
             output_bias = None

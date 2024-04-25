@@ -1158,6 +1158,8 @@ def _add_training_args(parser):
                        'size is supported.')
     group.add_argument('--sequence-parallel', action='store_true',
                        help='Enable sequence parallel optimization.')
+    group.add_argument('--batch-parallel', action='store_true',
+                       help='Enable batch parallel optimization.')
     group.add_argument('--no-gradient-accumulation-fusion',
                        action='store_false',
                        help='Disable fusing gradient accumulation to weight '

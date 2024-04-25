@@ -23,9 +23,9 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
 
         # Register pre-init custom ops
         try:
-            import scaled_upper_triang_masked_softmax_cuda
-            import scaled_masked_softmax_cuda
-            import scaled_softmax_cuda
+            # import scaled_upper_triang_masked_softmax_cuda
+            # import scaled_masked_softmax_cuda
+            # import scaled_softmax_cuda
             import fused_weight_gradient_mlp_cuda
             from torch.nn import LayerNorm
             from torch_xmlir.nn.rms_norm import RMSNormLayer
@@ -56,20 +56,20 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
                 "Failed to import pre-init custom ops."
             )
 
-        self._custom_interface_manager.set_inner_func(
-            'scaled_upper_triang_masked_softmax',
-            scaled_upper_triang_masked_softmax_cuda
-        )
+        # self._custom_interface_manager.set_inner_func(
+        #     'scaled_upper_triang_masked_softmax',
+        #     scaled_upper_triang_masked_softmax_cuda
+        # )
 
-        self._custom_interface_manager.set_inner_func(
-            'scaled_masked_softmax',
-            scaled_masked_softmax_cuda
-        )
+        # self._custom_interface_manager.set_inner_func(
+        #     'scaled_masked_softmax',
+        #     scaled_masked_softmax_cuda
+        # )
 
-        self._custom_interface_manager.set_inner_func(
-            'scaled_softmax',
-            scaled_softmax_cuda
-        )
+        # self._custom_interface_manager.set_inner_func(
+        #     'scaled_softmax',
+        #     scaled_softmax_cuda
+        # )
 
         self._custom_interface_manager.set_inner_func(
             'rotary_with_freqs_pos_emb_forward',
@@ -120,12 +120,12 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
         self._custom_ops['custom_multi_tensor_applier'] = self._custom_interface_manager.\
                 get_interface('custom_multi_tensor_applier')(multi_tensor_applier_xpu, \
                     {'l2norm': multi_tensor_l2norm_xpu, 'scale': multi_tensor_scale_xpu})
-        self._custom_ops['scaled_upper_triang_masked_softmax'] = self._custom_interface_manager.\
-                get_interface('custom_scaled_upper_triang_masked_softmax')
-        self._custom_ops['scaled_masked_softmax'] = self._custom_interface_manager.\
-                get_interface('custom_scaled_masked_softmax')
-        self._custom_ops['scaled_softmax'] = self._custom_interface_manager.\
-                get_interface('custom_scaled_softmax')
+        # self._custom_ops['scaled_upper_triang_masked_softmax'] = self._custom_interface_manager.\
+        #         get_interface('custom_scaled_upper_triang_masked_softmax')
+        # self._custom_ops['scaled_masked_softmax'] = self._custom_interface_manager.\
+        #         get_interface('custom_scaled_masked_softmax')
+        # self._custom_ops['scaled_softmax'] = self._custom_interface_manager.\
+        #         get_interface('custom_scaled_softmax')
         self._custom_ops['custom_swiglu'] = self._custom_interface_manager.\
                 get_interface('custom_swiglu')(swiglu_xpu)
         self._custom_ops['custom_fc'] = self._custom_interface_manager.\
