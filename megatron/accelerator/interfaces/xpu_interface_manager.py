@@ -198,6 +198,7 @@ class CustomGradAccumWrapper(object):
             grad_weight = grad_output.t().matmul(total_input)
         return grad_weight
 
+
 class CustomFlashAttnWrapper(object):
     """Implement the scaled dot product attention with softmax.
     Arguments
@@ -276,7 +277,7 @@ class CustomMultiTensorApplyWrapper(object):
         self.multi_tensor_ops = multi_tensor_ops
 
     def __call__(self, *args, **kwargs):
-        """__call__"""                                                                                                                                                                                                                                                                                                                                 
+        """__call__"""
         grads_for_norm = args[1][0]
         grad_norm = None
         if kwargs.get('op', 'scale') == 'l2norm':

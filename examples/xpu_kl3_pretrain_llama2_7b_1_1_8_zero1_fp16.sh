@@ -3,23 +3,6 @@
 set -e
 set -x
 
-#export BKCL_PERF_DEBUG=1
-#export FAST_SWIGLU_ENABLE=1
-#export PYTORCH_NO_CUDA_MEMORY_CACHING=1
-#export XPURT_DISPATCH_MODE=PROFILING
-#export XPUAPI_DEBUG=0x1
-#export _XMLIR_D_XDNN_CPU_FALLBACK_OP_STR=uniform_
-#export BKCL_PERF_DEBUG=1
-#export BKCL_DEBUG=1
-#export BKCL_DUMP=1
-#export BKCL_DEBUG_SKIP_RUN=1
-
-#export CUDA_DEVICE_MAX_CONNECTIONS=1
-
-
-#export XMLIR_FC_AUTOTUNE_BOOL=false
-#export XMLIR_FC_AUTOTUNE_FILE_NAME=/home/fengyaping/Megatron-latest/examples/llama7b_tune_result.txt
-
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 #data数据路径记得修改
@@ -30,33 +13,20 @@ CHECKPOINT_SAVE_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_7b_checkpoint_tp1_
 
 export LD_LIBRARY_PATH=$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH
 
-# bkcl new, runtime old
-#export LD_LIBRARY_PATH=/workspace/13b/bkcl_so_20240306_ipipe/output/xccl_socket_ubuntu_x86_64/so:/workspace/13b/runtime-close/runtime_kl3_515.58_20240222165034/so_relwithdebinfo:$LD_LIBRARY_PATH
-
-# bckl new, runtime 0306 new
-#export LD_LIBRARY_PATH=/workspace/13b/bkcl_so_20240306_ipipe/output/xccl_socket_ubuntu_x86_64/so:/workspace/13b/515_58_runtime_so_20240306/runtime-close/runtime_kl3_515.58_20240305113144/so_relwithdebinfo:$LD_LIBRARY_PATH
-
-#export PYTORCH_NO_CUDA_MEMORY_CACHING=1
-#export LD_LIBRARY_PATH=/workspace/13b/bkcl_so_20240306:/workspace/13b/515_58_runtime_so_20240306_update_ver1/api:$LD_LIBRARY_PATH
-#export LD_LIBRARY_PATH=/workspace/13b/bkcl_so_20240306:/workspace/13b/runtime-close/runtime_kl3_515.58_20240222165034/so_relwithdebinfo:$LD_LIBRARY_PAT
-#export LD_LIBRARY_PATH=/workspace/13b/bkcl_so_20240306_ipipe/output/xccl_socket_ubuntu_x86_64/so:/workspace/13b/runtime-close/runtime_kl3_515.58_20240222165034/so_relwithdebinfo:$LD_LIBRARY_PAT
-#export LD_LIBRARY_PATH=/workspace/13b/bkcl_so_20240306_ipipe/output/xccl_socket_ubuntu_x86_64/so:/workspace/13b/runtime-close/runtime_kl3_515.58_20240222165034/so_relwithdebinfo:$LD_LIBRARY_PAT
-
-#export BKCL_TREE_THRESHOLD=0
-#export XPU_ZEBU_MODE=1
-#export BKCL_XLINK_C2C=1
-#export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
-#export BKCL_CLUSTERS_PER_RING=2
-#export BKCL_RING_BUFFER_SIZE=2048000
-#export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
-
+# export DIST_MULTI_STREAM=true
+# export BKCL_RING_FORCE_BULK=0
 export XPUAPI_DEFAULT_SIZE=4000000000
+export XBLAS_FC_HBM_VERSION=40 # 需要指定HBM版
+export BKCL_KL3_TURBO_MODE=1
+export BKCL_RING_BUFFER_SIZE=2097152
+# export FAST_SWIGLU_ENABLE=1 # 查表SWIGLU算子实现，精度有损
+
 #pmode
 export CUDART_DUMMY_REGISTER=1 #强制__cudaRegister***返回成功，用绕过pytorch混用NV官方cublas/cudnn造成的奇怪行为
-
 #imode 模式需要同时开启下列3个环境变量
 export XPU_FORCE_USERMODE_LAUNCH=1 #强制使用纯用户态高性能launch/it模式，可以获得理论最小的launch开销，需要kunlun.ko insmod时使用
-export XPU_DUMMY_EVENT=1 #强制event相关API返回成功，当前用于event还未ready的纯用户态高性能launch/wait模式
+# export XPU_DUMMY_EVENT=1 #强制event相关API返回成功，当前用于event还未ready的纯用户态高性能launch/wait模式
+unset XPU_DUMMY_EVENT
 
 export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
@@ -73,10 +43,6 @@ export NCCL_SOCKET_IFNAME=eth0
 export NCCL_IB_HCA=mlx5
 export NCCL_IB_GID_INDEX=3
 export XMLIR_F_XPU_ENABLED_BOOL=true
-export ALLREDUCE_ASYNC=false
-export ALLGATHER_ASYNC=false
-export ALLREDUCE_FUSION=0
-export BKCL_TIMEOUT=3600
 #export BKCL_SOCKET_IFNAME=bond0
 
 # debug
@@ -98,7 +64,6 @@ export BKCL_TREE_THRESHOLD=1
 
 # bckl not use L3
 export BKCL_CCIX_BUFFER_GM=1
-#export BKCL_RING_BUFFER_SIZE=524288
 
 # xmlir set L3 size, default 13M``
 #export XMLIR_D_XPU_L3_SIZE=1048576
@@ -130,12 +95,6 @@ cat > ccix_inter.txt <<EOF
 [chip 7, port 1] <===> [chip 6, port 2]
 EOF
 
-
-
-#cat > ccix_inter.txt <<EOF
-#[chip 2, port 1] <===> [chip 3, port 2]
-#EOF
-
 #export XPUSIM_RUN_KERNEL_NAME=range/cast
 export XPU_ZEBU_MODE=1 # 影响ccix_inter.txt文件读取
 export BKCL_XLINK_D2D=0
@@ -146,39 +105,18 @@ export BKCL_XLINK_ETH=0
 export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
 export BKCL_CCIX_RING=1
 
-
 #export BKCL_KL3_SYSCON_FLAG=1 #需要注释
 export BKCL_RING_BUFFER_GM=1
 export BKCL_FORCE_SYNC=1
-export BKCL_CLUSTERS_PER_RING=2 #13b 8卡需要调低, 2卡适当调高, 速度快
-export BKCL_RING_BUFFER_SIZE=2048000
-export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
+# export BKCL_CLUSTERS_PER_RING=2 #13b 8卡需要调低, 2卡适当调高, 速度快
+# export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
 ulimit -c 0
 export ALLREDUCE_ASYNC=false
 export ALLGATHER_ASYNC=false
 export ALLREDUCE_FUSION=0
 export BKCL_TIMEOUT=3600
 
-
-# from paddle
-#export BKCL_TREE_THRESHOLD=0
-export XPU_ZEBU_MODE=1
-export BKCL_XLINK_C2C=1
-export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
-export BKCL_CLUSTERS_PER_RING=2
-export BKCL_RING_BUFFER_SIZE=2048000
-export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
-
 unset BKCL_KL3_SYSCON_FLAG
-
- #p-mode
-export BKCL_TREE_THRESHOLD=1
-
-unset XPU_FORCE_USERMODE_LAUNCH
-unset XPU_DUMMY_EVENT
-
-export XMLIR_FA_GEMM_TYPE=float16 #FA GEMM type默认为tf32，较慢，需要指定为fp16
-
 
 DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --nnodes $NNODES
@@ -224,9 +162,9 @@ LLAMA2_7B_ARGS="--tensor-model-parallel-size 1 \
                 --no-bias-gelu-fusion \
                 --no-position-embedding \
                 --no-masked-softmax-fusion \
+                --no-query-key-layer-scaling \
                 --no-gradient-accumulation-fusion \
                 --attention-softmax-in-fp32 \
-                --no-query-key-layer-scaling \
                 --initial-loss-scale 16 \
                 --memory-saving \
                 --fused-rmsnorm \

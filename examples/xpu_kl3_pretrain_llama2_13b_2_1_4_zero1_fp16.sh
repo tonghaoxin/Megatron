@@ -72,8 +72,9 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 2 \
                  --no-bias-gelu-fusion \
                  --no-position-embedding \
                  --no-masked-softmax-fusion \
-                 --attention-softmax-in-fp32 \
                  --no-query-key-layer-scaling \
+                 --no-gradient-accumulation-fusion \
+                 --attention-softmax-in-fp32 \
                  --memory-saving \
                  --fused-rmsnorm \
                  --use-flash-attn \
@@ -105,9 +106,6 @@ OTHER_ARGS="--data-path $DATA_PATH \
 #################################
 # driver方式部分
 #################################
-#pmode 模式需要开启下面环境变量
-export CUDART_DUMMY_REGISTER=1 #强制__cudaRegister***返回成功，用绕过pytorch混用NV官方cublas/cudnn造成的奇怪行为
-
 #imode 模式需要同时开启下列3个环境变量
 export CUDART_DUMMY_REGISTER=1 #强制__cudaRegister***返回成功，用绕过pytorch混用NV官方cublas/cudnn造成的奇怪行为
 export XPU_FORCE_USERMODE_LAUNCH=1 #强制使用纯用户态高性能launch/it模式，可以获得理论最小的launch开销，需要kunlun.ko insmod时使用
