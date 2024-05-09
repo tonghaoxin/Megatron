@@ -32,6 +32,10 @@ function install_base_env() {
     requirements_file="requirements.txt"
     if  [[ "$COMPILE_ENV" == "npu" ]];then
         requirements_file="requirements_npu.txt"
+    elif [[ "$COMPILE_ENV" == "xpu" ]];then
+        requirements_file="requirements_xpu.txt"
+        . /root/miniconda/etc/profile.d/conda.sh
+        conda activate python38_torch201_cuda
     fi
 
     pip install -r /workspace/Megatron-LM/${requirements_file} -i http://mirrors.baidubce.com/pypi/simple --trusted-host mirrors.baidubce.com
@@ -128,6 +132,39 @@ function download_megatron_binary_compile_for_npu() {
 
 }
 
+function download_megatron_binary_compile_for_xpu() {
+    # 背景是：由于每次启动 Megatron 训练任务都会编译一次，并且编译时间还比较长/编译机器时常没有，现增加编译好的二进制进行替换逻辑;
+
+    # "a800"，使用a800编译的二进制
+    local COMPILE_ENV
+    read COMPILE_ENV<<< $*
+    cd ${CURRENT_DIR}
+    compile_folder_name="megatron_compile"
+    wget https://cce-ai-datasets.bj.bcebos.com/hac_test/megatron/binary_compile/${COMPILE_ENV}/${compile_folder_name}.tar.gz
+    mkdir -p ${compile_folder_name}
+    tar -zxvf ${compile_folder_name}.tar.gz -C ${compile_folder_name}
+
+    # 替换 __init__XPU.py 和 cuda_ops 下的二进制
+    rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/cuda_ops/*
+    rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/*
+    # cp -r /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/ascend_turbo /workspace/ascend_turbo
+    rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/*
+    mv /workspace/Megatron-LM/docker/__init__XPU.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/__init__.py
+    # mv /workspace/ascend_turbo /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/ascend_turbo
+    cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/
+
+    # 替换 data 下的 helpers.cpython-38-x86_64-linux-gnu.so 二进制
+    cp ${CURRENT_DIR}/${compile_folder_name}/helpers.cpython-*.so /workspace/Megatron-LM/megatron/data/
+
+    # 删除hybrid_adam目录下的builder和csrc源码，安装cpu_adam.so
+    rm -rf /workspace/Megatron-LM/megatron/hybrid_adam/builder
+    rm -rf /workspace/Megatron-LM/megatron/hybrid_adam/csrc
+    cp ${CURRENT_DIR}/${compile_folder_name}/cpu_adam.so /workspace/Megatron-LM/megatron/hybrid_adam/
+
+    rm -rf ${CURRENT_DIR}/${compile_folder_name}.tar.gz ${CURRENT_DIR}/${compile_folder_name}
+
+}
+
 function encrypt_code() {
     cd  /workspace/Megatron-LM
     cp tools/cython_setup.py ./
@@ -147,25 +184,23 @@ function install_bccl_env() {
     rm -rf /workspace/output*
 }
 
-# 参数1：编译GPU环境, h800/a800/npu
+# 参数1：编译GPU环境, h800/a800/npu/xpu
 # 参数2：是否替换二进制
 # 参数3：是否对代码加密
 # 参数4：是否安装BCCL环境
 # 参数5：BCCL下载地址
 # 参数6：是否安装NPU环境
+# 参数7：是否安装XPU环境
 COMPILE_ENV=$1
 BINARY_REPLACE=$2
 ENCRYPT_FLAG=$3
 INSTALL_BCCL_FLAG=$4
 INSTALL_BCCL_ADDR=$5
 NPU_FLAG=$6
+XPU_FLAG=$7
 
 if [[ "$INSTALL_BCCL_ADDR" != "" ]];then
     BCCL_DOWNLOAD_ADDR=$INSTALL_BCCL_ADDR
-fi
-
-if  [[ "$ENCRYPT_FLAG" == "true" ]];then
-    encrypt_code
 fi
 
 if  [[ "$BINARY_REPLACE" == "true" ]];then
@@ -177,6 +212,10 @@ elif  [[ "$BINARY_REPLACE" == "false" ]];then
     install_base_env $COMPILE_ENV
 fi
 
+if  [[ "$ENCRYPT_FLAG" == "true" ]];then
+    encrypt_code
+fi
+
 if  [[ "$INSTALL_BCCL_FLAG" == "true" ]];then
     install_bccl_env "$BCCL_DOWNLOAD_ADDR"
 fi
@@ -185,6 +224,12 @@ if  [[ "$NPU_FLAG" == "true" ]];then
     echo "NPU install start ..."
     download_megatron_binary_compile_for_npu a800
     echo "NPU install end"
+fi
+
+if  [[ "$XPU_FLAG" == "true" ]];then
+    echo "XPU install start ..."
+    download_megatron_binary_compile_for_xpu a800
+    echo "XPU install end"
 fi
 
 # 清理无用文件

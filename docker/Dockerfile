@@ -20,6 +20,9 @@ ARG INSTALL_BCCL_FLAG="false"
 # NPU 是否支持标志
 ARG NPU_FLAG="false"
 
+# XPU 是否支持标志
+ARG XPU_FLAG="false"
+
 # bccl 下载地址
 ARG INSTALL_BCCL_ADDR=""
 
@@ -31,4 +34,4 @@ ENV PATH /usr/local/python3.8.18/bin:$PATH
 
 RUN rm -rf /workspace/ && mkdir -p /workspace
 COPY Megatron /workspace/Megatron-LM
-RUN bash /workspace/Megatron-LM/docker/install.sh ${COMPILE_ENV} ${BINARY_REPLACE} ${ENCRYPT_FLAG} ${INSTALL_BCCL_FLAG} "${INSTALL_BCCL_ADDR}" "${NPU_FLAG}"
+RUN bash /workspace/Megatron-LM/docker/install.sh ${COMPILE_ENV} ${BINARY_REPLACE} ${ENCRYPT_FLAG} ${INSTALL_BCCL_FLAG} "${INSTALL_BCCL_ADDR}" "${NPU_FLAG}" "${XPU_FLAG}"
