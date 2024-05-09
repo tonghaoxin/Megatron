@@ -25,7 +25,6 @@ export LD_LIBRARY_PATH=$BKCL_SO:$RUNTIME_SO:$LD_LIBRARY_PATH
 
 ITERATION_NUM=${ITERATION:-5}
 
-export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
 ############################################ Parameters Configuration End                  ############################################
@@ -154,6 +153,7 @@ LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --memory-saving \
                --use-cpu-initialization \
                --use-distributed-optimizer \
+               --exit-interval $ITERATION_NUM \
                --fp16"
 
 OUTPUT_ARGS="--log-interval 1 \
