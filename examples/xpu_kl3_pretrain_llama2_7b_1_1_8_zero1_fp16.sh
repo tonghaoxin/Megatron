@@ -6,7 +6,8 @@ set -x
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 #data数据路径记得修改
-DATA_PATH=$ROOT_DIR/../data/alpaca_text_document
+# DATA_PATH=$ROOT_DIR/../data/alpaca_text_document
+DATA_PATH=$ROOT_DIR/../data/pile-llama_text_document
 TOKENIZER_PATH=$ROOT_DIR/../tokenizer/tokenizer.model
 CHECKPOINT_LOAD_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_7b_checkpoint_tp1_pp1_dp8_zero1_fp16
 CHECKPOINT_SAVE_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_7b_checkpoint_tp1_pp1_dp8_zero1_fp16_saved
@@ -178,6 +179,7 @@ OUTPUT_ARGS="--log-interval 1 \
              --timing-log-option all \
              --save-interval 500 \
              --eval-interval 50000 \
+             --exit-interval 2 \
              --eval-iters 0"
              # --timing-log-level 2 \
 

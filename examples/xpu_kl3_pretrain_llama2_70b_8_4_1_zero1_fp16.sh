@@ -5,7 +5,8 @@ set -x
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
-DATA_PATH=$ROOT_DIR/../data/alpaca_text_document
+# DATA_PATH=$ROOT_DIR/../data/alpaca_text_document
+DATA_PATH=$ROOT_DIR/../data/pile-llama_text_document
 TOKENIZER_PATH=$ROOT_DIR/../tokenizer/tokenizer.model
 #CHECKPOINT_LOAD_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_70b_checkpoint_tp4_pp4_dp2_zero1_fp16
 #CHECKPOINT_SAVE_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_70b_checkpoint_tp4_pp4_dp2_zero1_fp16_saved
@@ -83,6 +84,7 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size 8 \
                  --rmsnorm-epsilon 1e-6 \
                  --activation-func swiglu \
                  --use-rotary-position-embeddings \
+                 --apply-rotary-positional-embedding-kernel \
                  --untie-embeddings-and-output-weights \
                  --attention-dropout 0 \
                  --hidden-dropout 0 \
@@ -104,16 +106,16 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size 8 \
                  --use-distributed-optimizer \
                  --use-cpu-initialization \
                  --fp16"
-                 # --apply-rotary-positional-embedding-kernel \
+                 # --no-gradient-accumulation-fusion \
                  # --fuse-qk-rotary-pos-emb \
 
 OUTPUT_ARGS="--log-interval 1 \
+             --exit-interval 2 \
              --save-interval 100 \
              --eval-interval 100000"
              # --detail-log-interval 50 \
              # --timing-log-option all \
              # --timing-log-level 2 \
-             # --exit-interval 5"
 
 OTHER_ARGS="--data-path $DATA_PATH \
             --data-impl mmap \

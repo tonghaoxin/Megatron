@@ -149,9 +149,9 @@ function download_megatron_binary_compile_for_xpu() {
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/*
     # cp -r /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/ascend_turbo /workspace/ascend_turbo
     rm -rf /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/*
-    mv /workspace/Megatron-LM/docker/__init__XPU.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/__init__.py
+    mv /workspace/Megatron-LM/docker/__init__XPU.py /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/__init__.py
     # mv /workspace/ascend_turbo /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/ascend_turbo
-    cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/npu_ops/
+    cp ${CURRENT_DIR}/${compile_folder_name}/parallel_attention.so /workspace/Megatron-LM/megatron/accelerator/custom_ops/xpu_ops/
 
     # 替换 data 下的 helpers.cpython-38-x86_64-linux-gnu.so 二进制
     cp ${CURRENT_DIR}/${compile_folder_name}/helpers.cpython-*.so /workspace/Megatron-LM/megatron/data/
