@@ -32,6 +32,6 @@ ENV USE_BCCL=${INSTALL_BCCL_FLAG}
 ENV LD_LIBRARY_PATH=/usr/local/python3.8.18/lib:$LD_LIBRARY_PATH
 ENV PATH /usr/local/python3.8.18/bin:$PATH
 
-RUN rm -rf /workspace/ && mkdir -p /workspace
+RUN if [ "${XPU_FLAG}" = "true" ] ; then rm -rf /workspace/Megatron-LM ; else rm -rf /workspace/ ; fi
 COPY Megatron /workspace/Megatron-LM
 RUN bash /workspace/Megatron-LM/docker/install.sh ${COMPILE_ENV} ${BINARY_REPLACE} ${ENCRYPT_FLAG} ${INSTALL_BCCL_FLAG} "${INSTALL_BCCL_ADDR}" "${NPU_FLAG}" "${XPU_FLAG}"
