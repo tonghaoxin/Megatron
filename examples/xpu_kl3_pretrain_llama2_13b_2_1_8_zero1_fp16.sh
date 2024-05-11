@@ -5,7 +5,8 @@ set -x
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
-DATA_PATH=$ROOT_DIR/../data/alpaca_text_document
+# DATA_PATH=$ROOT_DIR/../data/alpaca_text_document
+DATA_PATH=$ROOT_DIR/../data/pile-llama_text_document
 TOKENIZER_PATH=$ROOT_DIR/../tokenizer/tokenizer.model
 CHECKPOINT_LOAD_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_13b_checkpoint_tp2_pp1_dp4_zero1_fp16
 CHECKPOINT_SAVE_PATH=$ROOT_DIR/../checkpoints/megatron_llama2_13b_checkpoint_tp2_pp1_dp4_zero1_fp16_saved
@@ -73,8 +74,9 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 2 \
                  --no-bias-gelu-fusion \
                  --no-position-embedding \
                  --no-masked-softmax-fusion \
-                 --attention-softmax-in-fp32 \
                  --no-query-key-layer-scaling \
+                 --no-gradient-accumulation-fusion \
+                 --attention-softmax-in-fp32 \
                  --memory-saving \
                  --fused-rmsnorm \
                  --use-flash-attn \
@@ -92,6 +94,7 @@ OUTPUT_ARGS="--log-interval 1 \
              --timing-log-option all \
              --save-interval 500 \
              --eval-interval 50000 \
+             --exit-interval 2 \
              --eval-iters 0"
              # --timing-log-level 2 \
 

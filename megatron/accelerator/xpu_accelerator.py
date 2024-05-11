@@ -9,6 +9,7 @@ import torch
 from torch import _C
 from .abstract_accelerator import MegatronAccelerator
 from .custom_ops import XPUCustomOperatorManager
+from .custom_ops.xpu_ops import load_module
 
 try:
     import torch_xmlir
@@ -25,11 +26,8 @@ class XPUAccelerator(MegatronAccelerator):
         self._communication_backend_name = 'xccl'
         self._optimizers = {}
 
-        from apex.optimizers import FusedAdam as adam_optimizer_xpu
-        from apex.optimizers import FusedSGD as sgd_optimizer_xpu
-
-        self._optimizers['adam'] = adam_optimizer_xpu
-        self._optimizers['sgd'] = sgd_optimizer_xpu
+        self._optimizers['adam'] = load_module("adam")
+        self._optimizers['sgd'] = load_module("sgd")
 
         self._custom_operator_manager = XPUCustomOperatorManager()
 

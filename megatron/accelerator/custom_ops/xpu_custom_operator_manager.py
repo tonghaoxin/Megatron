@@ -23,10 +23,12 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
 
         # Register pre-init custom ops
         try:
+            from .xpu_ops import load_module
             # import scaled_upper_triang_masked_softmax_cuda
             # import scaled_masked_softmax_cuda
             # import scaled_softmax_cuda
-            import fused_weight_gradient_mlp_cuda
+            # import fused_weight_gradient_mlp_cuda
+            fused_weight_gradient_mlp_cuda = load_module("fused_weight_gradient_mlp_cuda")
             from torch.nn import LayerNorm
             from torch_xmlir.nn.rms_norm import RMSNormLayer
             from torch_xmlir.nn.bmm import bmm as bmm_xpu
@@ -34,10 +36,13 @@ class XPUCustomOperatorManager(MegatronCustomOperatorManager):
             from torch_xmlir.nn.swiglu import SwiGLU as swiglu_xpu
             from torch_xmlir.nn.linear import linear as linear_xpu
             from torch_xmlir.nn.rotary_pos_emb_index import RotaryPosEmbIdx
-            from apex.multi_tensor_apply import multi_tensor_applier as multi_tensor_applier_xpu
-            from amp_C import multi_tensor_l2norm as multi_tensor_l2norm_xpu
-            from amp_C import multi_tensor_scale as multi_tensor_scale_xpu
-            from flash_attn.flash_attn_interface import flash_attn_varlen_func as flashattn_func_xpu
+            # from apex.multi_tensor_apply import multi_tensor_applier as multi_tensor_applier_xpu
+            # from amp_C import multi_tensor_l2norm as multi_tensor_l2norm_xpu
+            # from amp_C import multi_tensor_scale as multi_tensor_scale_xpu
+            # from flash_attn.flash_attn_interface import flash_attn_varlen_func as flashattn_func_xpu
+            multi_tensor_applier_xpu, multi_tensor_l2norm_xpu, multi_tensor_scale_xpu = \
+                load_module("multi_tensor_apply")
+            flashattn_func_xpu = load_module("flashattn")
             from einops import rearrange as rearrange_xpu # pip install einops'
             from torch_xmlir.nn.dropout_add import DropoutAddFunction
             # TODO(changtao02): try to check them they are importable
