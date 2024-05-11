@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from typing import Optional
 from functools import partial
 
-from megatron import get_timers, get_args, core, get_num_microbatches
+from megatron import get_timers, get_args, core, get_num_microbatches, get_common_args_to_kwargs
 from .module import MegatronModule
 from megatron.core.pipeline_parallel import utils
 from megatron.core import mpu, tensor_parallel
@@ -73,20 +73,7 @@ class DropPath(MegatronModule):
         output = hidden_state.div(keep_prob) * random_tensor
         return output
 
-def _args_to_kwargs():
-    """_args_to_kwargs"""
-    args = get_args()
 
-    common_kwargs = {
-        "tp_gemm_parallel": args.tp_gemm_parallel,
-        "tp_kernel_split_num": args.tp_kernel_split_num,
-        "params_dtype": args.params_dtype,
-        "use_cpu_initialization": args.use_cpu_initialization,
-        "perform_initialization": args.perform_initialization,
-        "gradient_accumulation_fusion": args.gradient_accumulation_fusion,
-        "sequence_parallel_enabled": args.sequence_parallel,
-    }
-    return common_kwargs
 
 class ParallelMLP(MegatronModule):
     """MLP.
@@ -127,7 +114,7 @@ class ParallelMLP(MegatronModule):
             init_method=init_method,
             skip_bias_add=True,
             async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
-            **_args_to_kwargs())
+            **get_common_args_to_kwargs())
 
         if args.deepnorm and args.activation_func == 'geglu':
             _get_rng_tracker = tensor_parallel.get_rng_tracker
@@ -158,7 +145,7 @@ class ParallelMLP(MegatronModule):
             input_is_parallel=True,
             init_method=output_layer_init_method,
             skip_bias_add=True,
-            **_args_to_kwargs())
+            **get_common_args_to_kwargs())
 
     @custom_profiler_decorator("ParallelMLP forward", color="teal")
     def forward(self, hidden_states):
@@ -521,7 +508,7 @@ class ParallelAttention(MegatronModule):
                 gather_output=False,
                 init_method=init_method,
                 async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
-                **_args_to_kwargs())
+                **get_common_args_to_kwargs())
 
             if args.deepnorm:
                 _get_rng_tracker = tensor_parallel.get_rng_tracker
@@ -564,7 +551,7 @@ class ParallelAttention(MegatronModule):
                 gather_output=False,
                 init_method=init_method,
                 async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
-                **_args_to_kwargs())
+                **get_common_args_to_kwargs())
 
             self.key_value = tensor_parallel.ColumnParallelLinear(
                 args.hidden_size,
@@ -573,7 +560,7 @@ class ParallelAttention(MegatronModule):
                 gather_output=False,
                 init_method=init_method,
                 async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
-                **_args_to_kwargs())
+                **get_common_args_to_kwargs())
 
         self.core_attention = CoreAttention(self.layer_number,
                                             self.attn_mask_type)
@@ -608,7 +595,7 @@ class ParallelAttention(MegatronModule):
             else output_layer_init_method,
             skip_bias_add=(False if args.model_type_custom == "chatglm2-6b"
             else True),
-            **_args_to_kwargs())
+            **get_common_args_to_kwargs())
 
         self.enable_debug = args.enable_debug
 

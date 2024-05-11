@@ -5,7 +5,7 @@
 import torch
 import torch.nn.functional as F
 
-from megatron import get_args
+from megatron import get_args, get_common_args_to_kwargs
 from megatron.core import mpu, tensor_parallel
 from megatron.utils import get_hook_fn, debug
 from megatron.model import LayerNorm
@@ -625,7 +625,9 @@ class TransformerLanguageModel(MegatronModule):
                     args.hidden_size,
                     args.padded_vocab_size,
                     bias=False, # Setting bias to False always to keep it consistent with embedding tying that also does not have a bias.
-                    init_method=self.init_method)
+                    init_method=self.init_method,
+                    async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
+                    **get_common_args_to_kwargs())
                 self._output_layer_key = 'output_layer'
 
     def set_input_tensor(self, input_tensor):

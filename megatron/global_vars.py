@@ -28,6 +28,20 @@ def get_args():
     _ensure_var_is_initialized(_GLOBAL_ARGS, 'args')
     return _GLOBAL_ARGS
 
+def get_common_args_to_kwargs():
+    """get_common_args_to_kwargs"""
+    args = get_args()
+
+    common_kwargs = {
+        "tp_gemm_parallel": args.tp_gemm_parallel,
+        "tp_kernel_split_num": args.tp_kernel_split_num,
+        "params_dtype": args.params_dtype,
+        "use_cpu_initialization": args.use_cpu_initialization,
+        "perform_initialization": args.perform_initialization,
+        "gradient_accumulation_fusion": args.gradient_accumulation_fusion,
+        "sequence_parallel_enabled": args.sequence_parallel,
+    }
+    return common_kwargs
 
 def get_retro_args():
     """Return retro arguments."""
