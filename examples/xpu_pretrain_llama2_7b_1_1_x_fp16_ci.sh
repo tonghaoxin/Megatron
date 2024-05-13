@@ -27,6 +27,12 @@ ITERATION_NUM=${ITERATION:-5}
 
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
+LAYER_NUM=32
+if [ $GPUS_PER_NODE -eq 1 ]; then
+       LAYER_NUM=16
+fi
+echo "LAYER_NUM: $LAYER_NUM"
+
 ############################################ Parameters Configuration End                  ############################################
 
 
@@ -111,7 +117,7 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
 
 LLAMA_7B_ARGS="--tensor-model-parallel-size 1 \
                --pipeline-model-parallel-size 1 \
-               --num-layers 32 \
+               --num-layers $LAYER_NUM \
                --hidden-size 4096 \
                --ffn-hidden-size 11008 \
                --num-attention-heads 32 \
