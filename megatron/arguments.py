@@ -31,6 +31,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_distributed_args(parser)
     parser = _add_validation_args(parser)
     parser = _add_data_args(parser)
+    parser = _add_extra_tokenizer_args(parser)
     parser = _add_autoresume_args(parser)
     parser = _add_biencoder_args(parser)
     parser = _add_vision_args(parser)
@@ -1602,7 +1603,8 @@ def _add_data_args(parser):
                                 'LLaMASFTTokenizerHF',
                                 'QwenTokenizer',
                                 'BaichuanTokenizer',
-                                'NullTokenizer'],
+                                'NullTokenizer',
+                                'HFTokenizer'],
 
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
@@ -1635,6 +1637,28 @@ def _add_data_args(parser):
 
     return parser
 
+def _add_extra_tokenizer_args(parser: argparse.ArgumentParser):
+    """Add data arguments"""
+    group = parser.add_argument_group(title='extra-tokenizer')
+
+    group.add_argument('--use-fast-tokenizer',
+                       action='store_true',
+                       help='Whether or not to use the fast tokenizer when --tokenizer-type=HFTokenizer.'
+                            'Default: False',
+                       dest='use_fast_tokenizer')
+
+    group.add_argument('--split-special-tokens',
+                       action='store_true',
+                       help="Whether or not the special tokens should be split during the tokenization process " 
+                            "when --tokenizer-type=HFTokenizer. Default: False")
+
+    group.add_argument('--padding-side',
+                       default="right",
+                       choices=["left", "right"],
+                       help=f"The side on which the padding should be applied when --tokenizer-type=HFTokenizer. "
+                             "Default: right")
+
+    return parser
 
 def _add_autoresume_args(parser):
     """_add_autoresume_args"""

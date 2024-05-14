@@ -16,6 +16,7 @@ from .chinese_sp_tokenizer import GLMChineseTokenizer
 from .chatglm2_tokenization import ChatGLM2Tokenizer
 from .tokenization_llama import LlamaTokenizer
 from .tokenization_qwen import QWenTokenizer
+from .tokenization_hf import AutoTokenizerFromHF
 
 
 def build_tokenizer(args):
@@ -105,6 +106,15 @@ def build_tokenizer(args):
         seq_length = args.seq_length
         tokenizer = LlamaTokenizer(vocab_file=args.tokenizer_model, model_max_length=seq_length,
                                    padding_side="right", pad_token="[PAD]")
+    elif args.tokenizer_type == "HFTokenizer":
+        assert args.hf_tokenizer_path is not None
+        assert args.seq_length is not None
+        seq_length = args.seq_length
+        tokenizer = AutoTokenizerFromHF(name_or_path=args.hf_tokenizer_path,
+                                        use_fast_tokenizer=args.use_fast_tokenizer,
+                                        padding_side=args.padding_side,
+                                        model_max_length=args.seq_length,
+                                        split_special_tokens=args.split_special_tokens)
     elif args.tokenizer_type == 'QwenTokenizer':
         assert args.tokenizer_model is not None
         assert args.seq_length is not None
