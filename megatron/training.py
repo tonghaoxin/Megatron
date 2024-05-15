@@ -161,10 +161,28 @@ def pretrain(train_valid_test_dataset_provider,
         print_rank_0("retro cyclic train iters : %d" % args.train_iters)
 
     if args.do_train and args.train_iters > 0:
-        iteration = train(forward_step_func,
-                          model, optimizer, opt_param_scheduler,
-                          train_data_iterator, valid_data_iterator,
-                          process_non_loss_data_func)
+        if os.environ.get("xpu_kernel_debug"):
+            import module_logging
+            with module_logging.logger.PerformanceLogger(model):
+                iteration = train(
+                    forward_step_func,
+                    model,
+                    optimizer,
+                    opt_param_scheduler,
+                    train_data_iterator,
+                    valid_data_iterator,
+                    process_non_loss_data_func,
+                )
+        else:
+            iteration = train(
+                forward_step_func,
+                model,
+                optimizer,
+                opt_param_scheduler,
+                train_data_iterator,
+                valid_data_iterator,
+                process_non_loss_data_func,
+            )
     print_datetime('after training is done')
 
     if args.do_valid:
