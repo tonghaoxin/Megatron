@@ -16,6 +16,22 @@ try:
 except ImportError:
     pass
 
+import os
+import time
+now = int(time.time())
+timeArray = time.localtime(now)
+modified_string = str(os.getenv("XMLIR_LOG_PREFIX"))
+otherStyleTime = time.strftime("%Y-%m-%d_%H_", timeArray)
+
+rank = os.getenv("RANK", "0")
+dir_path = "./logs" + otherStyleTime + modified_string
+try:
+    os.mkdir(dir_path)
+except FileExistsError:
+    pass
+fd = os.open(f"{dir_path}/{rank}.log", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+os.dup2(fd, 1)
+os.dup2(fd, 2)
 
 class XPUAccelerator(MegatronAccelerator):
     """XPUAccelerator"""
