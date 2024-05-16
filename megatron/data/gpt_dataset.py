@@ -126,7 +126,7 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
         dataset = None
         if splits[index + 1] > splits[index]:
             documents = np.arange(start=splits[index], stop=splits[index + 1],
-                                  step=1, dtype=np.int32)
+                                  step=1, dtype=np.int64)
             dataset = GPTDataset(name, data_prefix,
                                  documents, indexed_dataset,
                                  train_valid_test_num_samples[index],
@@ -189,7 +189,7 @@ def _build_dataset(dataset_name, data_prefix, data_impl,
                  'documents'.format(total_num_of_documents, total_num_of_documents))
 
     documents = np.arange(start=0, stop=total_num_of_documents,
-                        step=1, dtype=np.int32)
+                        step=1, dtype=np.int64)
 
     dataset = GPTDataset(dataset_name, data_prefix,
                         documents, indexed_dataset,
@@ -362,7 +362,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             # Use C++ implementation for speed.
             # First compile and then import.
             from megatron.data import helpers
-            assert doc_idx.dtype == np.int32
+            assert doc_idx.dtype == np.int64
             assert sizes.dtype == np.int32
             sample_idx = helpers.build_sample_idx(sizes, doc_idx, seq_length,
                                                   num_epochs, tokens_per_epoch)
@@ -448,7 +448,7 @@ def _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch):
         doc_idx = np.mgrid[0:num_epochs, 0:len(documents)][1]
         doc_idx[:] = documents
         doc_idx = doc_idx.reshape(-1)
-        doc_idx = doc_idx.astype(np.int32)
+        doc_idx = doc_idx.astype(np.int64)
         np_rng.shuffle(doc_idx)
         return doc_idx
 
@@ -466,7 +466,7 @@ def _build_sample_idx(sizes, doc_idx, seq_length,
 
     # Total number of samples. For -1 see comments in `_num_epochs`.
     num_samples = (num_epochs * tokens_per_epoch - 1) // seq_length
-    sample_idx = np.zeros([num_samples + 1, 2], dtype=np.int32)
+    sample_idx = np.zeros([num_samples + 1, 2], dtype=np.int64)
 
     # Index into sample_idx.
     sample_index = 0
