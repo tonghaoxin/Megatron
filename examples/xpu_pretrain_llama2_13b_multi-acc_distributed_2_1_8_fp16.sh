@@ -132,7 +132,7 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 2 \
                 --hidden-dropout 0 \
                 --embedding-dropout 0 \
                 --untie-embeddings-and-output-weights \
-                --initial-loss-scale 16 \
+                --initial-loss-scale 512 \
                 --use-distributed-optimizer \
                 --memory-saving \
                 --fused-rmsnorm \
