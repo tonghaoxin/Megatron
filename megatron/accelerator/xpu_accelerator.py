@@ -308,7 +308,7 @@ class XPUAccelerator(MegatronAccelerator):
     @property
     def BFloat16Tensor(self):
         """BFloat16Tensor"""
-        return torch.cuda.HalfTensor
+        return torch.cuda.BFloat16Tensor
 
     @property
     def ByteTensor(self):
@@ -343,7 +343,7 @@ class XPUAccelerator(MegatronAccelerator):
 
     def BFloat16Tensor_name(self):
         """BFloat16Tensor_name"""
-        return 'torch.cuda.HalfTensor'
+        return 'torch.cuda.BFloat16Tensor'
 
     def ByteTensor_name(self):
         """ByteTensor_name"""
