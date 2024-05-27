@@ -60,7 +60,7 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 1 \
                  --lr-decay-style cosine \
                  --weight-decay 1e-2 \
                  --clip-grad 1.0 \
-                 --initial-loss-scale 16 \
+                 --initial-loss-scale 512 \
                  --adam-beta1 0.9 \
                  --adam-beta2 0.95 \
                  --train-iters 50000 \
@@ -226,5 +226,4 @@ XFLAGS --disable megatron_23_05
 #################################
 # 13B 模型训练
 #################################
-PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH torchrun $DISTRIBUTED_ARGS $ROOT_DIR/../pretrain_llama.py $LLAMA2_13B_ARGS $OUTPUT_ARGS $OTHER_ARGS
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH torchrun $DISTRIBUTED_ARGS $ROOT_DIR/../pretrain_llama.py $LLAMA2_13B_ARGS $OUTPUT_ARGS $OTHER_ARGS
