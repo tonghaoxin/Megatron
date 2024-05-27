@@ -278,19 +278,19 @@ class CustomMultiTensorApplyWrapper(object):
 
     def __call__(self, *args, **kwargs):
         """__call__"""
-        grads_for_norm = args[1][0]
-        grad_norm = None
-        if kwargs.get('op', 'scale') == 'l2norm':
-            if not kwargs.get('memory_saving', False):
-                grad_norm = torch.cat([item.reshape(1, -1) for item in grads_for_norm], 1).norm()
-            else:
+        if kwargs.get('multi_tensor_fusion', True):
+            return self.multi_tensor_applier(self.multi_tensor_ops[kwargs.get('op', 'scale')], *args)
+        else:
+            grads_for_norm = args[1][0]
+            grad_norm = None
+            if kwargs.get('op', 'scale') == 'l2norm':
                 grad_norm = sum([item.square().sum() for item in grads_for_norm]).sqrt()
-            return grad_norm, None
-        elif kwargs.get('op', 'scale') == 'scale':
-            clip_coeff = args[2]
-            [grad.mul_(clip_coeff) for grad in grads_for_norm]
-            return
-        #return self.multi_tensor_applier(self.multi_tensor_ops[kwargs.get('op', 'scale')], *args)  # TO FIX: error 700
+                return grad_norm, None
+            elif kwargs.get('op', 'scale') == 'scale':
+                clip_coeff = args[2]
+                [grad.mul_(clip_coeff) for grad in grads_for_norm]
+                return
+            
 
 class CustomParallelAttentionWrapper(object):
     """CustomParallelAttention wrapper"""
