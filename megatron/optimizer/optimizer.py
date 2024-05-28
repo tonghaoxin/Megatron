@@ -49,7 +49,8 @@ def _multi_tensor_copy_this_to_that(this, that, overflow_buf=None):
                 overflow_buf,
                 [this, that],
                 1.0,
-                op='scale'
+                op='scale',
+                multi_tensor_fusion=get_args().multi_tensor_fusion,
         )
     else:
         for this_, that_ in zip(this, that):

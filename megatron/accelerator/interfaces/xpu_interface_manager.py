@@ -278,7 +278,7 @@ class CustomMultiTensorApplyWrapper(object):
 
     def __call__(self, *args, **kwargs):
         """__call__"""
-        if kwargs.get('multi_tensor_fusion', True):
+        if kwargs.get('multi_tensor_fusion', False):
             return self.multi_tensor_applier(self.multi_tensor_ops[kwargs.get('op', 'scale')], *args)
         else:
             grads_for_norm = args[1][0]

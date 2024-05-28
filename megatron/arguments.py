@@ -1161,8 +1161,8 @@ def _add_training_args(parser):
                        help='Enable sequence parallel optimization.')
     group.add_argument('--enable-sequence-parallel-caching', action='store_true',
                        help='Enable sequence parallel caching input tensor.')
-    # group.add_argument('--batch-parallel', action='store_true',
-    #                    help='Enable batch parallel optimization.')
+    group.add_argument('--batch-parallel', action='store_true',
+                        help='Enable batch parallel optimization.')
     group.add_argument('--no-gradient-accumulation-fusion',
                        action='store_false',
                        help='Disable fusing gradient accumulation to weight '
@@ -1222,9 +1222,9 @@ def _add_training_args(parser):
                        'Torch ONNX exporter')
     group.add_argument('--memory-saving', action='store_true', default=False,
                         help='Save GPU memory during training')
-    group.add_argument('--no-multi-tensor-fusion', action='store_false',
+    group.add_argument('--use-multi-tensor-fusion', action='store_true',
                         dest='multi_tensor_fusion',
-                        help='Disable multi-tensor-scale and multi-tensor-l2norm op fuse')
+                        help='Use multi-tensor-scale and multi-tensor-l2norm op fuse')
     group.add_argument('--findmax-opt', action='store_true', default=False,
                         help='open findmax optimization in fc/mm during training')
     group.add_argument('--use-chunk', action='store_true',

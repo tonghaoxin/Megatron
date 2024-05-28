@@ -87,7 +87,8 @@ def clip_grad_norm_fp32(parameters, grads_for_norm,
                     [grads_for_norm],
                     False, # no per-parameter norm
                     op='l2norm',
-                    memory_saving=get_args().memory_saving
+                    memory_saving=get_args().memory_saving,
+                    multi_tensor_fusion=get_args().multi_tensor_fusion,
                 )
             else:
                 grad_norm = get_accelerator().FloatTensor([0])
@@ -118,7 +119,8 @@ def clip_grad_norm_fp32(parameters, grads_for_norm,
                 dummy_overflow_buf,
                 [grads, grads],
                 clip_coeff,
-                op='scale'
+                op='scale',
+                multi_tensor_fusion=get_args().multi_tensor_fusion,
         )
 
     return total_norm
