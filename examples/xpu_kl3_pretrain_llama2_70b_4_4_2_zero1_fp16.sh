@@ -11,28 +11,34 @@ export XMLIR_FC_AUTOTUNE_FILE_NAME="fc_tune.txt"
 
 # DATA_PATH=/workspace/70b_datasets/alpaca/alpaca_text_document
 # DATA_PATH=$ROOT_DIR/../data/alpaca_text_document
-DATA_PATH=$ROOT_DIR/../data/pile-llama_text_document
+DATA_PATH=${DATA_PATH:-"$ROOT_DIR/../data/pile-llama_text_document"}
 # CHECKPOINT_LOAD_PATH=/home/jiangyu/megatron_datasets/llama/checkpoints/megatron_llama_13b_checkpoint_tp8_pp1_fp32
-CHECKPOINT_PATH=/workspace/70b_CheckPoint
+CHECKPOINT_PATH=${CHECKPOINT_PATH:-"/workspace/70b_CheckPoint"}
+
 # TOKENIZER_PATH=/workspace/megatron_datasets/llama/tokenizer_model/tokenizer.model
-TOKENIZER_PATH=$ROOT_DIR/../tokenizer/tokenizer.model
+TOKENIZER_PATH=${TOKENIZER_PATH:-"$ROOT_DIR/../tokenizer/tokenizer.model"}
 # CHECKPOINT_PATH=/workspace/70b_CheckPoint
 
 #export LD_LIBRARY_PATH=$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH
 # export LD_LIBRARY_PATH=/workspace/70b_bkcl_so/0429:/workspace/xre-Linux-x86_64-0.0.0.1-2024-04-16-23-03-29-daily/so:$LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=${SO_PATH:-"$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH"}
 # export LD_LIBRARY_PATH=/workspace/output/xccl_rdma-ubuntu_x86_64/so:/workspace/xre-Linux-x86_64-0.0.0.1-2024-04-16-23-03-29-daily/so:$LD_LIBRARY_PATH
 
 export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
 # Change for multinode config
-#MASTER_ADDR=${1:-"127.0.0.1"}
-MASTER_ADDR=${1:-"172.16.0.2"}
+MASTER_ADDR=${MASTER_ADDR:-"172.16.0.2"}
 MASTER_PORT=${MASTER_PORT:-9919}
 #first parameter node set as default 2
-NNODES=${2:-4}
-NODE_RANK=${3:-0}
+NNODES=${NNODES:-4}
+NODE_RANK=${NODE_RANK:-0}
+
+PP_SIZE=${PP_SIZE:-4}
+TP_SIZE=${TP_SIZE:-4}
+NUM_LAYERS=${NUM_LAYERS:-80}
+GLOBAL_BS=${GLOBAL_BS:-1024}
+MICRO_BS=${MICRO_BS:-2}
 
 ulimit -c 0
 export NCCL_SOCKET_IFNAME=eth0
@@ -62,15 +68,15 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
 
                  #--pipeline-model-parallel-size 2 \
                  #--num-layers 40 \
-LLAMA2_70B_ARGS="--tensor-model-parallel-size 4 \
-                 --pipeline-model-parallel-size 4 \
-                 --num-layers 80 \
+LLAMA2_70B_ARGS="--tensor-model-parallel-size ${TP_SIZE} \
+                 --pipeline-model-parallel-size ${PP_SIZE} \
+                 --num-layers ${NUM_LAYERS} \
                  --hidden-size 8192 \
                  --ffn-hidden-size 28672 \
                  --num-attention-heads 64 \
                  --init-method-std 0.01 \
-                 --micro-batch-size 2 \
-                 --global-batch-size 1024 \
+                 --micro-batch-size ${MICRO_BS} \
+                 --global-batch-size ${GLOBAL_BS} \
                  --seq-length 4096 \
                  --max-position-embeddings 4096 \
                  --tokenizer-type LLaMASentencePieceTokenizer \
@@ -166,7 +172,6 @@ export XMLIR_DUMP_FALLBACK_OP_LIST_BOOL=true
 #################################
 # BKCL C2C²¿·Ö#################################
 export BKCL_CCIX_RING=1
-export BKCL_TREE_THRESHOLD=0
 export BKCL_CCIX_BUFFER_GM=1
 
 # ccix_inner_8chips
@@ -220,9 +225,9 @@ export BKCL_RDMA_PROXY_DISABLE=1
 export BKCL_ENABLE_XDR=1
 export BKCL_RDMA_FORCE_TREE=1
 export BKCL_TREE_THRESHOLD=0
+export BKCL_RDMA_NICS=${BKCL_RDMA_NICS:-"eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4"}
 export XPU_ZEBU_MODE=1 # ӰÏccix_inter.txtÎ¼þ¶Á¡
 #depends on the network card
-export BKCL_RDMA_NICS=eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4
 # export BKCL_RDMA_NICS=ens11np0,ens12np0,ens13np0,ens14np0,ens15np0,ens16np0,ens17np0,ens18np0
 #export BKCL_RDMA_NICS=xgbe1,xgbe1,xgbe2,xgbe2,xgbe3,xgbe3,xgbe4,xgbe4
 export BKCL_XLINK_D2D=0
