@@ -13,11 +13,17 @@ pkill -9 python || true
 #################################
 # 数据集部分
 #################################
-DATA_PATH=/mnt/data1/megatron_datasets/llama/data/llama_00_text_document/llama_00_text_document
-#CHECKPOINT_LOAD_PATH=/mnt/data1/megatron_datasets/llama/checkpoints/megatron_llama_13b_checkpoint_tp8_pp1_fp32
-TOKENIZER_MODEL_PATH=/mnt/data1/megatron_datasets/llama/tokenizer_model/tokenizer.model
+# Define VAR with default values if they are not already set
+DATA_PATH=${DATA_PATH:-"/mnt/data1/megatron_datasets/llama/data/llama_00_text_document/llama_00_text_document"}
+# CHECKPOINT_LOAD_PATH=${CHECKPOINT_LOAD_PATH:-"/mnt/data1/megatron_datasets/llama/checkpoints/megatron_llama_13b_checkpoint_tp8_pp1_fp32"}
+TOKENIZER_PATH=${TOKENIZER_PATH:-"/mnt/data1/megatron_datasets/llama/tokenizer_model/tokenizer.model"}
+ITERATION=${ITERATION:-3}
 
-export LD_LIBRARY_PATH=/mnt/data1/70b_bkcl_so/0506:/mnt/data1/xre-Linux-x86_64-0.0.0.1-2024-04-16-23-03-29-daily/so:$LD_LIBRARY_PATH
+# 需要根据实际情况打开
+BKCL_SO=${BKCL_SO:-"/opt/output/xccl_rdma-ubuntu_x86_64/so"}
+RUNTIME_SO=${RUNTIME_SO:-"/opt/xre-ubuntu_2004-x86_64-0.0.0.1-2024-04-26-00-05-07-daily/so"}
+export LD_LIBRARY_PATH=$BKCL_SO:$RUNTIME_SO:$LD_LIBRARY_PATH
+
 
 export CUDA_VISIBLE_DEVICES="0"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
@@ -85,7 +91,7 @@ LLAMA2_13B_ARGS="--tensor-model-parallel-size 1 \
                  --memory-saving \
                  --fused-rmsnorm \
                  --use-flash-attn \
-                 --exit-interval 3 \
+                 --exit-interval $ITERATION \
                  --use-cpu-initialization \
                  --fp16"
 
