@@ -30,9 +30,9 @@ GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 # Change for multinode config
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-9999}
-NNODES=${1:-1}
+NNODES=${NNODES:-1}
 # NODE_RANK按需修改
-NODE_RANK=${2:-0}
+NODE_RANK=${NODE_RANK:-0}
 
 ulimit -c 0
 export NCCL_SOCKET_IFNAME=eth0
