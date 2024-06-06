@@ -827,6 +827,8 @@ def _add_network_size_args(parser):
     group.add_argument('--freqs-type', type=str, required=False, default='normal',
                        choices=['normal', 'complex'],
                        help='compute type for rotary embedding.')
+    group.add_argument('--apply-rope-native', action='store_true',
+                       help='If set, use RoPE native implementation')
     group.add_argument('--use-learned-position-embeddings', action='store_true',
                        help='Use learned positional embeddings for opt/galactica '
                        'model training')
@@ -1652,7 +1654,7 @@ def _add_extra_tokenizer_args(parser: argparse.ArgumentParser):
 
     group.add_argument('--split-special-tokens',
                        action='store_true',
-                       help="Whether or not the special tokens should be split during the tokenization process " 
+                       help="Whether or not the special tokens should be split during the tokenization process "
                             "when --tokenizer-type=HFTokenizer. Default: False")
 
     group.add_argument('--padding-side',

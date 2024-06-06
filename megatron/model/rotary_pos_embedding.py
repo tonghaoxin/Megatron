@@ -48,8 +48,16 @@ class RotaryEmbedding(nn.Module):
         super().__init__()
         args = get_args()
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
-        inv_freq = 1.0 / (args.rotary_emb_base ** (torch.arange(0, dim, 2).float() / dim))
-        self.register_buffer('inv_freq', inv_freq)
+        if get_args().apply_rope_native:
+            self.inv_freq = 1.0 / (
+                args.rotary_emb_base ** (
+                    torch.arange(0, dim, 2, dtype=torch.float32, device=torch.cuda.current_device())
+                    / dim
+                )
+            )
+        else:
+            inv_freq = 1.0 / (args.rotary_emb_base ** (torch.arange(0, dim, 2).float() / dim))
+            self.register_buffer('inv_freq', inv_freq)
         if importlib.util.find_spec('einops') is None:
             raise RuntimeError("einops is required for Rotary Embedding")
         update_apply_rope_func()
@@ -156,6 +164,12 @@ class ComplexRotaryEmbedding(nn.Module):
         return freqs_cis
 
 
+def _rotate_half(x):
+    """_rotate_half"""
+    x1, x2 = torch.chunk(x, 2, dim=-1)
+    return torch.cat((-x2, x1), dim=-1)
+
+
 def apply_rotary_pos_emb(q, k, freqs):
     """
     Fused RoPE function
@@ -167,7 +181,13 @@ def apply_rotary_pos_emb(q, k, freqs):
 
     cos_ = torch.cos(freqs).to(q.dtype)
     sin_ = torch.sin(freqs).to(q.dtype)
-    q, k = custom_apply_rope_no_freqs(q, k, cos_, sin_)
+
+    if get_args().apply_rope_native:
+        # TODO(chagntao02): make Kunlun version compatibale
+        q = (q * cos_) + (_rotate_half(q) * sin_)
+        k = (k * cos_) + (_rotate_half(k) * sin_)
+    else:
+        q, k = custom_apply_rope_no_freqs(q, k, cos_, sin_)
 
     return torch.cat((q, q_pass), dim=-1), torch.cat((k, k_pass), dim=-1)
 
