@@ -159,12 +159,6 @@ echo "3600000" > /proc/kunlun/dev5/task_timeout_detect_threshold_in_ms
 echo "3600000" > /proc/kunlun/dev6/task_timeout_detect_threshold_in_ms
 echo "3600000" > /proc/kunlun/dev7/task_timeout_detect_threshold_in_ms
 
-# 检查 /dev/xdrdrv 是否存在
-if [ ! -e "/dev/xdrdrv" ]; then
-    echo "Error: /dev/xdrdrv not found! PLEASE CHECK YOUR DOCKER CONTAINER"
-    exit 1
-fi
-
 #################################
 # BKCL C2C部分
 #################################
