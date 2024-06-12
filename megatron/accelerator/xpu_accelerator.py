@@ -29,9 +29,13 @@ try:
     os.mkdir(dir_path)
 except FileExistsError:
     pass
-fd = os.open(f"{dir_path}/{rank}.log", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-os.dup2(fd, 1)
-os.dup2(fd, 2)
+
+log_file = os.path.join(dir_path, f"{rank}.log")
+
+if os.getenv("SAVE_LOG_FILE_WITH_RANK_ID", "true").lower() == "true":
+    fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    os.dup2(fd, 1)
+    os.dup2(fd, 2)
 
 class XPUAccelerator(MegatronAccelerator):
     """XPUAccelerator"""
