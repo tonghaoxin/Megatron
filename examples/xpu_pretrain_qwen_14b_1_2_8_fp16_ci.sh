@@ -11,11 +11,11 @@ pkill -9 python || true
 
 ############################################ Parameters Configuration Begin                ############################################
 # 1. data数据路径记得修改
-DATA_PATH=${DATA:-"/home/data"}/qwen_00_text_document_content_sentence
+DATA_PATH=${QWEN_14B_DATA:-"/home/data"}/qwen_00_text_document_content_sentence
 echo "DATA_PATH: $DATA_PATH"
 
 # 2. TOKENIZER 目录
-TOKENIZER_PATH=${TOKEN:-"/home/tokenizer"}
+TOKENIZER_PATH=${QWEN_14B_TOKEN:-"/home/tokenizer"}
 echo "TOKENIZER_PATH: $TOKENIZER_PATH"
 
 # 3. BKCL_SO
@@ -63,7 +63,7 @@ QWEN_14B_ARGS="--tensor-model-parallel-size 1
                --seq-length 4096 \
                --max-position-embeddings 4096 \
                --tokenizer-type QwenTokenizer \
-               --tokenizer-model $TOKENIZER_PATH/tokenizer.model \
+               --tokenizer-model $TOKENIZER_PATH/qwen.tiktoken \
                --lr 1.5e-4 \
                --min-lr 1.5e-5 \
                --lr-decay-style cosine \
@@ -97,6 +97,7 @@ QWEN_14B_ARGS="--tensor-model-parallel-size 1
 	           --use-flash-attn \
                --optimizer adam \
                --use-cpu-initialization \
+               --exit-interval $ITERATION_NUM \
                --fp16"
 
 

@@ -6,11 +6,11 @@ ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 ############################################ Parameters Configuration Begin                ############################################
 # 1. data数据路径记得修改
-DATA_PATH=${DATA:-"/home/data"}/qwen_00_text_document_content_sentence
+DATA_PATH=${QWEN_7B_DATA:-"/home/data"}/qwen_00_text_document_content_sentence
 echo "DATA_PATH: $DATA_PATH"
 
 # 2. TOKENIZER 目录
-TOKENIZER_PATH=${TOKEN:-"/home/tokenizer"}
+TOKENIZER_PATH=${QWEN_7B_TOKEN:-"/home/tokenizer"}
 echo "TOKENIZER_PATH: $TOKENIZER_PATH"
 
 # 3. BKCL_SO
@@ -108,11 +108,6 @@ MASTER_PORT=${MASTER_PORT:-9999}
 NNODES=${1:-1}
 NODE_RANK=${2:-0}
 
-
-XFLAGS --disable megatron23_05
-XFLAGS --enable megatron_aiak
-
-
 DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --nnodes $NNODES
                   --node_rank $NODE_RANK
@@ -131,7 +126,7 @@ QWEN_7B_ARGS="--tensor-model-parallel-size 1
                --seq-length 4096 \
                --max-position-embeddings 4096 \
                --tokenizer-type QwenTokenizer \
-               --tokenizer-model $TOKENIZER_PATH/tokenizer.model \
+               --tokenizer-model $TOKENIZER_PATH/qwen.tiktoken \
                --lr 1.5e-4 \
                --min-lr 1.5e-5 \
                --lr-decay-style cosine \
@@ -177,6 +172,13 @@ OTHER_ARGS="--data-path $DATA_PATH \
             --data-impl mmap \
             --split 98,2,0 \
             --distributed-backend nccl"
+
+#################################
+# 14B 模型训练
+#################################
+XFLAGS --list
+XFLAGS --disable megatron_23_05
+XFLAGS --enable megatron_aiak
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \
