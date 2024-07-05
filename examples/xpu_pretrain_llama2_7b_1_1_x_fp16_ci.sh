@@ -70,7 +70,6 @@ export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
 
 export BKCL_RING_BUFFER_GM=1
-export BKCL_FORCE_SYNC=1
 unset BKCL_KL3_SYSCON_FLAG
 ############################################ Communication Library Configuration End       ############################################
 

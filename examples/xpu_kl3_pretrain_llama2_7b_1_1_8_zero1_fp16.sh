@@ -108,7 +108,6 @@ export BKCL_CCIX_RING=1
 
 #export BKCL_KL3_SYSCON_FLAG=1 #需要注释
 export BKCL_RING_BUFFER_GM=1
-export BKCL_FORCE_SYNC=1
 # export BKCL_CLUSTERS_PER_RING=2 #13b 8卡需要调低, 2卡适当调高, 速度快
 # export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
 ulimit -c 0
@@ -191,8 +190,6 @@ OTHER_ARGS="--data-path $DATA_PATH \
             --save $CHECKPOINT_SAVE_PATH \
             --distributed-backend nccl"
 
-XFLAGS --disable megatron_23_05
-XFLAGS --disable megatron_aiak
 # XFLAGS --disable megatron
 # XFLAGS --enable megatron_aiak
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \

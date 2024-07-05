@@ -207,7 +207,6 @@ echo "3600000" > /proc/kunlun/dev7/task_timeout_detect_threshold_in_ms
 #################################
 # 70B 模型训练
 #################################
-XFLAGS --disable megatron_23_05
 XFLAGS --enable megatron_aiak
 # XFLAGS --disable megatron
 # XFLAGS --enable megatron_aiak

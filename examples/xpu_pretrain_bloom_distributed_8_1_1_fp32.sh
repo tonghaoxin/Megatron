@@ -37,7 +37,6 @@ export BKCL_CCIX_BUFFER_GM=1
 # solve 8-card lost accuracy
 export  BKCL_TREE_THRESHOLD=1
 
-export BKCL_FORCE_SYNC=1
 
 DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --nnodes $NNODES

@@ -154,7 +154,6 @@ export BKCL_CCIX_RING=1
 
 #export BKCL_KL3_SYSCON_FLAG=1 #需要注释
 export BKCL_RING_BUFFER_GM=1
-export BKCL_FORCE_SYNC=1
 export BKCL_CLUSTERS_PER_RING=2 #13b 8卡需要调低, 2卡适当调高, 速度快
 export BKCL_RING_BUFFER_SIZE=2048000
 export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"

@@ -198,7 +198,6 @@ export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
 export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
 export BKCL_RING_BUFFER_GM=1
-export BKCL_FORCE_SYNC=1
 export BKCL_KL3_TURBO_MODE=1 
 export BKCL_RING_BUFFER_SIZE=2097152
 #export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
@@ -226,7 +225,6 @@ unset BKCL_KL3_SYSCON_FLAG
 #################################
 XFLAGS --list
 XFLAGS --enable megatron_aiak
-XFLAGS --disable megatron_23_05
 
 #################################
 # 13B 模型训练

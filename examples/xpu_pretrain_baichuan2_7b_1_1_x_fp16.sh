@@ -52,7 +52,6 @@ export BKCL_XLINK_D2D=0
 export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
 
-export BKCL_FORCE_SYNC=1
 unset BKCL_KL3_SYSCON_FLAG
 ############################################ Communication Library Configuration End       ############################################
 
@@ -134,7 +133,6 @@ OTHER_ARGS="--data-path $DATA_PATH \
             --split 949,50,1 \
             --distributed-backend nccl"
 
-XFLAGS --disable megatron_23_05
 XFLAGS --enable megatron_aiak
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \

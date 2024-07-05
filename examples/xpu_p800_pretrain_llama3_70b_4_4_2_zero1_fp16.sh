@@ -158,7 +158,6 @@ unset BKCL_KL3_SYSCON_FLAG
 #export BKCL_RING_FORCE_BULK=1
 #export BKCL_DEBUG=1
 #export BKCL_RING_FORCE_FUSE=1
-# export BKCL_FORCE_SYNC=1
 
 echo "whosyourdaddy" >> /proc/kunlun/dev0/info
 echo "whosyourdaddy" >> /proc/kunlun/dev1/info
@@ -181,7 +180,6 @@ echo "3600000" > /proc/kunlun/dev7/task_timeout_detect_threshold_in_ms
 #################################
 # 70B 模型训练
 #################################
-XFLAGS --disable megatron_23_05
 XFLAGS --enable megatron_aiak
 
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \

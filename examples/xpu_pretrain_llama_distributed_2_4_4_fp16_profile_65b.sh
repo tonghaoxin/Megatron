@@ -118,7 +118,6 @@ export XMLIR_F_XPU_ENABLED_BOOL=true
 export ALLREDUCE_ASYNC=false
 export ALLGATHER_ASYNC=false
 export ALLREDUCE_FUSION=0
-export BKCL_FORCE_SYNC=1
 export BKCL_TIMEOUT=3600
 
 # socket

@@ -7,11 +7,11 @@ export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 #data数据路径记得修改
-DATA_PATH=${DATA:-"/home/data"}/pile_baichuan2_text_document
+DATA_PATH=${BAICHUAN_7B_DATA:-"/home/data"}/pile_baichuan2_text_document
 echo "DATA_PATH: $DATA_PATH"
 
 # TOKENIZER 目录
-TOKENIZER_PATH=${TOKEN:-"/home/tokenizer"}/tokenizer.model
+TOKENIZER_PATH=${BAICHUAN_7B_TOKEN:-"/home/tokenizer"}/tokenizer.model
 echo "TOKENIZER_PATH: $TOKENIZER_PATH"
 
 ITERATION_NUM=${ITERATION:-500}
@@ -47,7 +47,6 @@ export BKCL_XLINK_D2D=0
 export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
 
-export BKCL_FORCE_SYNC=1
 unset BKCL_KL3_SYSCON_FLAG
 ############################################ Communication Library Configuration End       ############################################
 
@@ -129,7 +128,6 @@ OTHER_ARGS="--data-path $DATA_PATH \
             --split 949,50,1 \
             --distributed-backend nccl"
 
-XFLAGS --disable megatron_23_05
 XFLAGS --enable megatron_aiak
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \

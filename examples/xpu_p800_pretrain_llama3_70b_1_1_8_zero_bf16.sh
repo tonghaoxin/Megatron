@@ -13,7 +13,9 @@ TOKENIZER_PATH=${HF_TOKENIZER_PATH:-"/workspace/llama3_70b/Meta-Llama-3-70B/"}
 echo "TOKENIZER_PATH: $TOKENIZER_PATH"
 CHECKPOINT_LOAD_PATH=${LLAMA2_70B_CHPT:-"/workspace/fengyaping/llama3_70b/"}/megatron_llama3_70b_checkpoint_tp4_pp4_zero1_bf16
 
-export LD_LIBRARY_PATH=/usr/local/xcudart/lib:$BKCL_SO:$LD_LIBRARY_PATH
+BKCL_SO=${BKCL_SO:-"/workdir/xccl_rdma-ubuntu_x86_64/so"}
+RUNTIME_SO=${RUNTIME_SO:-"/workdir/xre-ubuntu_2004-x86_64-0.0.0.1-2024-04-26-00-05-07-daily/so"}
+export LD_LIBRARY_PATH=$BKCL_SO:$RUNTIME_SO:$LD_LIBRARY_PATH
 
 ITERATION_NUM=${ITERATION:-5}
 
@@ -172,7 +174,6 @@ unset BKCL_KL3_SYSCON_FLAG
 #export BKCL_RING_FORCE_BULK=1
 #export BKCL_DEBUG=1
 #export BKCL_RING_FORCE_FUSE=1
-# export BKCL_FORCE_SYNC=1
 
 echo "whosyourdaddy" >> /proc/kunlun/dev0/info
 echo "whosyourdaddy" >> /proc/kunlun/dev1/info
@@ -195,7 +196,6 @@ echo "3600000" > /proc/kunlun/dev7/task_timeout_detect_threshold_in_ms
 #################################
 # 70B 模型训练
 #################################
-XFLAGS --disable megatron_23_05
 XFLAGS --enable megatron_aiak
 
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \

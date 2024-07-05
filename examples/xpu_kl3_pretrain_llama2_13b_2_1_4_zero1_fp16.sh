@@ -202,7 +202,6 @@ export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
 export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
 export BKCL_RING_BUFFER_GM=1
-# export BKCL_FORCE_SYNC=1
 export BKCL_KL3_TURBO_MODE=1
 export BKCL_RING_BUFFER_SIZE=2097152
 export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
@@ -233,8 +232,6 @@ echo "3600000" > /proc/kunlun/dev7/task_timeout_detect_threshold_in_ms
 #################################
 # 13B 模型训练
 #################################
-XFLAGS --disable megatron_23_05
-XFLAGS --disable megatron_aiak
 # XFLAGS --disable megatron
 # XFLAGS --enable megatron_aiak
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
