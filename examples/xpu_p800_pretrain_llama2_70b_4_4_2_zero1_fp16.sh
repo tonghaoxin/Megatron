@@ -168,8 +168,6 @@ export XPU_ZEBU_MODE=1
 
 #depends on the network card
 export BKCL_RDMA_NICS=${BKCL_RDMA_NICS:-"eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4"}
-# export BKCL_RDMA_NICS=ens11np0,ens12np0,ens13np0,ens14np0,ens15np0,ens16np0,ens17np0,ens18np0
-#export BKCL_RDMA_NICS=xgbe1,xgbe1,xgbe2,xgbe2,xgbe3,xgbe3,xgbe4,xgbe4
 export BKCL_XLINK_D2D=0
 export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0

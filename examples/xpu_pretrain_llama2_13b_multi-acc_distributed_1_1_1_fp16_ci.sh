@@ -133,8 +133,7 @@ export XMLIR_DUMP_FALLBACK_OP_LIST_BOOL=true
 # 通信部分设置
 #################################
 # 需要视机器情况来做修改(命令 ip a查看)
-export BKCL_RDMA_NICS=eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4 
-# export BKCL_RDMA_NICS=xgbe1,xgbe1,xgbe2,xgbe2,xgbe3,xgbe3,xgbe4,xgbe4
+export BKCL_RDMA_NICS=${BKCL_RDMA_NICS:-"eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4"}
 
 # rdma 需要设置
 export BKCL_FORCE_L3_RDMA=0
