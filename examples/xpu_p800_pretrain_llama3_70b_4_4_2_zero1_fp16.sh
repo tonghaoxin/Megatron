@@ -7,15 +7,13 @@ set -x
 
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
-export XMLIR_LOG_PREFIX=node4_llama3
-export XMLIR_FC_AUTOTUNE_BOOL=false
-export XMLIR_FC_AUTOTUNE_FILE_NAME="fc_tune.txt"
+export XMLIR_LOG_PREFIX=node4_llama3_fp16
+# export XMLIR_FC_AUTOTUNE_BOOL=false
+# export XMLIR_FC_AUTOTUNE_FILE_NAME="fc_tune.txt"
 
 DATA_PATH=${DATA_PATH:-"/workdir/llama3_70b_data/pile_test/pile-llama_text_document"}
 echo "DATA_PATH: $DATA_PATH"
-
-CHECKPOINT_PATH=/workspace/70b_CheckPoint
-
+# CHECKPOINT_PATH=${CHECKPOINT_PATH:-"/workspace/70b_CheckPoint"}
 HF_TOKENIZER_PATH=${HF_TOKENIZER_PATH:-"/workdir/llama3_70b_data/Meta-Llama-3-70B/"}
 echo "HF_TOKENIZER_PATH: $HF_TOKENIZER_PATH"
 
@@ -53,7 +51,7 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
                   --master_addr $MASTER_ADDR
                   --master_port $MASTER_PORT"
 
-LLAMA2_70B_ARGS="--tensor-model-parallel-size 4 \
+LLAMA3_70B_ARGS="--tensor-model-parallel-size 4 \
                  --pipeline-model-parallel-size 4 \
                  --num-layers 80 \
                  --tokenizer-type HFTokenizer \
@@ -107,12 +105,12 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size 4 \
 
 
 OUTPUT_ARGS="--log-interval 1 \
-             --timing-log-option all \
-             --detail-log-interval 3 \
              --save-interval 10000 \
-             --exit-interval 2 \
+             --exit-interval 5 \
              --eval-interval 1000"
              #--timing-log-level 2 \
+             #--timing-log-option all \
+             #--detail-log-interval 3 \
 
 OTHER_ARGS="--data-path $DATA_PATH \
             --data-impl mmap \
@@ -162,6 +160,7 @@ unset BKCL_KL3_SYSCON_FLAG
 #export BKCL_RING_FORCE_BULK=1
 #export BKCL_DEBUG=1
 #export BKCL_RING_FORCE_FUSE=1
+# export BKCL_FORCE_SYNC=0
 
 echo "whosyourdaddy" >> /proc/kunlun/dev0/info
 echo "whosyourdaddy" >> /proc/kunlun/dev1/info
@@ -189,6 +188,6 @@ XFLAGS --enable megatron_aiak
 PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH \
        torchrun $DISTRIBUTED_ARGS \
        $ROOT_DIR/../pretrain_llama.py \
-       $LLAMA2_70B_ARGS \
+       $LLAMA3_70B_ARGS \
        $OUTPUT_ARGS \
        $OTHER_ARGS
