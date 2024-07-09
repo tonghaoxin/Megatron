@@ -4,7 +4,7 @@
 
 from abc import ABC
 from abc import abstractmethod
-import torch
+import torch, math
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 
@@ -478,9 +478,7 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
         if self.clip_grad > 0.0:
             grad_norm = self.clip_grad_norm(self.clip_grad)
         # A walkaround for P800 gradnorm nan issue
-        has_inf = torch.isinf(grad_norm).any().item()
-        has_nan = torch.isnan(grad_norm).any().item()
-        if has_inf or has_nan:
+        if math.isinf(grad_norm) or math.isnan(grad_norm):
             return False, None, None
         timers('optimizer-clip-main-grad').stop()
 
