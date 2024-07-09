@@ -330,8 +330,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 param_range = gbuf_range["param_map"][model_param]["param"]
 
                 # fp16, bf16 params.
-                if model_param.type() in [get_accelerator().HalfTensor_name(),
-                                          get_accelerator().BFloat16Tensor_name(),
+                if model_param.type() in ["torch.cuda.HalfTensor", "torch.cuda.BFloat16Tensor",
                                           "torch.HalfTensor", "torch.BFloat16Tensor"]:
 
                     # Clone model -> main.

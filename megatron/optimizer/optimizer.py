@@ -477,6 +477,11 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
         grad_norm = None
         if self.clip_grad > 0.0:
             grad_norm = self.clip_grad_norm(self.clip_grad)
+        # A walkaround for P800 gradnorm nan issue
+        has_inf = torch.isinf(grad_norm).any().item()
+        has_nan = torch.isnan(grad_norm).any().item()
+        if has_inf or has_nan:
+            return False, None, None
         timers('optimizer-clip-main-grad').stop()
 
         # Count the zeros in the grads.

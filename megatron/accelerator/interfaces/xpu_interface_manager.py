@@ -128,49 +128,11 @@ class CustomFCWrapper(object):
         total_input = args[1]
         weight = args[2]
         bias = args[3]
-        if kwargs.get('findmax_opt', False):
-            device = total_input.device
-            if kwargs.get('is_forward', False):
-                if self.gemm_type == "float32":
-                    input_max, weight_max = None, None
-                else:
-                    input_max = torch.empty((64), dtype=torch.float, device=device)
-                    self.findmax(total_input, max=input_max)
-                    weight_max = torch.empty((64), dtype=torch.float, device=device)
-                    self.findmax(weight, max=weight_max)
-                ctx.input_max = input_max
-                ctx.weight_max = weight_max
-                output = total_input.new_empty(total_input.shape[0], total_input.shape[1], weight.shape[0])
-                self.fc_fusion(
-                    total_input.view(total_input.shape[0] * total_input.shape[1], total_input.shape[-1]),
-                    weight,
-                    other_trans=True,
-                    self_max=input_max,
-                    other_max=weight_max,
-                    out=output
-                )
-            else: # Backward
-                if self.gemm_type == "float32":
-                    grad_output_max = None
-                else:
-                    grad_output_max = torch.empty((64), dtype=torch.float, device=device)
-                    self.findmax(total_input, max=grad_output_max)
-                ctx.grad_output_max = grad_output_max
-                output = total_input.new_empty(total_input.shape[:-1] + (weight.shape[-1],))
-                # dims compression for mat1 and mat2 dims not same
-                tmp_grad_output = total_input.view(total_input.shape[0] * total_input.shape[1], total_input.shape[-1]) #ok
-                self.fc_fusion(
-                    tmp_grad_output,
-                    weight,
-                    self_max=grad_output_max,
-                    other_max=ctx.weight_max,
-                    out=output
-                )
-        else:
-            if kwargs.get('is_forward', False):
-                output = self.linear(total_input, weight, bias)
-            else: # Backward
-                output = total_input.matmul(weight)
+        if kwargs.get('transpose', False):
+            weight = weight.t()
+        output = torch.matmul(total_input, weight)
+        if bias is not None:
+            output = output + bias
         return output
 
 
@@ -290,7 +252,7 @@ class CustomMultiTensorApplyWrapper(object):
                 clip_coeff = args[2]
                 [grad.mul_(clip_coeff) for grad in grads_for_norm]
                 return
-            
+
 
 class CustomParallelAttentionWrapper(object):
     """CustomParallelAttention wrapper"""
