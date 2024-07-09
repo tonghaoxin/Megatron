@@ -11,21 +11,25 @@ export XMLIR_LOG_PREFIX=node4_llama3
 export XMLIR_FC_AUTOTUNE_BOOL=false
 export XMLIR_FC_AUTOTUNE_FILE_NAME="fc_tune.txt"
 
-DATA_PATH=/workspace/70b_datasets/pile_llama_test/pile-llama_text_document
-CHECKPOINT_PATH=/workspace/70b_CheckPoint
-HF_TOKENIZER_PATH=/workspace/llama3_70b/Meta-Llama-3-70B/
+DATA_PATH=${DATA_PATH:-"/workdir/llama3_70b_data/pile_test/pile-llama_text_document"}
+echo "DATA_PATH: $DATA_PATH"
 
-export LD_LIBRARY_PATH=/workspace/70b_bkcl_so/0506:/workspace/xre-Linux-x86_64-0.0.0.1-2024-04-16-23-03-29-daily/so:$LD_LIBRARY_PATH
+CHECKPOINT_PATH=/workspace/70b_CheckPoint
+
+HF_TOKENIZER_PATH=${HF_TOKENIZER_PATH:-"/workdir/llama3_70b_data/Meta-Llama-3-70B/"}
+echo "HF_TOKENIZER_PATH: $HF_TOKENIZER_PATH"
+
+export LD_LIBRARY_PATH=${SO_PATH:-"$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH"}
 
 export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
 # Change for multinode config
-MASTER_ADDR=${1:-"172.16.0.2"}
+MASTER_ADDR=${MASTER_ADDR:-"172.16.0.2"}
 MASTER_PORT=${MASTER_PORT:-9919}
 #first parameter node set as default 2
-NNODES=${2:-4}
-NODE_RANK=${3:-0}
+NNODES=${NNODES:-4}
+NODE_RANK=${NODE_RANK:-0}
 
 ulimit -c 0
 export NCCL_SOCKET_IFNAME=eth0

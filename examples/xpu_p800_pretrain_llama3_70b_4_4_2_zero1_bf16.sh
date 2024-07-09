@@ -7,23 +7,26 @@ ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 export XMLIR_LOG_PREFIX=node4_llama3
 
-DATA_PATH=/aiak/qinduohao/pile_test/pile-llama_text_document
+DATA_PATH=${DATA_PATH:-"/workdir/llama3_70b_data/pile_test/pile-llama_text_document"}
+echo "DATA_PATH: $DATA_PATH"
+
+HF_TOKENIZER_PATH=${HF_TOKENIZER_PATH:-"/workdir/llama3_70b_data/Meta-Llama-3-70B/"}
+echo "HF_TOKENIZER_PATH: $HF_TOKENIZER_PATH"
+
+export LD_LIBRARY_PATH=${SO_PATH:-"$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH"}
+
 CHECKPOINT_LOAD_PATH=/aiak/qinduohao/megatron_llama3_70b_checkpoint_tp4_pp4_zero1_bf16/
 CHECKPOINT_SAVE_PATH=/aiak/qinduohao/megatron_llama3_70b_checkpoint_tp4_pp4_zero1_bf16_saved/
-HF_TOKENIZER_PATH=/aiak/changtao02/aiak-kunlun/llama3_70b/Meta-Llama-3-70B/
-
-export LD_LIBRARY_PATH=/aiak/changtao02/aiak-kunlun/xre-Linux-x86_64-0.0.0.1-2024-04-26-00-05-07-daily/so:/aiak/changtao02/aiak-kunlun/xccl-0506:$LD_LIBRARY_PATH
-
 
 export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
 # Change for multinode config
-MASTER_ADDR=${1:-"172.16.0.2"}
+MASTER_ADDR=${MASTER_ADDR:-"172.16.0.2"}
 MASTER_PORT=${MASTER_PORT:-9919}
 #first parameter node set as default 2
-NNODES=${2:-4}
-NODE_RANK=${3:-0}
+NNODES=${NNODES:-4}
+NODE_RANK=${NODE_RANK:-0}
 
 ulimit -c 0
 export NCCL_SOCKET_IFNAME=eth0
