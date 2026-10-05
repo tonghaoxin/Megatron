@@ -58,7 +58,7 @@ QWEN_14B_ARGS="--tensor-model-parallel-size 1
                --ffn-hidden-size 13696 \
                --num-attention-heads 40 \
                --init-method-std 0.01 \
-               --micro-batch-size 2 \
+               --micro-batch-size 1 \
                --global-batch-size 128 \
                --seq-length 4096 \
                --max-position-embeddings 4096 \
@@ -73,7 +73,7 @@ QWEN_14B_ARGS="--tensor-model-parallel-size 1
                --adam-beta1 0.9 \
                --adam-beta2 0.95 \
                --train-iters 500000 \
-	           --lr-decay-iters 320000 \
+                   --lr-decay-iters 320000 \
                --lr-warmup-fraction 0.01 \
                --sequence-parallel  \
                --rmsnorm-epsilon 1e-6 \
@@ -89,12 +89,11 @@ QWEN_14B_ARGS="--tensor-model-parallel-size 1
                --no-bias-gelu-fusion \
                --no-position-embedding \
                --no-masked-softmax-fusion \
-               --no-masked-softmax-fusion \
                --no-query-key-layer-scaling \
                --attention-softmax-in-fp32 \
                --memory-saving \
                --fused-rmsnorm \
-	           --use-flash-attn \
+                   --use-flash-attn \
                --optimizer adam \
                --use-cpu-initialization \
                --exit-interval $ITERATION_NUM \
@@ -116,10 +115,10 @@ OTHER_ARGS="--data-path $DATA_PATH \
 # driver方式部分
 #################################
 export DIST_MULTI_STREAM=true
-#imode 模式需要同时开启下列3个环境变量
+
 export CUDART_DUMMY_REGISTER=1 #强制__cudaRegister***返回成功，用绕过pytorch混用NV官方cublas/cudnn造成的奇怪行为
 export XPU_FORCE_USERMODE_LAUNCH=1 #强制使用纯用户态高性能launch/it模式，可以获得理论最小的launch开销，需要kunlun.ko insmod时使用
-#export XPU_DUMMY_EVENT=1 #强制event相关API返回成功，当前用于event还未ready的纯用户态高性能launch/wait模式
+
 
 
 #################################
@@ -128,7 +127,7 @@ export XPU_FORCE_USERMODE_LAUNCH=1 #强制使用纯用户态高性能launch/it�
 # type默认为tf32，较慢，需要指定为fp16
 export XMLIR_FA_GEMM_TYPE=float16
 export FAST_SWIGLU_ENABLE=1
-export XPUAPI_DEFAULT_SIZE=3000000000 # 减少算子重新预分配内存导致的 XPU_WAIT开销, 副作用是额外多消耗显存
+#export XPUAPI_DEFAULT_SIZE=3000000000 # 减少算子重新预分配内存导致的 XPU_WAIT开销, 副作用是额外多消耗显存
 export XBLAS_FC_HBM_VERSION=40
 
 #################################
@@ -137,22 +136,25 @@ export XBLAS_FC_HBM_VERSION=40
 export XMLIR_XDNN_PYTORCH_CHECK_ENABLE_FALLBACK_BOOL=0 # 禁止XDNN出错后fallback CPU
 export XMLIR_ENABLE_FALLBACK_TO_CPU_BOOL=False #禁止任何fallback
 export XMLIR_DUMP_FALLBACK_OP_LIST_BOOL=true
-
-#################################
-# hbm部分
-#################################
-export XPU_FORCE_CODE_PARAM_LOCATE_IN_L3=1 #高频hbm必开, stable/low选开
-
-
 #################################
 # BKCL C2C部分
 #################################
+#################################
+# 通信部分设置
+#################################
 export BKCL_CCIX_RING=1
-export BKCL_TREE_THRESHOLD=1
 export BKCL_CCIX_BUFFER_GM=1
+export BKCL_FORCE_L3_RDMA=0
+export BKCL_RING_BUFFER_GM=1
+export BKCL_RDMA_PROXY_DISABLE=1
 
+export BKCL_ENABLE_XDR=1
+export BKCL_RDMA_FORCE_TREE=1
+export BKCL_TREE_THRESHOLD=0
+export XPU_ZEBU_MODE=1
 
-export XPU_ZEBU_MODE=1 # 影响ccix_inter.txt文件读取
+#depends on the network card
+export BKCL_RDMA_NICS=xgbe1,xgbe1,xgbe2,xgbe2,xgbe3,xgbe3,xgbe4,xgbe4
 export BKCL_XLINK_D2D=0
 export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
@@ -160,7 +162,6 @@ export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
 export BKCL_RING_BUFFER_GM=1
 export BKCL_KL3_TURBO_MODE=1
 export BKCL_RING_BUFFER_SIZE=2097152
-# export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
 export ALLREDUCE_ASYNC=false
 export ALLGATHER_ASYNC=false
 export ALLREDUCE_FUSION=0
@@ -184,6 +185,21 @@ echo "3600000" > /proc/kunlun/dev5/task_timeout_detect_threshold_in_ms
 echo "3600000" > /proc/kunlun/dev6/task_timeout_detect_threshold_in_ms
 echo "3600000" > /proc/kunlun/dev7/task_timeout_detect_threshold_in_ms
 
+
+export XPU_ZEBU_MODE=1 # 影响ccix_inter.txt文件读取
+export BKCL_XLINK_D2D=0
+export BKCL_XLINK_C2C=1
+export BKCL_XLINK_ETH=0
+export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
+export BKCL_RING_BUFFER_GM=1
+export BKCL_FORCE_SYNC=0
+export BKCL_KL3_TURBO_MODE=1
+export BKCL_RING_BUFFER_SIZE=2097152
+export ALLREDUCE_ASYNC=false
+export ALLGATHER_ASYNC=false
+export ALLREDUCE_FUSION=0
+export BKCL_TIMEOUT=360000
+unset BKCL_KL3_SYSCON_FLAG
 #################################
 # 14B 模型训练
 #################################

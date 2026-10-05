@@ -8,12 +8,14 @@ ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 ################################# 
 # config
+source "$ROOT_DIR/../config.sh"
+
 export XMLIR_LOG_PREFIX=node4
 export XMLIR_FC_AUTOTUNE_BOOL=false
 # export XMLIR_FC_AUTOTUNE_FILE_NAME="fc_tune.txt"
 
 DATA_PATH=${DATA_PATH:-"$ROOT_DIR/../data/pile-llama_text_document"}
-CHECKPOINT_PATH=${CHECKPOINT_PATH:-"/workspace/70b_CheckPoint"}
+CHECKPOINT_PATH=${CHECKPOINT_PATH:-"/workspace/checkpoints_4_4_2"}
 TOKENIZER_PATH=${TOKENIZER_PATH:-"$ROOT_DIR/../tokenizer/tokenizer.model"}
 
 export LD_LIBRARY_PATH=${SO_PATH:-"$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH"}
@@ -22,8 +24,8 @@ export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
 # Change for multinode config
-MASTER_ADDR=${MASTER_ADDR:-"172.16.0.2"}
-MASTER_PORT=${MASTER_PORT:-9919}
+ASTER_ADDR=${MASTER_ADDR:-"172.0.3.4"}
+MASTER_PORT=${MASTER_PORT:-9916}
 NNODES=${NNODES:-4}
 NODE_RANK=${NODE_RANK:-0}
 
@@ -36,7 +38,7 @@ EXIT_ITER=${EXIT_ITER:-2}
 LOSS_SCALE=${LOSS_SCALE:-16} 
 
 ulimit -c 0
-export NCCL_SOCKET_IFNAME=eth0
+export NCCL_SOCKET_IFNAME=ens11np0
 export NCCL_IB_HCA=mlx5
 export NCCL_IB_GID_INDEX=3
 
@@ -81,7 +83,7 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size ${TP_SIZE} \
                  --initial-loss-scale ${LOSS_SCALE} \
                  --adam-beta1 0.9 \
                  --adam-beta2 0.95 \
-                 --train-iters 50000 \
+                 --train-iters 1000 \
                  --eval-iters 0 \
                  --lr-decay-iters 320000 \
                  --lr-warmup-fraction 0.01 \
@@ -118,7 +120,7 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size ${TP_SIZE} \
 
 
 OUTPUT_ARGS="--log-interval 1 \
-             --save-interval 5000 \
+             --save-interval 10 \
              --exit-interval ${EXIT_ITER} \
              --eval-interval 1000"
              #--timing-log-level 2 \
@@ -167,7 +169,7 @@ export BKCL_TREE_THRESHOLD=0
 export XPU_ZEBU_MODE=1
 
 #depends on the network card
-export BKCL_RDMA_NICS=${BKCL_RDMA_NICS:-"eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4"}
+export BKCL_RDMA_NICS=${BKCL_RDMA_NICS:-"ens11np0,ens12np0,ens13np0,ens14np0,ens15np0,ens16np0,ens17np0,ens18np0"}
 export BKCL_XLINK_D2D=0
 export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
@@ -213,4 +215,4 @@ PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops'
        $ROOT_DIR/../pretrain_llama.py \
        $LLAMA2_70B_ARGS \
        $OUTPUT_ARGS \
-       $OTHER_ARGS
+       $OTHER_ARGS 

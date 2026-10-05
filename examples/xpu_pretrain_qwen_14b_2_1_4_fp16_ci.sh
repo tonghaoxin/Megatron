@@ -36,7 +36,7 @@ GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 # Change for multinode config
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-9999}
-NNODES=${NNODES:-1}
+NNODES=${NNODES:-2}
 # NODE_RANK按需修改
 NODE_RANK=${NODE_RANK:-0}
 
@@ -160,6 +160,7 @@ export BKCL_XLINK_C2C=1
 export BKCL_XLINK_ETH=0
 export BKCL_TRANS_UNSUPPORTED_DATATYPE=1
 export BKCL_RING_BUFFER_GM=1
+export BKCL_FORCE_SYNC=1
 export BKCL_KL3_TURBO_MODE=1
 export BKCL_RING_BUFFER_SIZE=2097152
 # export XPUSIM_TOPOLOGY_FILE="ccix_inter.txt"
@@ -190,6 +191,7 @@ echo "3600000" > /proc/kunlun/dev7/task_timeout_detect_threshold_in_ms
 # 14B 模型训练
 #################################
 XFLAGS --list
+XFLAGS --disable megatron_23_05
 XFLAGS --enable megatron_aiak
 
 PYTHONPATH="$ROOT_DIR/..":$PYTHONPATH \

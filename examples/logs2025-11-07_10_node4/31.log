@@ -1,0 +1,312 @@
+[35mMODULE_REPLACE [0m[32mapex success[0m
+[35mMODULE_REPLACE [0m[32mfused_weight_gradient_mlp_cuda success[0m
+[35mMODULE_REPLACE [0m[32mamp_C success[0m
+[35mMODULE_REPLACE [0m[32mflash_attn success[0m
+[35mMODULE_REPLACE [0m[32mflash_attn.flash_attn_interface success[0m
+> setting accelerator backend to xpu ...
+[33mWARNING: replace megatron.fused_kernels.load error: module 'megatron' has no attribute 'fused_kernels', skip!
+[33mWARNING: replace megatron.initialize.fused_kernels.load error: module 'megatron.initialize' has no attribute 'fused_kernels', skip!
+[35mSYMBOL_REWRITE [0m[32mmegatron success[0m
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 0 --> physical device id: 0
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 1 --> physical device id: 1
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 2 --> physical device id: 2
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 3 --> physical device id: 3
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 4 --> physical device id: 4
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 5 --> physical device id: 5
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 6 --> physical device id: 6
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 7 --> physical device id: 7
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:117] The ens18np0 ip addr is 10.180.167.135
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:162] host 10.180.164.7: dev 7 get a paired nic [ens18np0] with ip 10.180.167.135
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][WARN][BKCL][rdma_init.cpp:1627] num_rdma_connect = 3
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_init.cpp:844] rank [31] rdma listening on port 39988
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][WARN][BKCL][rdma_init.cpp:1661] tree_pair size: 2 ring_pair size: 1
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:1669] rdma init hostname:[10.180.167.134:47196] rank 31 peer tree rank 23
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:201] local rank/rank [7/31] connect form 10.180.167.135 to 10.180.167.134:47196
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e000000 host 0x7f773cbfe000 remote (nil) local 0x7f773cbfe000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e200000 host 0x7f773c1fd000 remote 0x7f773c1fd000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_init.cpp:920] rank [31] rdma server connected
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:1669] rdma init hostname:[10.180.167.133:47094] rank 31 peer tree rank 15
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:201] local rank/rank [7/31] connect form 10.180.167.135 to 10.180.167.133:47094
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e400000 host 0x7f77375ff000 remote 0x217f41 local 0x7f77375ff000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:1683] rdma init hostname:[10.180.167.132:38707] rank 31 peer ring rank 7
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:201] local rank/rank [7/31] connect form 10.180.167.135 to 10.180.167.132:38707
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e600000 host 0x7f7736bfe000 remote 0x209f41 local 0x7f7736bfe000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e800000 host 0x7f77361fd000 remote 0x7f77361fd000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_init.cpp:920] rank [31] rdma server connected
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400ea00000 host 0x7f77357fc000 remote 0x7f77357fc000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_init.cpp:920] rank [31] rdma server connected
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400ec00000 host 0x7f7734dfb000 remote 0x7f7734dfb000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_init.cpp:781] rank [31] rdma server accept peer:22, rdma_ctx:0x7f7738030d80
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400ee00000 host 0x7f77343fa000 remote 0x7f77343fa000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_init.cpp:781] rank [31] rdma server accept peer:22, rdma_ctx:0x7f7738042740
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400f000000 host 0x7f77339f9000 remote 0x7f77339f9000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2529][INFO][BKCL][rdma_init.cpp:781] rank [31] rdma server accept peer:22, rdma_ctx:0x7f773804cfc0
+/workspace/Megatron/megatron/optimizer/distrib_optimizer.py:451: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  bufferin = grad_buffer.data.storage().untyped()
+[10:14:35][bms-ud6gnwzb0t14j2jh47zy][2283][WARN][BKCL][kl3_init.cpp:1179] Temporarily disable butterfly for 4chips
+/opt/venv/xmlir/lib/python3.8/site-packages/torch/distributed/distributed_c10d.py:2562: UserWarning: torch.distributed._all_gather_base is a private function and will be deprecated. Please use torch.distributed.all_gather_into_tensor instead.
+  warnings.warn(
+(min, max) time across ranks (ms):
+    model-and-optimizer-setup ......................: (112612.74, 122958.95)
+    train/valid/test-data-iterators-setup ..........: (367.55, 882.79)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][WARN][BKCL][init_common.cpp:196] rank 1 host ranks 1, return early
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:117] The ens18np0 ip addr is 10.180.167.135
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:162] host 10.180.164.7: dev 7 get a paired nic [ens18np0] with ip 10.180.167.135
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][WARN][BKCL][rdma_init.cpp:1627] num_rdma_connect = 2
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_init.cpp:844] rank [1] rdma listening on port 44005
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][WARN][BKCL][rdma_init.cpp:1661] tree_pair size: 1 ring_pair size: 1
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:1669] rdma init hostname:[10.180.167.134:40459] rank 1 peer tree rank 0
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:201] local rank/rank [0/1] connect form 10.180.167.135 to 10.180.167.134:40459
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e200000 host 0x7f7731ff6000 remote 0x3f8000003f800000 local 0x7f7731ff6000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e400000 host 0x7f77315f5000 remote 0x7f77315f5000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:1683] rdma init hostname:[10.180.167.134:40459] rank 1 peer ring rank 0
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:201] local rank/rank [0/1] connect form 10.180.167.135 to 10.180.167.134:40459
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_init.cpp:920] rank [1] rdma server connected
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e600000 host 0x7f7730bf4000 remote 0x3f8000003f800000 local 0x7f7730bf4000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e800000 host 0x7f77301f3000 remote 0x7f77301f3000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_init.cpp:920] rank [1] rdma server connected
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.167.135 to 10.180.167.134:40459
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483ea00000 host 0x7f772b5ff000 remote 0x3f8000003f800000 local 0x7f772b5ff000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483ec00000 host 0x7f772abfe000 remote 0x7f772abfe000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0x7f7724016740
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.167.135 to 10.180.167.134:40459
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483ee00000 host 0x7f772a1fd000 remote 0x3f8000003f800000 local 0x7f772a1fd000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f000000 host 0x7f77297fc000 remote 0x7f77297fc000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0x7f7724024330
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.167.135 to 10.180.167.134:40459
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f200000 host 0x7f7728dfb000 remote 0x3f8000003f800000 local 0x7f7728dfb000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f400000 host 0x7f77283fa000 remote 0x7f77283fa000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0x7f772402eb20
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.167.135 to 10.180.167.134:40459
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2283][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f600000 host 0x7f77281fa000 remote 0x3f8000003f800000 local 0x7f77281fa000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f800000 host 0x7f7722dfe000 remote 0x7f7722dfe000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3135][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0x7f77240405e0
+/opt/venv/xmlir/lib/python3.8/site-packages/torch/distributed/distributed_c10d.py:3030: UserWarning: torch.distributed._reduce_scatter_base is a private function and will be deprecated. Please use torch.distributed.reduce_scatter_tensor instead.
+  warnings.warn(
+ iteration        1/    1000 | consumed samples:         1024 | elapsed time per iteration (ms): 298710.5 | throughput (token/sec/GPU) : 438.8 | learning rate: 1.563E-09 | global batch size:  1024 | lm loss: 1.074953E+01 | loss scale: 16.0 | grad norm: 46.748 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        2/    1000 | consumed samples:         2048 | elapsed time per iteration (ms): 296251.0 | throughput (token/sec/GPU) : 442.4 | learning rate: 3.125E-09 | global batch size:  1024 | lm loss: 1.074708E+01 | loss scale: 16.0 | grad norm: 46.232 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        3/    1000 | consumed samples:         3072 | elapsed time per iteration (ms): 297183.0 | throughput (token/sec/GPU) : 441.0 | learning rate: 4.688E-09 | global batch size:  1024 | lm loss: 1.074699E+01 | loss scale: 16.0 | grad norm: 45.900 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        4/    1000 | consumed samples:         4096 | elapsed time per iteration (ms): 296208.0 | throughput (token/sec/GPU) : 442.5 | learning rate: 6.250E-09 | global batch size:  1024 | lm loss: 1.074762E+01 | loss scale: 16.0 | grad norm: 46.424 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        5/    1000 | consumed samples:         5120 | elapsed time per iteration (ms): 295466.2 | throughput (token/sec/GPU) : 443.6 | learning rate: 7.812E-09 | global batch size:  1024 | lm loss: 1.074859E+01 | loss scale: 16.0 | grad norm: 46.051 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        6/    1000 | consumed samples:         6144 | elapsed time per iteration (ms): 297245.9 | throughput (token/sec/GPU) : 441.0 | learning rate: 9.375E-09 | global batch size:  1024 | lm loss: 1.074923E+01 | loss scale: 16.0 | grad norm: 45.759 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        7/    1000 | consumed samples:         7168 | elapsed time per iteration (ms): 296296.6 | throughput (token/sec/GPU) : 442.4 | learning rate: 1.094E-08 | global batch size:  1024 | lm loss: 1.074854E+01 | loss scale: 16.0 | grad norm: 46.065 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        8/    1000 | consumed samples:         8192 | elapsed time per iteration (ms): 295712.8 | throughput (token/sec/GPU) : 443.2 | learning rate: 1.250E-08 | global batch size:  1024 | lm loss: 1.072140E+01 | loss scale: 16.0 | grad norm: 46.033 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration        9/    1000 | consumed samples:         9216 | elapsed time per iteration (ms): 297192.5 | throughput (token/sec/GPU) : 441.0 | learning rate: 1.406E-08 | global batch size:  1024 | lm loss: 1.071741E+01 | loss scale: 16.0 | grad norm: 45.903 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       10/    1000 | consumed samples:        10240 | elapsed time per iteration (ms): 296490.7 | throughput (token/sec/GPU) : 442.1 | learning rate: 1.562E-08 | global batch size:  1024 | lm loss: 1.072075E+01 | loss scale: 16.0 | grad norm: 46.029 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       11/    1000 | consumed samples:        11264 | elapsed time per iteration (ms): 295610.3 | throughput (token/sec/GPU) : 443.4 | learning rate: 1.719E-08 | global batch size:  1024 | lm loss: 1.066428E+01 | loss scale: 16.0 | grad norm: 46.376 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       12/    1000 | consumed samples:        12288 | elapsed time per iteration (ms): 297279.9 | throughput (token/sec/GPU) : 440.9 | learning rate: 1.875E-08 | global batch size:  1024 | lm loss: 1.066347E+01 | loss scale: 16.0 | grad norm: 46.180 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       13/    1000 | consumed samples:        13312 | elapsed time per iteration (ms): 296375.8 | throughput (token/sec/GPU) : 442.2 | learning rate: 2.031E-08 | global batch size:  1024 | lm loss: 1.063747E+01 | loss scale: 16.0 | grad norm: 45.992 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       14/    1000 | consumed samples:        14336 | elapsed time per iteration (ms): 295642.7 | throughput (token/sec/GPU) : 443.3 | learning rate: 2.188E-08 | global batch size:  1024 | lm loss: 1.044575E+01 | loss scale: 16.0 | grad norm: 46.119 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       15/    1000 | consumed samples:        15360 | elapsed time per iteration (ms): 297084.2 | throughput (token/sec/GPU) : 441.2 | learning rate: 2.344E-08 | global batch size:  1024 | lm loss: 1.043644E+01 | loss scale: 16.0 | grad norm: 45.954 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       16/    1000 | consumed samples:        16384 | elapsed time per iteration (ms): 296257.8 | throughput (token/sec/GPU) : 442.4 | learning rate: 2.500E-08 | global batch size:  1024 | lm loss: 1.040944E+01 | loss scale: 16.0 | grad norm: 45.916 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       17/    1000 | consumed samples:        17408 | elapsed time per iteration (ms): 295545.9 | throughput (token/sec/GPU) : 443.5 | learning rate: 2.656E-08 | global batch size:  1024 | lm loss: 1.035467E+01 | loss scale: 16.0 | grad norm: 45.882 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       18/    1000 | consumed samples:        18432 | elapsed time per iteration (ms): 297207.4 | throughput (token/sec/GPU) : 441.0 | learning rate: 2.813E-08 | global batch size:  1024 | lm loss: 1.032608E+01 | loss scale: 16.0 | grad norm: 46.113 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       19/    1000 | consumed samples:        19456 | elapsed time per iteration (ms): 296409.0 | throughput (token/sec/GPU) : 442.2 | learning rate: 2.969E-08 | global batch size:  1024 | lm loss: 1.004080E+01 | loss scale: 16.0 | grad norm: 45.306 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       20/    1000 | consumed samples:        20480 | elapsed time per iteration (ms): 304766.9 | throughput (token/sec/GPU) : 430.1 | learning rate: 3.125E-08 | global batch size:  1024 | lm loss: 9.751411E+00 | loss scale: 16.0 | grad norm: 45.040 | number of skipped iterations:   0 | number of nan iterations:   0 |
+(min, max) time across ranks (ms):
+    forward-backward ...............................: (302040.25, 304087.04)
+    forward-compute ................................: (120672.87, 123358.15)
+    backward-compute ...............................: (173057.88, 176510.42)
+    batch-generator ................................: (573.35, 1111.78)
+    backward-all-gather ............................: (20865.44, 21440.73)
+    forward-reduce-scatter .........................: (21707.50, 23525.63)
+    forward-all-reduce .............................: (1038.14, 1536.69)
+    forward-recv ...................................: (476.03, 1387.42)
+    forward-send ...................................: (0.82, 2.66)
+    backward-recv ..................................: (492.40, 1476.56)
+    backward-send ..................................: (0.91, 5.94)
+    forward-send-backward-recv .....................: (4255.03, 6471.04)
+    backward-send-forward-recv .....................: (973.40, 1441.32)
+    layernorm-grads-all-reduce .....................: (1.44, 4.79)
+    embedding-grads-all-reduce .....................: (0.06, 0.27)
+    grads-reduce-scatter ...........................: (250.28, 254.60)
+    params-all-gather ..............................: (226.45, 230.26)
+    optimizer-copy-to-main-grad ....................: (7.35, 7.51)
+    optimizer-unscale-and-check-inf ................: (23.16, 23.72)
+    optimizer-clip-main-grad .......................: (32.08, 32.47)
+    optimizer-count-zeros ..........................: (0.05, 0.76)
+    optimizer-inner-step ...........................: (40.22, 41.66)
+    optimizer-copy-main-to-model-params ............: (7.32, 7.56)
+    optimizer ......................................: (137.58, 138.37)
+ iteration       21/    1000 | consumed samples:        21504 | elapsed time per iteration (ms): 296384.9 | throughput (token/sec/GPU) : 442.2 | learning rate: 3.281E-08 | global batch size:  1024 | lm loss: 9.719951E+00 | loss scale: 16.0 | grad norm: 45.228 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       22/    1000 | consumed samples:        22528 | elapsed time per iteration (ms): 295609.9 | throughput (token/sec/GPU) : 443.4 | learning rate: 3.438E-08 | global batch size:  1024 | lm loss: 9.664865E+00 | loss scale: 16.0 | grad norm: 44.678 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       23/    1000 | consumed samples:        23552 | elapsed time per iteration (ms): 297471.7 | throughput (token/sec/GPU) : 440.6 | learning rate: 3.594E-08 | global batch size:  1024 | lm loss: 9.491431E+00 | loss scale: 16.0 | grad norm: 44.700 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       24/    1000 | consumed samples:        24576 | elapsed time per iteration (ms): 296422.4 | throughput (token/sec/GPU) : 442.2 | learning rate: 3.750E-08 | global batch size:  1024 | lm loss: 9.427462E+00 | loss scale: 16.0 | grad norm: 44.183 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       25/    1000 | consumed samples:        25600 | elapsed time per iteration (ms): 295627.8 | throughput (token/sec/GPU) : 443.4 | learning rate: 3.906E-08 | global batch size:  1024 | lm loss: 9.368930E+00 | loss scale: 16.0 | grad norm: 44.070 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       26/    1000 | consumed samples:        26624 | elapsed time per iteration (ms): 297140.3 | throughput (token/sec/GPU) : 441.1 | learning rate: 4.063E-08 | global batch size:  1024 | lm loss: 9.321938E+00 | loss scale: 16.0 | grad norm: 43.598 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       27/    1000 | consumed samples:        27648 | elapsed time per iteration (ms): 296702.5 | throughput (token/sec/GPU) : 441.8 | learning rate: 4.219E-08 | global batch size:  1024 | lm loss: 8.759621E+00 | loss scale: 16.0 | grad norm: 37.854 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       28/    1000 | consumed samples:        28672 | elapsed time per iteration (ms): 295333.8 | throughput (token/sec/GPU) : 443.8 | learning rate: 4.375E-08 | global batch size:  1024 | lm loss: 8.726888E+00 | loss scale: 16.0 | grad norm: 37.502 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       29/    1000 | consumed samples:        29696 | elapsed time per iteration (ms): 297095.8 | throughput (token/sec/GPU) : 441.2 | learning rate: 4.531E-08 | global batch size:  1024 | lm loss: 8.655014E+00 | loss scale: 16.0 | grad norm: 37.539 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       30/    1000 | consumed samples:        30720 | elapsed time per iteration (ms): 296300.8 | throughput (token/sec/GPU) : 442.4 | learning rate: 4.688E-08 | global batch size:  1024 | lm loss: 8.544099E+00 | loss scale: 16.0 | grad norm: 38.076 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       31/    1000 | consumed samples:        31744 | elapsed time per iteration (ms): 295572.0 | throughput (token/sec/GPU) : 443.5 | learning rate: 4.844E-08 | global batch size:  1024 | lm loss: 8.466881E+00 | loss scale: 16.0 | grad norm: 37.983 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       32/    1000 | consumed samples:        32768 | elapsed time per iteration (ms): 297261.7 | throughput (token/sec/GPU) : 440.9 | learning rate: 5.000E-08 | global batch size:  1024 | lm loss: 8.184765E+00 | loss scale: 16.0 | grad norm: 34.178 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       33/    1000 | consumed samples:        33792 | elapsed time per iteration (ms): 296371.9 | throughput (token/sec/GPU) : 442.3 | learning rate: 5.156E-08 | global batch size:  1024 | lm loss: 8.066050E+00 | loss scale: 16.0 | grad norm: 34.034 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       34/    1000 | consumed samples:        34816 | elapsed time per iteration (ms): 295520.0 | throughput (token/sec/GPU) : 443.5 | learning rate: 5.313E-08 | global batch size:  1024 | lm loss: 7.990033E+00 | loss scale: 16.0 | grad norm: 32.843 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       35/    1000 | consumed samples:        35840 | elapsed time per iteration (ms): 297133.5 | throughput (token/sec/GPU) : 441.1 | learning rate: 5.469E-08 | global batch size:  1024 | lm loss: 7.915110E+00 | loss scale: 16.0 | grad norm: 31.602 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       36/    1000 | consumed samples:        36864 | elapsed time per iteration (ms): 296425.7 | throughput (token/sec/GPU) : 442.2 | learning rate: 5.625E-08 | global batch size:  1024 | lm loss: 7.851398E+00 | loss scale: 16.0 | grad norm: 30.723 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       37/    1000 | consumed samples:        37888 | elapsed time per iteration (ms): 295556.4 | throughput (token/sec/GPU) : 443.5 | learning rate: 5.781E-08 | global batch size:  1024 | lm loss: 7.780979E+00 | loss scale: 16.0 | grad norm: 30.067 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       38/    1000 | consumed samples:        38912 | elapsed time per iteration (ms): 296814.1 | throughput (token/sec/GPU) : 441.6 | learning rate: 5.938E-08 | global batch size:  1024 | lm loss: 7.724613E+00 | loss scale: 16.0 | grad norm: 29.384 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       39/    1000 | consumed samples:        39936 | elapsed time per iteration (ms): 296446.9 | throughput (token/sec/GPU) : 442.1 | learning rate: 6.094E-08 | global batch size:  1024 | lm loss: 7.618347E+00 | loss scale: 16.0 | grad norm: 29.525 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       40/    1000 | consumed samples:        40960 | elapsed time per iteration (ms): 305270.9 | throughput (token/sec/GPU) : 429.4 | learning rate: 6.250E-08 | global batch size:  1024 | lm loss: 7.541305E+00 | loss scale: 16.0 | grad norm: 28.919 | number of skipped iterations:   0 | number of nan iterations:   0 |
+(min, max) time across ranks (ms):
+    forward-backward ...............................: (302536.47, 304589.20)
+    forward-compute ................................: (120526.31, 123475.02)
+    backward-compute ...............................: (172907.58, 176555.60)
+    batch-generator ................................: (575.79, 1174.40)
+    backward-all-gather ............................: (20917.26, 21563.17)
+    forward-reduce-scatter .........................: (21715.39, 23638.24)
+    forward-all-reduce .............................: (1037.35, 1503.44)
+    forward-recv ...................................: (478.02, 1394.79)
+    forward-send ...................................: (0.83, 4.31)
+    backward-recv ..................................: (486.72, 1479.62)
+    backward-send ..................................: (0.94, 5.63)
+    forward-send-backward-recv .....................: (4597.91, 6561.61)
+    backward-send-forward-recv .....................: (970.02, 1657.20)
+    layernorm-grads-all-reduce .....................: (1.42, 4.93)
+    embedding-grads-all-reduce .....................: (0.07, 0.94)
+    grads-reduce-scatter ...........................: (250.25, 255.07)
+    params-all-gather ..............................: (226.47, 230.29)
+    optimizer-copy-to-main-grad ....................: (7.35, 7.68)
+    optimizer-unscale-and-check-inf ................: (23.90, 24.34)
+    optimizer-clip-main-grad .......................: (32.57, 33.59)
+    optimizer-count-zeros ..........................: (0.05, 0.06)
+    optimizer-inner-step ...........................: (40.19, 41.30)
+    optimizer-copy-main-to-model-params ............: (7.32, 7.47)
+    optimizer ......................................: (142.01, 142.25)
+ iteration       41/    1000 | consumed samples:        41984 | elapsed time per iteration (ms): 296164.0 | throughput (token/sec/GPU) : 442.6 | learning rate: 6.406E-08 | global batch size:  1024 | lm loss: 7.426270E+00 | loss scale: 16.0 | grad norm: 31.960 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       42/    1000 | consumed samples:        43008 | elapsed time per iteration (ms): 295679.4 | throughput (token/sec/GPU) : 443.3 | learning rate: 6.563E-08 | global batch size:  1024 | lm loss: 7.364125E+00 | loss scale: 16.0 | grad norm: 29.387 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       43/    1000 | consumed samples:        44032 | elapsed time per iteration (ms): 297043.1 | throughput (token/sec/GPU) : 441.3 | learning rate: 6.719E-08 | global batch size:  1024 | lm loss: 7.264976E+00 | loss scale: 16.0 | grad norm: 26.198 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       44/    1000 | consumed samples:        45056 | elapsed time per iteration (ms): 296714.3 | throughput (token/sec/GPU) : 441.7 | learning rate: 6.875E-08 | global batch size:  1024 | lm loss: 7.153074E+00 | loss scale: 16.0 | grad norm: 24.580 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       45/    1000 | consumed samples:        46080 | elapsed time per iteration (ms): 295615.7 | throughput (token/sec/GPU) : 443.4 | learning rate: 7.031E-08 | global batch size:  1024 | lm loss: 7.078735E+00 | loss scale: 16.0 | grad norm: 24.906 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       46/    1000 | consumed samples:        47104 | elapsed time per iteration (ms): 297422.6 | throughput (token/sec/GPU) : 440.7 | learning rate: 7.188E-08 | global batch size:  1024 | lm loss: 7.017494E+00 | loss scale: 16.0 | grad norm: 23.335 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       47/    1000 | consumed samples:        48128 | elapsed time per iteration (ms): 296565.3 | throughput (token/sec/GPU) : 442.0 | learning rate: 7.344E-08 | global batch size:  1024 | lm loss: 6.976162E+00 | loss scale: 16.0 | grad norm: 21.958 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       48/    1000 | consumed samples:        49152 | elapsed time per iteration (ms): 295659.5 | throughput (token/sec/GPU) : 443.3 | learning rate: 7.500E-08 | global batch size:  1024 | lm loss: 6.905885E+00 | loss scale: 16.0 | grad norm: 24.093 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       49/    1000 | consumed samples:        50176 | elapsed time per iteration (ms): 297242.0 | throughput (token/sec/GPU) : 441.0 | learning rate: 7.656E-08 | global batch size:  1024 | lm loss: 6.844422E+00 | loss scale: 16.0 | grad norm: 23.139 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       50/    1000 | consumed samples:        51200 | elapsed time per iteration (ms): 296248.0 | throughput (token/sec/GPU) : 442.4 | learning rate: 7.813E-08 | global batch size:  1024 | lm loss: 6.803710E+00 | loss scale: 16.0 | grad norm: 19.848 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       51/    1000 | consumed samples:        52224 | elapsed time per iteration (ms): 295794.3 | throughput (token/sec/GPU) : 443.1 | learning rate: 7.969E-08 | global batch size:  1024 | lm loss: 6.757625E+00 | loss scale: 16.0 | grad norm: 16.687 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       52/    1000 | consumed samples:        53248 | elapsed time per iteration (ms): 297286.2 | throughput (token/sec/GPU) : 440.9 | learning rate: 8.125E-08 | global batch size:  1024 | lm loss: 6.721038E+00 | loss scale: 16.0 | grad norm: 16.301 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       53/    1000 | consumed samples:        54272 | elapsed time per iteration (ms): 296039.5 | throughput (token/sec/GPU) : 442.8 | learning rate: 8.281E-08 | global batch size:  1024 | lm loss: 6.694151E+00 | loss scale: 16.0 | grad norm: 16.118 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       54/    1000 | consumed samples:        55296 | elapsed time per iteration (ms): 295742.9 | throughput (token/sec/GPU) : 443.2 | learning rate: 8.437E-08 | global batch size:  1024 | lm loss: 6.639258E+00 | loss scale: 16.0 | grad norm: 17.142 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       55/    1000 | consumed samples:        56320 | elapsed time per iteration (ms): 297264.0 | throughput (token/sec/GPU) : 440.9 | learning rate: 8.594E-08 | global batch size:  1024 | lm loss: 6.599929E+00 | loss scale: 16.0 | grad norm: 18.223 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       56/    1000 | consumed samples:        57344 | elapsed time per iteration (ms): 296490.7 | throughput (token/sec/GPU) : 442.1 | learning rate: 8.750E-08 | global batch size:  1024 | lm loss: 6.566393E+00 | loss scale: 16.0 | grad norm: 19.227 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       57/    1000 | consumed samples:        58368 | elapsed time per iteration (ms): 295488.3 | throughput (token/sec/GPU) : 443.6 | learning rate: 8.906E-08 | global batch size:  1024 | lm loss: 6.513762E+00 | loss scale: 16.0 | grad norm: 18.890 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       58/    1000 | consumed samples:        59392 | elapsed time per iteration (ms): 297215.2 | throughput (token/sec/GPU) : 441.0 | learning rate: 9.063E-08 | global batch size:  1024 | lm loss: 6.479530E+00 | loss scale: 16.0 | grad norm: 16.351 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       59/    1000 | consumed samples:        60416 | elapsed time per iteration (ms): 296501.7 | throughput (token/sec/GPU) : 442.1 | learning rate: 9.219E-08 | global batch size:  1024 | lm loss: 6.470943E+00 | loss scale: 16.0 | grad norm: 15.355 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       60/    1000 | consumed samples:        61440 | elapsed time per iteration (ms): 305489.2 | throughput (token/sec/GPU) : 429.1 | learning rate: 9.375E-08 | global batch size:  1024 | lm loss: 6.433331E+00 | loss scale: 16.0 | grad norm: 17.405 | number of skipped iterations:   0 | number of nan iterations:   0 |
+(min, max) time across ranks (ms):
+    forward-backward ...............................: (302757.05, 304805.79)
+    forward-compute ................................: (120982.33, 123849.86)
+    backward-compute ...............................: (173021.67, 176630.46)
+    batch-generator ................................: (634.49, 1223.76)
+    backward-all-gather ............................: (20954.15, 21680.09)
+    forward-reduce-scatter .........................: (21766.00, 23284.44)
+    forward-all-reduce .............................: (1041.42, 1312.64)
+    forward-recv ...................................: (473.21, 1387.19)
+    forward-send ...................................: (0.84, 3.99)
+    backward-recv ..................................: (486.86, 1485.75)
+    backward-send ..................................: (1.43, 7.03)
+    forward-send-backward-recv .....................: (4646.10, 6636.39)
+    backward-send-forward-recv .....................: (906.26, 1618.41)
+    layernorm-grads-all-reduce .....................: (1.42, 6.67)
+    embedding-grads-all-reduce .....................: (0.06, 0.31)
+    grads-reduce-scatter ...........................: (250.28, 254.57)
+    params-all-gather ..............................: (226.50, 230.61)
+    optimizer-copy-to-main-grad ....................: (7.35, 7.62)
+    optimizer-unscale-and-check-inf ................: (22.99, 23.98)
+    optimizer-clip-main-grad .......................: (32.27, 32.85)
+    optimizer-count-zeros ..........................: (0.05, 0.06)
+    optimizer-inner-step ...........................: (40.22, 41.50)
+    optimizer-copy-main-to-model-params ............: (7.33, 7.46)
+    optimizer ......................................: (137.07, 138.47)
+ iteration       61/    1000 | consumed samples:        62464 | elapsed time per iteration (ms): 296527.2 | throughput (token/sec/GPU) : 442.0 | learning rate: 9.531E-08 | global batch size:  1024 | lm loss: 6.413756E+00 | loss scale: 16.0 | grad norm: 19.919 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       62/    1000 | consumed samples:        63488 | elapsed time per iteration (ms): 295764.6 | throughput (token/sec/GPU) : 443.2 | learning rate: 9.687E-08 | global batch size:  1024 | lm loss: 6.387002E+00 | loss scale: 16.0 | grad norm: 20.250 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       63/    1000 | consumed samples:        64512 | elapsed time per iteration (ms): 297115.3 | throughput (token/sec/GPU) : 441.1 | learning rate: 9.844E-08 | global batch size:  1024 | lm loss: 6.342093E+00 | loss scale: 16.0 | grad norm: 18.398 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       64/    1000 | consumed samples:        65536 | elapsed time per iteration (ms): 296621.2 | throughput (token/sec/GPU) : 441.9 | learning rate: 1.000E-07 | global batch size:  1024 | lm loss: 6.321770E+00 | loss scale: 16.0 | grad norm: 16.588 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       65/    1000 | consumed samples:        66560 | elapsed time per iteration (ms): 295622.2 | throughput (token/sec/GPU) : 443.4 | learning rate: 1.016E-07 | global batch size:  1024 | lm loss: 6.285116E+00 | loss scale: 16.0 | grad norm: 16.428 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       66/    1000 | consumed samples:        67584 | elapsed time per iteration (ms): 297102.6 | throughput (token/sec/GPU) : 441.2 | learning rate: 1.031E-07 | global batch size:  1024 | lm loss: 6.238997E+00 | loss scale: 16.0 | grad norm: 16.473 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       67/    1000 | consumed samples:        68608 | elapsed time per iteration (ms): 296220.6 | throughput (token/sec/GPU) : 442.5 | learning rate: 1.047E-07 | global batch size:  1024 | lm loss: 6.225637E+00 | loss scale: 16.0 | grad norm: 16.191 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       68/    1000 | consumed samples:        69632 | elapsed time per iteration (ms): 295812.0 | throughput (token/sec/GPU) : 443.1 | learning rate: 1.063E-07 | global batch size:  1024 | lm loss: 6.182514E+00 | loss scale: 16.0 | grad norm: 16.223 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       69/    1000 | consumed samples:        70656 | elapsed time per iteration (ms): 296862.4 | throughput (token/sec/GPU) : 441.5 | learning rate: 1.078E-07 | global batch size:  1024 | lm loss: 6.174826E+00 | loss scale: 16.0 | grad norm: 16.212 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       70/    1000 | consumed samples:        71680 | elapsed time per iteration (ms): 296600.9 | throughput (token/sec/GPU) : 441.9 | learning rate: 1.094E-07 | global batch size:  1024 | lm loss: 6.135020E+00 | loss scale: 16.0 | grad norm: 17.162 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       71/    1000 | consumed samples:        72704 | elapsed time per iteration (ms): 295238.3 | throughput (token/sec/GPU) : 444.0 | learning rate: 1.109E-07 | global batch size:  1024 | lm loss: 6.140247E+00 | loss scale: 16.0 | grad norm: 18.202 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       72/    1000 | consumed samples:        73728 | elapsed time per iteration (ms): 297227.3 | throughput (token/sec/GPU) : 441.0 | learning rate: 1.125E-07 | global batch size:  1024 | lm loss: 6.132082E+00 | loss scale: 16.0 | grad norm: 20.306 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       73/    1000 | consumed samples:        74752 | elapsed time per iteration (ms): 296119.6 | throughput (token/sec/GPU) : 442.6 | learning rate: 1.141E-07 | global batch size:  1024 | lm loss: 6.144241E+00 | loss scale: 16.0 | grad norm: 21.956 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       74/    1000 | consumed samples:        75776 | elapsed time per iteration (ms): 295900.7 | throughput (token/sec/GPU) : 443.0 | learning rate: 1.156E-07 | global batch size:  1024 | lm loss: 6.134105E+00 | loss scale: 16.0 | grad norm: 23.385 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       75/    1000 | consumed samples:        76800 | elapsed time per iteration (ms): 297061.7 | throughput (token/sec/GPU) : 441.2 | learning rate: 1.172E-07 | global batch size:  1024 | lm loss: 6.146923E+00 | loss scale: 16.0 | grad norm: 23.094 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       76/    1000 | consumed samples:        77824 | elapsed time per iteration (ms): 296139.1 | throughput (token/sec/GPU) : 442.6 | learning rate: 1.188E-07 | global batch size:  1024 | lm loss: 6.137681E+00 | loss scale: 16.0 | grad norm: 23.689 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       77/    1000 | consumed samples:        78848 | elapsed time per iteration (ms): 295831.2 | throughput (token/sec/GPU) : 443.1 | learning rate: 1.203E-07 | global batch size:  1024 | lm loss: 6.137196E+00 | loss scale: 16.0 | grad norm: 23.107 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       78/    1000 | consumed samples:        79872 | elapsed time per iteration (ms): 296764.3 | throughput (token/sec/GPU) : 441.7 | learning rate: 1.219E-07 | global batch size:  1024 | lm loss: 6.141358E+00 | loss scale: 16.0 | grad norm: 22.391 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       79/    1000 | consumed samples:        80896 | elapsed time per iteration (ms): 296431.7 | throughput (token/sec/GPU) : 442.2 | learning rate: 1.234E-07 | global batch size:  1024 | lm loss: 6.144215E+00 | loss scale: 16.0 | grad norm: 22.112 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       80/    1000 | consumed samples:        81920 | elapsed time per iteration (ms): 305296.3 | throughput (token/sec/GPU) : 429.3 | learning rate: 1.250E-07 | global batch size:  1024 | lm loss: 6.145652E+00 | loss scale: 16.0 | grad norm: 22.238 | number of skipped iterations:   0 | number of nan iterations:   0 |
+(min, max) time across ranks (ms):
+    forward-backward ...............................: (302569.55, 304612.95)
+    forward-compute ................................: (121234.26, 123691.33)
+    backward-compute ...............................: (173075.67, 176510.73)
+    batch-generator ................................: (653.93, 1218.60)
+    backward-all-gather ............................: (20925.31, 21460.81)
+    forward-reduce-scatter .........................: (21751.24, 23295.52)
+    forward-all-reduce .............................: (1050.08, 1295.84)
+    forward-recv ...................................: (473.98, 1383.66)
+    forward-send ...................................: (0.82, 3.21)
+    backward-recv ..................................: (490.59, 1482.59)
+    backward-send ..................................: (0.91, 6.91)
+    forward-send-backward-recv .....................: (4783.87, 6355.76)
+    backward-send-forward-recv .....................: (886.50, 1268.70)
+    layernorm-grads-all-reduce .....................: (1.49, 5.44)
+    embedding-grads-all-reduce .....................: (0.06, 0.34)
+    grads-reduce-scatter ...........................: (250.16, 254.76)
+    params-all-gather ..............................: (226.48, 230.52)
+    optimizer-copy-to-main-grad ....................: (7.36, 7.59)
+    optimizer-unscale-and-check-inf ................: (23.90, 24.58)
+    optimizer-clip-main-grad .......................: (32.95, 33.34)
+    optimizer-count-zeros ..........................: (0.05, 0.25)
+    optimizer-inner-step ...........................: (40.26, 41.28)
+    optimizer-copy-main-to-model-params ............: (7.32, 7.47)
+    optimizer ......................................: (142.89, 143.47)
+ iteration       81/    1000 | consumed samples:        82944 | elapsed time per iteration (ms): 296651.7 | throughput (token/sec/GPU) : 441.8 | learning rate: 1.266E-07 | global batch size:  1024 | lm loss: 6.164213E+00 | loss scale: 16.0 | grad norm: 23.627 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       82/    1000 | consumed samples:        83968 | elapsed time per iteration (ms): 295689.6 | throughput (token/sec/GPU) : 443.3 | learning rate: 1.281E-07 | global batch size:  1024 | lm loss: 6.179111E+00 | loss scale: 16.0 | grad norm: 24.594 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       83/    1000 | consumed samples:        84992 | elapsed time per iteration (ms): 296994.6 | throughput (token/sec/GPU) : 441.3 | learning rate: 1.297E-07 | global batch size:  1024 | lm loss: 6.199855E+00 | loss scale: 16.0 | grad norm: 25.455 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       84/    1000 | consumed samples:        86016 | elapsed time per iteration (ms): 296469.8 | throughput (token/sec/GPU) : 442.1 | learning rate: 1.313E-07 | global batch size:  1024 | lm loss: 6.194390E+00 | loss scale: 16.0 | grad norm: 25.087 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       85/    1000 | consumed samples:        87040 | elapsed time per iteration (ms): 295594.9 | throughput (token/sec/GPU) : 443.4 | learning rate: 1.328E-07 | global batch size:  1024 | lm loss: 6.215982E+00 | loss scale: 16.0 | grad norm: 24.477 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       86/    1000 | consumed samples:        88064 | elapsed time per iteration (ms): 297230.8 | throughput (token/sec/GPU) : 441.0 | learning rate: 1.344E-07 | global batch size:  1024 | lm loss: 6.225741E+00 | loss scale: 16.0 | grad norm: 23.323 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       87/    1000 | consumed samples:        89088 | elapsed time per iteration (ms): 295971.8 | throughput (token/sec/GPU) : 442.9 | learning rate: 1.359E-07 | global batch size:  1024 | lm loss: 6.236568E+00 | loss scale: 16.0 | grad norm: 22.387 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       88/    1000 | consumed samples:        90112 | elapsed time per iteration (ms): 295608.3 | throughput (token/sec/GPU) : 443.4 | learning rate: 1.375E-07 | global batch size:  1024 | lm loss: 6.239905E+00 | loss scale: 16.0 | grad norm: 21.832 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       89/    1000 | consumed samples:        91136 | elapsed time per iteration (ms): 297589.3 | throughput (token/sec/GPU) : 440.4 | learning rate: 1.391E-07 | global batch size:  1024 | lm loss: 6.233029E+00 | loss scale: 16.0 | grad norm: 23.074 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       90/    1000 | consumed samples:        92160 | elapsed time per iteration (ms): 296268.2 | throughput (token/sec/GPU) : 442.4 | learning rate: 1.406E-07 | global batch size:  1024 | lm loss: 6.218480E+00 | loss scale: 16.0 | grad norm: 22.994 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       91/    1000 | consumed samples:        93184 | elapsed time per iteration (ms): 295398.4 | throughput (token/sec/GPU) : 443.7 | learning rate: 1.422E-07 | global batch size:  1024 | lm loss: 6.220498E+00 | loss scale: 16.0 | grad norm: 22.071 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       92/    1000 | consumed samples:        94208 | elapsed time per iteration (ms): 296807.9 | throughput (token/sec/GPU) : 441.6 | learning rate: 1.438E-07 | global batch size:  1024 | lm loss: 6.197558E+00 | loss scale: 16.0 | grad norm: 21.501 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       93/    1000 | consumed samples:        95232 | elapsed time per iteration (ms): 296901.1 | throughput (token/sec/GPU) : 441.5 | learning rate: 1.453E-07 | global batch size:  1024 | lm loss: 6.180550E+00 | loss scale: 16.0 | grad norm: 20.226 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       94/    1000 | consumed samples:        96256 | elapsed time per iteration (ms): 295587.8 | throughput (token/sec/GPU) : 443.4 | learning rate: 1.469E-07 | global batch size:  1024 | lm loss: 6.169490E+00 | loss scale: 16.0 | grad norm: 18.624 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       95/    1000 | consumed samples:        97280 | elapsed time per iteration (ms): 296983.0 | throughput (token/sec/GPU) : 441.3 | learning rate: 1.484E-07 | global batch size:  1024 | lm loss: 6.143693E+00 | loss scale: 16.0 | grad norm: 17.851 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       96/    1000 | consumed samples:        98304 | elapsed time per iteration (ms): 296313.3 | throughput (token/sec/GPU) : 442.3 | learning rate: 1.500E-07 | global batch size:  1024 | lm loss: 6.126769E+00 | loss scale: 16.0 | grad norm: 17.678 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       97/    1000 | consumed samples:        99328 | elapsed time per iteration (ms): 295712.1 | throughput (token/sec/GPU) : 443.2 | learning rate: 1.516E-07 | global batch size:  1024 | lm loss: 6.101869E+00 | loss scale: 16.0 | grad norm: 17.759 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       98/    1000 | consumed samples:       100352 | elapsed time per iteration (ms): 297609.0 | throughput (token/sec/GPU) : 440.4 | learning rate: 1.531E-07 | global batch size:  1024 | lm loss: 6.072749E+00 | loss scale: 16.0 | grad norm: 17.652 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration       99/    1000 | consumed samples:       101376 | elapsed time per iteration (ms): 296161.7 | throughput (token/sec/GPU) : 442.6 | learning rate: 1.547E-07 | global batch size:  1024 | lm loss: 6.056864E+00 | loss scale: 16.0 | grad norm: 17.872 | number of skipped iterations:   0 | number of nan iterations:   0 |
+ iteration      100/    1000 | consumed samples:       102400 | elapsed time per iteration (ms): 305581.7 | throughput (token/sec/GPU) : 428.9 | learning rate: 1.563E-07 | global batch size:  1024 | lm loss: 6.027884E+00 | loss scale: 16.0 | grad norm: 17.991 | number of skipped iterations:   0 | number of nan iterations:   0 |
+(min, max) time across ranks (ms):
+    forward-backward ...............................: (302850.95, 304902.10)
+    forward-compute ................................: (120934.33, 123709.38)
+    backward-compute ...............................: (172996.90, 176568.79)
+    batch-generator ................................: (611.19, 1189.65)
+    backward-all-gather ............................: (20963.59, 21683.12)
+    forward-reduce-scatter .........................: (21789.39, 23518.49)
+    forward-all-reduce .............................: (1043.89, 1436.36)
+    forward-recv ...................................: (473.40, 1394.94)
+    forward-send ...................................: (0.81, 5.27)
+    backward-recv ..................................: (486.61, 1484.86)
+    backward-send ..................................: (0.96, 7.82)
+    forward-send-backward-recv .....................: (4786.42, 6361.23)
+    backward-send-forward-recv .....................: (1119.35, 1489.52)
+    layernorm-grads-all-reduce .....................: (1.65, 6.32)
+    embedding-grads-all-reduce .....................: (0.07, 0.29)
+    grads-reduce-scatter ...........................: (250.26, 254.74)
+    params-all-gather ..............................: (226.48, 230.30)
+    optimizer-copy-to-main-grad ....................: (7.36, 7.51)
+    optimizer-unscale-and-check-inf ................: (23.71, 24.22)
+    optimizer-clip-main-grad .......................: (32.56, 33.02)
+    optimizer-count-zeros ..........................: (0.05, 0.06)
+    optimizer-inner-step ...........................: (40.30, 41.31)
+    optimizer-copy-main-to-model-params ............: (7.32, 7.47)
+    optimizer ......................................: (140.36, 141.15)
+(min, max) time across ranks (ms):
+    save-checkpoint ................................: (325938.42, 325939.21)

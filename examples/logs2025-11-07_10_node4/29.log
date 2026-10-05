@@ -1,0 +1,82 @@
+[35mMODULE_REPLACE [0m[32mapex success[0m
+[35mMODULE_REPLACE [0m[32mfused_weight_gradient_mlp_cuda success[0m
+[35mMODULE_REPLACE [0m[32mamp_C success[0m
+[35mMODULE_REPLACE [0m[32mflash_attn success[0m
+[35mMODULE_REPLACE [0m[32mflash_attn.flash_attn_interface success[0m
+> setting accelerator backend to xpu ...
+[33mWARNING: replace megatron.fused_kernels.load error: module 'megatron' has no attribute 'fused_kernels', skip!
+[33mWARNING: replace megatron.initialize.fused_kernels.load error: module 'megatron.initialize' has no attribute 'fused_kernels', skip!
+[35mSYMBOL_REWRITE [0m[32mmegatron success[0m
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 0 --> physical device id: 0
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 1 --> physical device id: 1
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 2 --> physical device id: 2
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 3 --> physical device id: 3
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 4 --> physical device id: 4
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 5 --> physical device id: 5
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 6 --> physical device id: 6
+[10:12:11][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][xdr_copy.cpp:44] xdr: device id: 7 --> physical device id: 7
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:117] The ens16np0 ip addr is 10.180.166.135
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:162] host 10.180.164.7: dev 5 get a paired nic [ens16np0] with ip 10.180.166.135
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][WARN][BKCL][rdma_init.cpp:1627] num_rdma_connect = 3
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2528][INFO][BKCL][rdma_init.cpp:844] rank [29] rdma listening on port 57949
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][WARN][BKCL][rdma_init.cpp:1661] tree_pair size: 2 ring_pair size: 1
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:1669] rdma init hostname:[10.180.166.134:53536] rank 29 peer tree rank 21
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:201] local rank/rank [5/29] connect form 10.180.166.135 to 10.180.166.134:53536
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e000000 host 0x7fa1183fe000 remote (nil) local 0x7fa1183fe000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2528][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e200000 host 0x7fa1181fe000 remote 0x7fa1181fe000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2528][INFO][BKCL][rdma_init.cpp:920] rank [29] rdma server connected
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:1669] rdma init hostname:[10.180.166.133:54471] rank 29 peer tree rank 13
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:201] local rank/rank [5/29] connect form 10.180.166.135 to 10.180.166.133:54471
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e400000 host 0x7fa112dfe000 remote (nil) local 0x7fa112dfe000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:1683] rdma init hostname:[10.180.166.132:37014] rank 29 peer ring rank 5
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:201] local rank/rank [5/29] connect form 10.180.166.135 to 10.180.166.132:37014
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e600000 host 0x7fa1123fd000 remote 0x209f41 local 0x7fa1123fd000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2528][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400e800000 host 0x7fa1119fc000 remote 0x7fa1119fc000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2528][INFO][BKCL][rdma_init.cpp:920] rank [29] rdma server connected
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2528][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400ea00000 host 0x7fa110ffb000 remote 0x7fa110ffb000 local (nil)
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2528][INFO][BKCL][rdma_init.cpp:920] rank [29] rdma server connected
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:673] local rank/rank [5/29] connect form 10.180.166.135 to 10.180.166.4:49230
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400ec00000 host 0x7fa1105fa000 remote 0x1fbf41 local 0x7fa1105fa000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:673] local rank/rank [5/29] connect form 10.180.166.135 to 10.180.166.4:49230
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400ee00000 host 0x7fa10fbf9000 remote 0x217f41 local 0x7fa10fbf9000
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:673] local rank/rank [5/29] connect form 10.180.166.135 to 10.180.166.4:49230
+[10:12:30][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x400f000000 host 0x7fa10f1f8000 remote 0x209f41 local 0x7fa10f1f8000
+/workspace/Megatron/megatron/optimizer/distrib_optimizer.py:451: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  bufferin = grad_buffer.data.storage().untyped()
+[10:14:35][bms-ud6gnwzb0t14j2jh47zy][2281][WARN][BKCL][kl3_init.cpp:1179] Temporarily disable butterfly for 4chips
+/opt/venv/xmlir/lib/python3.8/site-packages/torch/distributed/distributed_c10d.py:2562: UserWarning: torch.distributed._all_gather_base is a private function and will be deprecated. Please use torch.distributed.all_gather_into_tensor instead.
+  warnings.warn(
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][WARN][BKCL][init_common.cpp:196] rank 1 host ranks 1, return early
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:117] The ens16np0 ip addr is 10.180.166.135
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:162] host 10.180.164.7: dev 5 get a paired nic [ens16np0] with ip 10.180.166.135
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][WARN][BKCL][rdma_init.cpp:1627] num_rdma_connect = 2
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_init.cpp:844] rank [1] rdma listening on port 43123
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][WARN][BKCL][rdma_init.cpp:1661] tree_pair size: 1 ring_pair size: 1
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:1669] rdma init hostname:[10.180.166.134:33089] rank 1 peer tree rank 0
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:201] local rank/rank [0/1] connect form 10.180.166.135 to 10.180.166.134:33089
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e200000 host 0x7fa39e594000 remote 0x3f8000003f800000 local 0x7fa39e594000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:1683] rdma init hostname:[10.180.166.134:33089] rank 1 peer ring rank 0
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:201] local rank/rank [0/1] connect form 10.180.166.135 to 10.180.166.134:33089
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e400000 host 0x7fa39e392000 remote 0x7fa39e392000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_init.cpp:920] rank [1] rdma server connected
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e600000 host 0x7fa10c7f3000 remote 0x3f8000003f800000 local 0x7fa10c7f3000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483e800000 host 0x7fa10c5f3000 remote 0x7fa10c5f3000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_init.cpp:920] rank [1] rdma server connected
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.166.135 to 10.180.166.134:33089
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483ea00000 host 0x7fa10c3f3000 remote 0x3f8000003f800000 local 0x7fa10c3f3000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483ec00000 host 0x7fa10c1f3000 remote 0x7fa10c1f3000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0xbfe3d90
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.166.135 to 10.180.166.134:33089
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483ee00000 host 0x7fa105dfc000 remote 0x3f8000003f800000 local 0x7fa105dfc000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f000000 host 0x7fa1053fb000 remote 0x7fa1053fb000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0xc003b80
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.166.135 to 10.180.166.134:33089
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f200000 host 0x7fa1049fa000 remote 0x3f8000003f800000 local 0x7fa1049fa000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f400000 host 0x7fa0ffe00000 remote 0x7fa0ffe00000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0x7fa100032a50
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_init.cpp:673] local rank/rank [0/1] connect form 10.180.166.135 to 10.180.166.134:33089
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][2281][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f600000 host 0x7fa0ff3ff000 remote 0x3f8000003f800000 local 0x7fa0ff3ff000
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_common.cpp:574] direct rdma: buf xpu 0x483f800000 host 0x7fa0fe9fe000 remote 0x7fa0fe9fe000 local (nil)
+[10:14:38][bms-ud6gnwzb0t14j2jh47zy][3136][INFO][BKCL][rdma_init.cpp:781] rank [1] rdma server accept peer:0, rdma_ctx:0x7fa100040400
+/opt/venv/xmlir/lib/python3.8/site-packages/torch/distributed/distributed_c10d.py:3030: UserWarning: torch.distributed._reduce_scatter_base is a private function and will be deprecated. Please use torch.distributed.reduce_scatter_tensor instead.
+  warnings.warn(
