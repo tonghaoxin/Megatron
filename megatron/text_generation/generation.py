@@ -245,25 +245,33 @@ def generate_tokens_probs_and_return_on_first_stage(
             # Check if all the sequences have hit the termination_id.
             done = None
             if mpu.is_pipeline_last_stage():
-                # TODO(rprenger) These stopping methods are tokenizer dependent
-                # instead tokenization should be in the inference loop so stop sequences can be used
+                # ★昆仑芯 P800 推理修复（2026-10-06）：
+                #   xdnn_pytorch_wrapper 的 bitwise_and / bitwise_or / bitwise_not
+                #   **不支持 uint8(kuint8)**，原写法 `.byte() & .byte()` 会直接抛
+                #   "RuntimeError: Check ret == 0 failed, bitwise_and, Not implement api for xdnn."
+                #   这些张量只有 [batch_size] 大小，搬到 CPU 用 bool 逻辑运算，开销可忽略。
+                #   语义与原实现完全一致（uint8 的 0/1 与 bool 等价）。
+                _dev = get_accelerator().current_device()
+                _ns = new_sample.detach().to('cpu')
+                _st = started.detach().to('cpu').bool()
+                _done_prev = is_generation_done.detach().to('cpu').bool()
                 if stop_on_double_eol:
-                    hit_double_eol = (new_sample == 628).byte() & started.byte()
-                    hit_two_eols = (new_sample == 198).byte() & (tokens[:, context_length-1] == 198).byte() & started.byte()
-                    done_token = hit_double_eol | hit_two_eols
+                    _prev_tok = tokens[:, context_length - 1].detach().to('cpu')
+                    hit_double_eol = (_ns == 628) & _st
+                    hit_two_eols = (_ns == 198) & (_prev_tok == 198) & _st
+                    _done_now = hit_double_eol | hit_two_eols
                 elif stop_on_eol:
-                    hit_double_eol = (new_sample == 628).byte() & started.byte()
-                    hit_eol = (new_sample == 198).byte() & started.byte()
-                    done_token = hit_double_eol | hit_eol
+                    hit_double_eol = (_ns == 628) & _st
+                    hit_eol = (_ns == 198) & _st
+                    _done_now = hit_double_eol | hit_eol
                 else:
-                    done_token = (new_sample == termination_id).byte() & \
-                        started.byte()
+                    _done_now = (_ns == termination_id) & _st
 
-                just_finished = (done_token & ~is_generation_done).bool()
+                just_finished = (_done_now & ~_done_prev).to(_dev)
                 generated_sequence_lengths[just_finished.view(-1)] = \
                     context_length + 1
-                is_generation_done = is_generation_done | done_token
-                done = torch.all(is_generation_done)
+                is_generation_done = (_done_prev | _done_now).to(_dev).to(torch.uint8)
+                done = torch.all(is_generation_done.detach().to('cpu').bool()).to(_dev).to(torch.uint8)
             done = broadcast_from_last_pipeline_stage(1, torch.uint8,
                                                       tensor=done)
             if use_eod_token_for_early_termination and done:
