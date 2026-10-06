@@ -64,6 +64,38 @@ if __name__ == "__main__":
 
     assert len(model) == 1, "Above condition should have caught this"
     model = model[0]
+
+    # ★昆仑芯 P800 一次性推理模式（2026-10-06 新增）
+    #   背景：Flask 的 put() 是在【工作线程】里执行的，它连续发起三次
+    #     torch.distributed.broadcast（send_do_generate → broadcast_float_list
+    #     → tokenize_prompts 里的 broadcast_tensor/broadcast_int_list）。
+    #   在 XPU + XCCL 上观察到的症状是：非 0 号 rank 拿到的 prompt 张量是
+    #     torch.empty 的未初始化显存（id 量级 1e14~8e18，连 prompt 那几位都是垃圾），
+    #   而 rank0 自己那条流水线（rank 0/4/8/12）再也没返回，HTTP 永久挂住。
+    #   本分支让「广播 + 生成」全部发生在【主线程】，用于一举判定是否就是
+    #   「非主线程发起集合通信」的问题；若能跑通，它本身就是可用的推理入口。
+    _once_prompt = os.environ.get("INF_ONCE_PROMPT", "")
+    if _once_prompt:
+        _tok_gen = int(os.environ.get("INF_ONCE_TOKENS", "32"))
+        _top_k = int(os.environ.get("INF_ONCE_TOP_K", "1"))
+        torch.distributed.barrier()
+        if mpu.is_pipeline_first_stage() and mpu.get_tensor_model_parallel_rank() == 0:
+            print("[ONCE] prompt=%r tokens_to_generate=%d top_k=%d" %
+                  (_once_prompt, _tok_gen, _top_k), flush=True)
+            _out = generate_and_post_process(
+                model,
+                prompts=[_once_prompt],
+                tokens_to_generate=_tok_gen,
+                top_k_sampling=_top_k,
+                add_BOS=False,
+                use_eod_token_for_early_termination=True)
+            print("[ONCE] RESULT >>> " + repr(_out[0]), flush=True)
+        else:
+            generate_and_post_process(model=model)
+        torch.distributed.barrier()
+        print("[ONCE] DONE rank=%d" % torch.distributed.get_rank(), flush=True)
+        sys.exit(0)
+
     if mpu.is_pipeline_first_stage() and mpu.get_tensor_model_parallel_rank() == 0:
         server = MegatronServer(model)
         server.run("0.0.0.0")

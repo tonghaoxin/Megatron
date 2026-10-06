@@ -22,10 +22,33 @@ def detokenize_generations(tokens_gpu_tensor,
     if return_segments:
         prompts_plus_generations_segments = []
 
+    # ★昆仑芯 P800 推理修复（2026-10-06）：
+    #   训练时 Megatron 把词表从 32000 pad 到 32256（128*4=512 的倍数），
+    #   sentencepiece 只认 [0, 32000)。一旦有 id 落在这个区间之外（负数或 >=32000），
+    #   DecodeIds 会抛 "IndexError: Out of range: piece id is out of range."，
+    #   把已经生成完的结果全毁掉。这里先把越界 id 过滤掉，保证 decode 一定能跑完，
+    #   并打印被过滤的 id 便于定位来源。
+    _vocab_size = getattr(tokenizer, 'vocab_size', None)
+
     tokens = tokens_gpu_tensor.cpu().numpy().tolist()
     lengths = lengths_gpu_tensor.cpu().numpy().tolist()
     for sequence_tokens, length in zip(tokens, lengths):
         sequence_tokens = sequence_tokens[:length]
+        # ★昆仑芯 P800 诊断：把首段生成出来的前 12 个 id 打出来，
+        #   用来判断垃圾是来自 prompt（广播没落地）还是来自采样回传。
+        try:
+            print("[detok] rank={} length={} head={}".format(
+                torch.distributed.get_rank(), length, sequence_tokens[:12]),
+                flush=True)
+        except Exception:
+            pass
+        if _vocab_size is not None:
+            _bad = [t for t in sequence_tokens if not (0 <= t < _vocab_size)]
+            if _bad:
+                print("[detok] out-of-vocab ids (piece range [0, {})): sample={} total={}".format(
+                    _vocab_size, _bad[:10], len(_bad)), flush=True)
+                sequence_tokens = [t for t in sequence_tokens
+                                   if 0 <= t < _vocab_size]
         prompts_plus_generations.append(
             tokenizer.detokenize(sequence_tokens))
         if return_segments:
@@ -83,6 +106,19 @@ def tokenize_prompts(prompts=None, tokens_to_generate=None,
     prompts_length_long_tensor = broadcast_tensor(
         sizes[0], torch.int64, tensor=prompts_length_long_tensor,
         rank=rank)
+
+    # ★昆仑芯 P800 诊断（2026-10-06）：确认 prompt 张量是否真的广播到了每一个 rank。
+    #   若非 0 号 rank 打印出 1e14~8e18 量级的值 => 广播没落地，tokens 仍是
+    #   torch.empty 的未初始化显存（这是 detokenize 报 piece id out of range 的真因）。
+    try:
+        print("[tok-bcast] rank={} shape={} head={}".format(
+            torch.distributed.get_rank(),
+            list(prompts_tokens_long_tensor.size()),
+            prompts_tokens_long_tensor.view(-1)[:12].cpu().numpy().tolist()),
+            flush=True)
+    except Exception as _e:  # 诊断打印本身不能影响主流程
+        print("[tok-bcast] rank={} diag failed: {}".format(
+            torch.distributed.get_rank(), _e), flush=True)
 
     return prompts_tokens_long_tensor, prompts_length_long_tensor
 

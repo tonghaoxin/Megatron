@@ -26,14 +26,22 @@ set -x
 ROOT_DIR=$( dirname -- "$( readlink -f -- "$0"; )"; )
 
 #################################
-# 0. 先把命令行传入的 NODE_RANK / MASTER_PORT 存下来
-#    （config.sh 里 export 了 NODE_RANK=0，source 之后会覆盖命令行传进来的值，
-#      所以必须先保存、source 完再覆盖回去）
+# 0. 先把命令行传入的可能被 config.sh 覆盖的变量存下来
+#    （config.sh 里 export 了 NODE_RANK=0 / NNODES=4 / MASTER_ADDR / MASTER_PORT /
+#      CHECKPOINT_PATH，source 之后会覆盖命令行传进来的值，所以必须先保存、source 完再还原）
+#
+#    ★这里踩过两次坑：
+#      第一次：只保护了 NODE_RANK，四台启动时 NODE_RANK 全变成 0
+#      第二次：NNODES 没保护，单机自检传 NNODES=1 被 config.sh 的 4 吃掉，
+#              torchrun 仍在等四节点 rendezvous → 卡住不动
+#    教训：config.sh 里出现过的每一个变量，这里都要保护。
 #################################
 IN_NODE_RANK=${NODE_RANK:-}
+IN_NNODES=${NNODES:-}
 IN_MASTER_PORT=${MASTER_PORT:-}
 IN_MASTER_ADDR=${MASTER_ADDR:-}
 IN_CKPT_PATH=${CHECKPOINT_PATH:-}
+IN_CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
 
 #################################
 # config（复用训练用的 config.sh）
@@ -41,11 +49,13 @@ IN_CKPT_PATH=${CHECKPOINT_PATH:-}
 source "$ROOT_DIR/../config.sh"
 
 NODE_RANK=${IN_NODE_RANK:-${NODE_RANK:-0}}
+NNODES=${IN_NNODES:-${NNODES:-4}}
 MASTER_PORT=${IN_MASTER_PORT:-9917}          # 与训练的 9916 错开
 MASTER_ADDR=${IN_MASTER_ADDR:-${MASTER_ADDR:-"192.168.0.15"}}
 CHECKPOINT_PATH=${IN_CKPT_PATH:-${CHECKPOINT_PATH:-"/workspace/checkpoints_4_4_2"}}
 
 export NODE_RANK
+export NNODES
 export MASTER_PORT
 export MASTER_ADDR
 
@@ -61,12 +71,24 @@ LOAD_ITER=${LOAD_ITER:-500}                  # 要加载的迭代号
 export LD_LIBRARY_PATH=${SO_PATH:-"$ROOT_DIR/../xccl-so:$ROOT_DIR/../xre-so:$LD_LIBRARY_PATH"}
 
 # ---- 关键：每台只用 4 张卡 => world = 4 机 x 4 卡 = 16 = TP4 x PP4 x DP1 ----
-export CUDA_VISIBLE_DEVICES="0,1,2,3"
+export CUDA_VISIBLE_DEVICES=${IN_CUDA_VISIBLE_DEVICES:-"0,1,2,3"}
 GPUS_PER_NODE=`echo "$CUDA_VISIBLE_DEVICES" | awk -F, '{print NF}'`
 
-NNODES=${NNODES:-4}
 TP_SIZE=${TP_SIZE:-4}
 PP_SIZE=${PP_SIZE:-4}
+
+#################################
+# ★启动参数回显：每次都打一行，防止再出现"传了 NNODES=1 却没生效"这种哑亏
+#################################
+echo "=============================================================="
+echo " 启动配置: NODE_RANK=${NODE_RANK}  NNODES=${NNODES}  GPUS_PER_NODE=${GPUS_PER_NODE}"
+echo "           world = ${NNODES} x ${GPUS_PER_NODE} = $((NNODES * GPUS_PER_NODE))   (TP x PP = $((TP_SIZE * PP_SIZE)))"
+echo "           MASTER=${MASTER_ADDR}:${MASTER_PORT}"
+echo "=============================================================="
+if [ $((NNODES * GPUS_PER_NODE)) -ne $((TP_SIZE * PP_SIZE)) ]; then
+    echo " [!] 注意：world($((NNODES * GPUS_PER_NODE))) != TP($TP_SIZE) x PP($PP_SIZE)，"
+    echo "     会先撞 parallel_state.py:132 的 RuntimeError —— 单机自检时这是预期结果。"
+fi
 
 #################################
 # 锁定到 iter 500：软链目录 + tracker 文件
@@ -270,13 +292,106 @@ else
 fi
 
 #################################
+# ★PYTHONPATH：默认什么都不注入（这是 2026-10-06 单机定位出来的元凶候选）
+#
+# 为什么默认空：
+#   1) 训练脚本那一行写的是**单引号**
+#        PYTHONPATH='$ROOT_DIR/..':'$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops':$PYTHONPATH
+#      变量不展开 ⇒ 实际注入的是两个带美元号的无效路径 ⇒ **训练时这两个路径根本没生效**，
+#      训练靠 pretrain_llama.py 所在目录自动进 sys.path[0] 才 import 到 megatron。
+#   2) run_llama_text_generation_server.py 第 7-8 行自己做了
+#        sys.path.append(dirname(__file__)/..)   == /workspace/Megatron
+#      所以推理脚本也**不需要**外部注入 Megatron 根目录。
+#   3) 2026-10-06 复现实测：注入 → 崩；**不注入 → 照样崩**，现象完全一致
+#      （nnodes=1 / world=4 单机也一样），所以 PYTHONPATH **已被证伪**，不是元凶。
+#      保留这个开关只为对齐训练脚本的实际行为、便于回退对比。
+#
+# 想恢复注入时：INF_EXTRA_PYTHONPATH="/workspace/Megatron:..." bash 本脚本
+#################################
+if [ -n "${INF_EXTRA_PYTHONPATH:-}" ]; then
+    export PYTHONPATH="${INF_EXTRA_PYTHONPATH}:${PYTHONPATH}"
+    echo " [i] 额外注入 PYTHONPATH: ${INF_EXTRA_PYTHONPATH}"
+else
+    echo " [i] 不注入任何 PYTHONPATH（与训练脚本的实际行为一致）"
+fi
+
+#################################
+# ★输出缓冲：必须关掉
+#
+# Python 3.8 在「stdout/stderr 被重定向到文件」时是**块缓冲**（8KB 一刷），
+# 进程若被硬杀 / 被 C 层 exit，缓冲区里的内容（包括 traceback）会全部丢失。
+# 这就是为什么之前四次尝试都是「全程零 Python 输出 + exit 1」：
+# 看得见的行（XCCL loaded / BKCL WARN / SYMBOL_REWRITE）都是 **C 层**直接写 stderr，
+# 不受 Python 缓冲影响；而 Python 层写的东西可能压根没刷出来。
+# 加上 PYTHONUNBUFFERED=1 之后，任何 print 都会立刻落盘，真正的报错才会现形。
+#################################
+export PYTHONUNBUFFERED=1
+export PYTHONDONTWRITEBYTECODE=1
+echo " [i] PYTHONUNBUFFERED=1（关闭输出缓冲，避免报错被吞）"
+
+#################################
+# ★★日志去向（2026-10-06 排障的头号发现）
+#
+# `megatron/accelerator/xpu_accelerator.py` 顶层（不在函数里，import 就执行）：
+#       rank      = os.getenv("RANK", "0")
+#       dir_path  = "./logs" + strftime("%Y-%m-%d_%H_") + str(getenv("XMLIR_LOG_PREFIX"))
+#       log_file  = dir_path + "/" + rank + ".log"
+#       if getenv("SAVE_LOG_FILE_WITH_RANK_ID", "true") == "true":
+#           fd = os.open(log_file, O_WRONLY|O_CREAT|O_TRUNC)
+#           os.dup2(fd, 1);  os.dup2(fd, 2)      # ← stdout/stderr 被整个换掉
+#
+# 而触发时机极早：megatron/__init__.py 会 `from .initialize import initialize_megatron`，
+# initialize.py 第 27 行在 **模块级** 就跑了 `get_accelerator().get_operator(...)`，
+# 于是 get_accelerator() → import xpu_accelerator → dup2。
+# ⇒ **只要 import megatron 成功，之后所有 print / traceback 全进那个 ./logs... 目录**，
+#    nohup 重定向的那个文件从此变哑（只剩之前 C 层已经写出去的 XCCL/BKCL 那些行）。
+#    这就是为什么四次尝试都是「SYMBOL_REWRITE 之后一片空白 + exit 1」。
+#    （顺带解释：训练时找到的 0.log / 31.log 就是这个机制产生的。）
+#
+# 默认关掉：设 false 后一切回到本脚本的日志里，排障最省事。
+# 想恢复昆仑芯的分 rank 日志：INF_KEEP_RANK_LOG=1 bash 本脚本
+#################################
+if [ "${INF_KEEP_RANK_LOG:-0}" = "1" ]; then
+    export SAVE_LOG_FILE_WITH_RANK_ID=true
+    echo " [i] 保留昆仑芯分 rank 日志 -> ./logs<日期>_${XMLIR_LOG_PREFIX:-None}/<RANK>.log"
+else
+    export SAVE_LOG_FILE_WITH_RANK_ID=false
+    echo " [i] SAVE_LOG_FILE_WITH_RANK_ID=false —— 所有输出回到本日志文件（排障用）"
+fi
+
+#################################
 # 启动推理服务
 # 只有 NODE_RANK=0 的 local_rank 0 会起 Flask，监听 0.0.0.0:5000
 # 客户端连这台机器的 IP:5000
 #################################
 XFLAGS --enable megatron_aiak
-PYTHONPATH="$ROOT_DIR/..":"$ROOT_DIR/../megatron/accelerator/custom_ops/xpu_ops":$PYTHONPATH \
+
+if [ "${INF_DIRECT:-0}" = "1" ]; then
+    ###########################################################################
+    # 排障模式：不用 torchrun，单进程直接跑 python -u
+    #
+    # 为什么要这一步：torchrun 会把 4 个子进程的输出混在同一个文件里，而且
+    # 它自己会先把 XCCL/BKCL/SYMBOL_REWRITE 那一堆 C 层日志打出来，夹在中间，
+    # 让"到底有没有 Python 报错"变得很难读。这里把 torchrun 整个摘掉：
+    #   - 单进程、python -u（无缓冲）→ 任何 traceback 都会原样落盘
+    #   - world=1 必然撞 parallel_state 的 RuntimeError，
+    #     看到那行 = 前面所有 import / 参数解析都过了（"到此一游"标记）
+    # 用法： INF_DIRECT=1 NODE_RANK=0 MASTER_ADDR=127.0.0.1 MASTER_PORT=9918 bash 本脚本
+    ###########################################################################
+    echo " [!] INF_DIRECT=1 —— 单进程直跑模式（排障用，不会起服务）"
+    export RANK=0
+    export WORLD_SIZE=1
+    export LOCAL_RANK=0
+    export MASTER_ADDR=${MASTER_ADDR:-127.0.0.1}
+    export MASTER_PORT=${MASTER_PORT:-9918}
+    cd "$ROOT_DIR/.." || exit 1
+    /opt/venv/xmlir/bin/python -u tools/run_llama_text_generation_server.py \
+        $LLAMA2_70B_ARGS \
+        $LOAD_ARGS
+    echo "---- 直跑结束，退出码: $? ----"
+else
     torchrun $DISTRIBUTED_ARGS \
-    $ROOT_DIR/../tools/run_llama_text_generation_server.py \
-    $LLAMA2_70B_ARGS \
-    $LOAD_ARGS
+        $ROOT_DIR/../tools/run_llama_text_generation_server.py \
+        $LLAMA2_70B_ARGS \
+        $LOAD_ARGS
+fi
