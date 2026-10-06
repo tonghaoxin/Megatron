@@ -176,6 +176,12 @@ def generate_tokens_probs_and_return_on_first_stage(
         attention_mask, position_ids = _build_attention_mask_and_position_ids(
             tokens)
         prev_context_length = 0
+        # ★昆仑芯 P800 推理修复（2026-10-06）：
+        #   下面的 for 循环变量 context_length 会在循环之后（切片 tokens）被引用。
+        #   一旦 range(min_prompt_length, max_sequence_length) 为空（两者相等时），
+        #   循环体一次都不执行 => context_length 从未绑定 => UnboundLocalError。
+        #   这里先给一个兜底初值；正常路径下它会被循环立即覆盖，不改变任何行为。
+        context_length = min_prompt_length
         for context_length in range(min_prompt_length, max_sequence_length):
 
             # Pick the slice that we need to pass through the network.
