@@ -174,7 +174,17 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
 # 模型结构参数：必须与训练脚本逐项一致
 #
 # ★三项绝不能漏（漏了不会报 shape mismatch，而是静默加载失败或用错路径）：
-#   1) --sequence-parallel        训练时开着，它改变 embedding/layernorm 的切分方式
+#   1) --sequence-parallel  ——★推理时必须关★（本脚本默认已关，见下方 SEQ_PARALLEL_ARG）
+#      训练时开着，它改变 **激活向量**（embedding 输出 / LayerNorm / Linear 残差）的切分方式：
+#      沿 **序列维 s** 切成 TP=4 份。训练时 s=4096，4096%4=0，正常。
+#      但在线推理是 **逐 token 解码**：prefix 之后每次 forward 的 s 都 = 1，
+#      1 % 4 != 0 ⇒ 直接撞 mappings.py:58
+#           assert dim_size % world_size == 0,
+#           "First dimension of the tensor should be divisible by tensor parallel size"
+#      ★关掉它不影响 checkpoint 加载：sequence-parallel 只切 **激活**，不切 **权重**，
+#        80 层 attention/mlp layernorm/Linear 的 shape 完全不受它影响，
+#        16 片 .pt 的形状不变 ⇒ 原地加载照常成功。
+#      想强行恢复（不推荐）：INF_SEQ_PARALLEL=1 bash 本脚本
 #   2) --use-distributed-optimizer
 #      决定了加载时去找哪个文件名：
 #        True  -> mp_rank_{tp}_{pp}/model_rng.pt        （我们存的这个）
@@ -186,6 +196,17 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE
 #       它们只在 generate_samples.py 那种一次性脚本里用。server 模式下这些值由 HTTP 请求体决定
 #       （见 megatron/text_generation_server.py:32-231，默认 tokens_to_generate=64）。
 #################################
+
+#################################
+# ★序列并行开关：推理默认 **关闭**
+#   原因见上面第 1) 条。默认不传 --sequence-parallel，命令行上空一个参数位。
+#################################
+SEQ_PARALLEL_ARG=""
+if [ "${INF_SEQ_PARALLEL:-0}" = "1" ]; then
+    SEQ_PARALLEL_ARG="--sequence-parallel"
+fi
+echo " [i] sequence-parallel = ${SEQ_PARALLEL_ARG:-OFF （推理默认关闭，避免逐 token 解码时 s=1 无法被 TP 整除）}"
+
 LLAMA2_70B_ARGS="--tensor-model-parallel-size ${TP_SIZE} \
                  --pipeline-model-parallel-size ${PP_SIZE} \
                  --num-layers 80 \
@@ -197,7 +218,7 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size ${TP_SIZE} \
                  --max-position-embeddings 4096 \
                  --tokenizer-type LLaMASentencePieceTokenizer \
                  --tokenizer-model $TOKENIZER_PATH \
-                 --sequence-parallel \
+                 ${SEQ_PARALLEL_ARG} \
                  --rmsnorm-epsilon 1e-6 \
                  --activation-func swiglu \
                  --use-rotary-position-embeddings \
