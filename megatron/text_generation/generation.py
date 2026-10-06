@@ -272,12 +272,15 @@ def generate_tokens_probs_and_return_on_first_stage(
                     context_length + 1
                 _done_all = _done_prev | _done_now
                 is_generation_done = _done_all.to(_dev)
-                # ★ 原来这里 broadcast 用 torch.uint8，BKCL 不支持：
+                # ★ 这里原先用 torch.uint8 广播，BKCL 不支持：
                 #   "RuntimeError: BKCL_UINT8 datatype has bkcl's sync issues in Multi-Stream".
-                #   改成 int32；顺带给它 [1] 的形状（原来是 0 维，与非末段 torch.empty(1) 形状不一致）。
+                #   改成 int64 —— 而不是 int32 —— 是因为 int64 的 broadcast 在本环境已被
+                #   实证可用（prompt 张量的全局广播 [tok-bcast]、以及上面第 240 行
+                #   copy_from_last_to_first_pipeline_stage 的 int64 广播都跑通了）。
+                #   同时给 [1] 形状（原来 last stage 是 0 维，与非末段 torch.empty(1) 不一致）。
                 done = torch.tensor([bool(_done_all.all().item())],
-                                    dtype=torch.int32, device=_dev)
-            done = broadcast_from_last_pipeline_stage(1, torch.int32,
+                                    dtype=torch.int64, device=_dev)
+            done = broadcast_from_last_pipeline_stage(1, torch.int64,
                                                       tensor=done)
             if use_eod_token_for_early_termination and done:
                 break
