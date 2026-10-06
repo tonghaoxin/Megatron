@@ -156,7 +156,35 @@ def _tokenize_prompts_and_batch(prompts, tokens_to_generate, add_BOS):
         prompt_tokens.extend([tokenizer.eod] * padding_size)
 
     # Now we are in a structured format, we can convert to tensors.
-    prompts_tokens_tensor = get_accelerator().LongTensor(prompts_tokens)
-    prompts_length_tensor = get_accelerator().LongTensor(prompts_length)
+    #
+    # ★★昆仑芯 P800 推理根因修复（2026-10-06）★★
+    # 原写法是 get_accelerator().LongTensor(...)，但
+    #   megatron/accelerator/xpu_accelerator.py:346 把 LongTensor() 返回成了
+    #   torch.cuda.IntTensor —— 也就是 **int32**（原实现被注释掉：
+    #   "# return torch.cuda.LongTensor" / "return torch.cuda.IntTensor"）。
+    # 而接收端 megatron/text_generation/communication.py:145 的 broadcast_tensor()
+    # 在非 0 号 rank 上按调用方传入的 dtype 分配缓冲，这里传的是 torch.int64。
+    # ⇒ rank0 广播 40×4=160 字节，其余 15 个 rank 按 40×8=320 字节接收：
+    #    · 前半段 = 两个 int32 被重新解释成一个 int64
+    #      （实测 128294968098817 = 29871×2^32 + 1，正是 token id 1(<s>) 与 29871(▁)）
+    #    · 后半段 = 完全没被写过的未初始化显存（1e18 级垃圾）
+    # 后果：detokenize 报 "piece id is out of range"，且 rank0 那条流水线
+    #       （rank 0/4/8/12）因收发字节数不匹配而卡死、HTTP 永不返回。
+    #
+    # 修法：这里显式按 int64 构造（先在 CPU 构造再整体搬设备，是最稳的写入路径），
+    #       使广播两端 dtype 与字节数一致。不去改 xpu_accelerator.py —— 那是平台文件。
+    prompts_tokens_tensor = torch.tensor(prompts_tokens, dtype=torch.int64).to(
+        get_accelerator().current_device())
+    prompts_length_tensor = torch.tensor(prompts_length, dtype=torch.int64).to(
+        get_accelerator().current_device())
+
+    try:
+        print("[tok-build] rank={} dtype={} head={}".format(
+            torch.distributed.get_rank(),
+            prompts_tokens_tensor.dtype,
+            prompts_tokens_tensor.view(-1)[:12].cpu().numpy().tolist()),
+            flush=True)
+    except Exception:
+        pass
 
     return prompts_tokens_tensor, prompts_length_tensor
