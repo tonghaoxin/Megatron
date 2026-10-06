@@ -165,7 +165,10 @@ def generate_tokens_probs_and_return_on_first_stage(
                 device=get_accelerator().current_device()) * max_sequence_length
 
     # Whether we have reached a termination id.
-    is_generation_done = torch.zeros(batch_size, dtype=torch.uint8,
+    # ★昆仑芯 P800 推理修复（2026-10-06）：原来是 uint8；XPU 上 uint8 既不支持位运算
+    #   （bitwise_and 无 kuint8 实现）也不支持集合通信（BKCL_UINT8 多流同步有 bug），
+    #   所以这里从源头改成 bool，彻底不产生 uint8 张量。
+    is_generation_done = torch.zeros(batch_size, dtype=torch.bool,
                                      device=get_accelerator().current_device())
 
     # =============
@@ -245,12 +248,9 @@ def generate_tokens_probs_and_return_on_first_stage(
             # Check if all the sequences have hit the termination_id.
             done = None
             if mpu.is_pipeline_last_stage():
-                # ★昆仑芯 P800 推理修复（2026-10-06）：
-                #   xdnn_pytorch_wrapper 的 bitwise_and / bitwise_or / bitwise_not
-                #   **不支持 uint8(kuint8)**，原写法 `.byte() & .byte()` 会直接抛
-                #   "RuntimeError: Check ret == 0 failed, bitwise_and, Not implement api for xdnn."
-                #   这些张量只有 [batch_size] 大小，搬到 CPU 用 bool 逻辑运算，开销可忽略。
-                #   语义与原实现完全一致（uint8 的 0/1 与 bool 等价）。
+                # ★昆仑芯 P800 推理修复（2026-10-06）：见上方注释，
+                #   xdnn_pytorch_wrapper 的 bitwise_and/or/not **不支持 uint8(kuint8)**，
+                #   张量只有 [batch_size]，搬到 CPU 用 bool 逻辑运算，开销可忽略，语义等价。
                 _dev = get_accelerator().current_device()
                 _ns = new_sample.detach().to('cpu')
                 _st = started.detach().to('cpu').bool()
@@ -270,9 +270,14 @@ def generate_tokens_probs_and_return_on_first_stage(
                 just_finished = (_done_now & ~_done_prev).to(_dev)
                 generated_sequence_lengths[just_finished.view(-1)] = \
                     context_length + 1
-                is_generation_done = (_done_prev | _done_now).to(_dev).to(torch.uint8)
-                done = torch.all(is_generation_done.detach().to('cpu').bool()).to(_dev).to(torch.uint8)
-            done = broadcast_from_last_pipeline_stage(1, torch.uint8,
+                _done_all = _done_prev | _done_now
+                is_generation_done = _done_all.to(_dev)
+                # ★ 原来这里 broadcast 用 torch.uint8，BKCL 不支持：
+                #   "RuntimeError: BKCL_UINT8 datatype has bkcl's sync issues in Multi-Stream".
+                #   改成 int32；顺带给它 [1] 的形状（原来是 0 维，与非末段 torch.empty(1) 形状不一致）。
+                done = torch.tensor([bool(_done_all.all().item())],
+                                    dtype=torch.int32, device=_dev)
+            done = broadcast_from_last_pipeline_stage(1, torch.int32,
                                                       tensor=done)
             if use_eod_token_for_early_termination and done:
                 break
