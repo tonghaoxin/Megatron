@@ -207,6 +207,44 @@ if [ "${INF_SEQ_PARALLEL:-0}" = "1" ]; then
 fi
 echo " [i] sequence-parallel = ${SEQ_PARALLEL_ARG:-OFF （推理默认关闭，避免逐 token 解码时 s=1 无法被 TP 整除）}"
 
+#################################
+# ★RoPE（旋转位置编码）走哪条实现：推理默认 **纯 PyTorch 原生**
+#
+# 为什么改：上一次跑通到 RoPE 这一层，四台同时刷
+#     [ASSERT-FAIL](1==9)[.../xdnn_pytorch_wrapper/rotary_pos_emb_qk_forward.cpp:192]
+#     Check ret == 0 failed, left operand=1, rotary_pos_emb_qk custom kernel call Failed
+#   这是昆仑芯的**融合 RoPE kernel**（torch.ops.custom_ops.rotary_pos_emb_qk）。
+#   调用链：transformer.py:745-749 → apply_rotary_pos_emb_with_freqs()
+#           → custom_apply_rope_with_freqs
+#           → RotaryPositionalEmbeddingWithFreqsFunction  (xpu_interface_manager.py:469)
+#           → rotary_with_freqs_pos_emb_qk_forward        ← 就是崩在这里
+#   它内部的 c++ 断言对 q/k/freqs 的形状有硬性要求，
+#   而 kv-cache 解码时的布局（sq=1 vs prefill 的 sq=9）踩不进去 ⇒ 断言失败。
+#   训练能跑到 500 步是因为训练是全长度 prefill，没有这种布局。
+#
+# 关掉 `--apply-rotary-positional-embedding-kernel` 之后走的是
+#   transformer.py:748 → apply_rotary_pos_emb() → rotary_pos_embedding.py:185
+#   再叠加 `--apply-rope-native` ⇒ 第 187-188 行的**纯 PyTorch 数学**：
+#       q = q*cos + rotate_half(q)*sin
+#   ⇒ XPU 自定义算子一步都不走，不可能再撞 c++ 断言。
+#
+# 注意：RoPE **不产生任何权重**（freqs/cache 是运行时算出来的），
+#       所以换实现**不影响 checkpoint 加载**，也不用重切分。只是慢一点点。
+#
+# 想换回融合 kernel 对比：INF_ROPE_KERNEL=1 bash 本脚本
+# 想只关 kernel、不强制 native（走另一个 xpu 算子 rotary_no_freqs_pos_emb_forward）：
+#       INF_ROPE_NATIVE=0 bash 本脚本
+#################################
+ROPE_KERNEL_ARG=""
+INF_ROPE_NATIVE_ARG="--apply-rope-native"
+if [ "${INF_ROPE_KERNEL:-0}" = "1" ]; then
+    ROPE_KERNEL_ARG="--apply-rotary-positional-embedding-kernel"
+fi
+if [ "${INF_ROPE_NATIVE:-1}" != "1" ]; then
+    INF_ROPE_NATIVE_ARG=""
+fi
+echo " [i] RoPE: 融合kernel=${ROPE_KERNEL_ARG:-OFF}  原生实现=${INF_ROPE_NATIVE_ARG:-OFF}"
+
 LLAMA2_70B_ARGS="--tensor-model-parallel-size ${TP_SIZE} \
                  --pipeline-model-parallel-size ${PP_SIZE} \
                  --num-layers 80 \
@@ -241,7 +279,8 @@ LLAMA2_70B_ARGS="--tensor-model-parallel-size ${TP_SIZE} \
                  --memory-saving \
                  --use-distributed-optimizer \
                  --use-cpu-initialization \
-                 --apply-rotary-positional-embedding-kernel \
+                 ${ROPE_KERNEL_ARG} \
+                 ${INF_ROPE_NATIVE_ARG} \
                  --seed 42 \
                  --fp16"
 
