@@ -40,9 +40,12 @@ python tools/convert_qwen_megatron_to_hf_qwen2.py \
    本脚本按此拆分，已与源码核对（megatron/model/activation_funcs.py:70-71）。
 """
 
+import os
+
+os.environ.setdefault("SAVE_LOG_FILE_WITH_RANK_ID", "false")
+
 import argparse
 import json
-import os
 import shutil
 import sys
 
