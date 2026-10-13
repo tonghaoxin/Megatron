@@ -116,14 +116,58 @@ def find_model_file(load_path):
     return candidates[0]
 
 
-def get_path(d, dotted):
-    """按 'a.b.c' 逐层取 dict。"""
-    cur = d
-    for k in dotted.split("."):
-        if k not in cur:
-            raise KeyError("checkpoint 里找不到 key: %s （缺 %s）" % (dotted, k))
-        cur = cur[k]
-    return cur
+def flatten_state_dict(d, prefix=""):
+    """把嵌套的 state_dict 拍平成 'a.b.c' 形式的平铺字典。
+
+    该 fork 的 ckpt 嵌套层数不固定（本例实测是 model / language_model / encoder
+    三层嵌套，再往下才是平铺的 dotted key），所以统一拍平后按后缀查找最稳，
+    不用去猜每一层的字典名。
+    """
+    flat = {}
+    if not isinstance(d, dict):
+        return flat
+    for k, v in d.items():
+        key = ("%s.%s" % (prefix, k)) if prefix else str(k)
+        if isinstance(v, dict):
+            sub = flatten_state_dict(v, key)
+            if sub:
+                flat.update(sub)
+            else:
+                flat[key] = v
+        else:
+            flat[key] = v
+    return flat
+
+
+def get_path(sd, candidates):
+    """在 ckpt 里按候选 key 列表找第一个存在的 tensor。
+
+    candidates 里写「尽量完整」的路径；先精确匹配，再按后缀匹配（取最短命中）。
+    """
+    if isinstance(candidates, str):
+        candidates = [candidates]
+    flat = flatten_state_dict(sd, "")
+    for c in candidates:
+        if c in flat:
+            return flat[c]
+    for c in candidates:
+        hits = [k for k in flat if k == c or k.endswith("." + c)]
+        if hits:
+            hits.sort(key=len)
+            return flat[hits[0]]
+    raise KeyError(
+        "checkpoint 里找不到下列任何一个 key：\n  %s\n"
+        "ckpt 中实际存在的 key（最多列 30 个）：\n  %s"
+        % ("\n  ".join(candidates), "\n  ".join(sorted(flat.keys())[:30]))
+    )
+
+
+def layer_key(i, name):
+    """第 i 层的某个参数，给出候选路径（兼容嵌套层数不同的 ckpt）。"""
+    short = "layers.%d.%s" % (i, name)
+    return ["model.language_model.encoder." + short,
+            "language_model.encoder." + short,
+            short]
 
 
 # ---------------------------------------------------------------------------
@@ -171,22 +215,27 @@ def convert(args):
         print("\n=== Megatron checkpoint 结构 ===")
         for k, v in sd.get("model", sd).items() if isinstance(sd.get("model", sd), dict) else []:
             print("  %s : %s" % (k, type(v).__name__))
-        enc = None
-        try:
-            enc = get_path(sd, "model.language_model.encoder")
-        except KeyError:
-            pass
-        if enc is not None:
-            keys = [k for k in enc.keys() if k.startswith("layers.0.")]
-            print("\n--- 第 0 层的 key 与形状 ---")
-            for k in sorted(keys):
-                val = enc[k]
-                print("  %-60s %s" % (k, tuple(val.shape) if hasattr(val, "shape") else val))
-            print("\n--- 非层的 key ---")
-            for k in sorted(enc.keys()):
-                if not k.startswith("layers."):
-                    val = enc[k]
-                    print("  %-60s %s" % (k, tuple(val.shape) if hasattr(val, "shape") else val))
+        flat = flatten_state_dict(sd, "")
+        print("\n--- 顶层部件（embedding / output_layer / final norm）---")
+        for c in ["model.language_model.embedding.word_embeddings.weight",
+                  "model.language_model.output_layer.weight",
+                  "model.language_model.encoder.final_layernorm.weight"]:
+            hits = [k for k in flat if k == c or k.endswith("." + c)]
+            if not hits:
+                hits = [k for k in flat if (c.split(".")[-2] + "." + c.split(".")[-1]) in k]
+            if hits:
+                hits.sort(key=len)
+                val = flat[hits[0]]
+                print("  %-60s %s" % (hits[0], tuple(val.shape) if hasattr(val, "shape") else val))
+            else:
+                print("  %-60s <未找到>" % c)
+
+        keys0 = [k for k in flat if k.endswith(".layers.0." + k.split(".layers.0.")[-1])
+                 and ".layers.0." in k]
+        print("\n--- 第 0 层的 key 与形状 ---")
+        for k in sorted(keys0):
+            val = flat[k]
+            print("  %-60s %s" % (k, tuple(val.shape) if hasattr(val, "shape") else val))
         margs = sd.get("args", None)
         if margs is not None:
             print("\n--- ckpt 里记录的训练参数（节选）---")
@@ -231,18 +280,24 @@ def convert(args):
              "fp32": torch.float32}[args.dtype]
 
     # ---- 顶层部件 ----
-    emb = get_path(sd, "model.language_model.embedding.word_embeddings.weight")
+    emb = get_path(sd, ["model.language_model.embedding.word_embeddings.weight",
+                        "language_model.embedding.word_embeddings.weight",
+                        "word_embeddings.weight"])
     try:
-        out_layer = get_path(sd, "model.language_model.output_layer.weight")
+        out_layer = get_path(sd, ["model.language_model.output_layer.weight",
+                                  "language_model.output_layer.weight",
+                                  "output_layer.weight"])
+        tie = False
     except KeyError:
         out_layer = emb  # tie word embeddings
+        tie = True
         print("[!] 没找到 output_layer，按 tie_word_embeddings=True 处理")
 
-    enc = get_path(sd, "model.language_model.encoder")
-    try:
-        final_norm = enc["final_layernorm.weight"]
-    except KeyError:
-        final_norm = enc["final_norm.weight"]
+    final_norm = get_path(sd, ["model.language_model.encoder.final_layernorm.weight",
+                               "language_model.encoder.final_layernorm.weight",
+                               "final_layernorm.weight"])
+    print("[i] embedding: %s | output_layer: %s | final_norm: %s"
+          % (tuple(emb.shape), tuple(out_layer.shape), tuple(final_norm.shape)))
 
     vocab_rows = emb.shape[0]
     vocab_size = int(args.vocab_size) if args.vocab_size else vocab_rows
@@ -256,29 +311,50 @@ def convert(args):
     out["lm_head.weight"] = out_layer.to(dtype).clone()
     out["model.norm.weight"] = final_norm.to(dtype).clone()
 
+    # ---- 用 qkv 实际形状反推 kv_heads（形状才是真相，args 可能是假信息）----
+    # 实测教训：训练脚本传了 --num-query-groups 2，ckpt args 里也记着 2，
+    # 但 fused qkv 实际是 6144 行 = (16 + 2*16)*128 ⇒ kv_heads 其实是 16（MHA）。
+    # ⇒ 一律不要信 margs.num_query_groups，直接从形状反解：out = (heads + 2*kv) * head_dim
+    first_qkv = get_path(sd, layer_key(0, "self_attention.query_key_value.weight"))
+    if first_qkv.shape[0] % head_dim != 0:
+        raise ValueError("qkv 行数 %d 不能被 head_dim %d 整除，无法反推 kv_heads"
+                         % (first_qkv.shape[0], head_dim))
+    n_units = first_qkv.shape[0] // head_dim
+    rem = n_units - heads
+    if rem < 2 or rem % 2 != 0:
+        raise ValueError(
+            "qkv 形状异常：units=%d, heads=%d ⇒ 剩余 %d 不是合法的 2*kv_heads。"
+            "请核对 head_dim(=%d) 是否等于 kv_channels。" % (n_units, heads, rem, head_dim))
+    kv_heads = rem // 2
+    if heads % kv_heads != 0:
+        raise ValueError("heads(%d) 必须能被 kv_heads(%d) 整除" % (heads, kv_heads))
+    print("[i] 由 qkv 实际形状反推：kv_heads=%d （ckpt args 里 num_query_groups=%d）" % (kv_heads, qg))
+    if kv_heads != qg:
+        print("[!] 两者不一致 —— 以形状为准。说明训练时 --num-query-groups=%d 未真正生效，"
+              "实际训出来的是 kv_heads=%d 的注意力结构。" % (qg, kv_heads))
+
     # ---- 逐层 ----
     for i in range(num_layers):
-        pre = "layers.%d." % i
         hf = "model.layers.%d." % i
 
-        out[hf + "input_layernorm.weight"] = enc[pre + "input_layernorm.weight"].to(dtype).clone()
-        out[hf + "post_attention_layernorm.weight"] = enc[pre + "post_attention_layernorm.weight"].to(dtype).clone()
+        out[hf + "input_layernorm.weight"] = get_path(sd, layer_key(i, "input_layernorm.weight")).to(dtype).clone()
+        out[hf + "post_attention_layernorm.weight"] = get_path(sd, layer_key(i, "post_attention_layernorm.weight")).to(dtype).clone()
 
-        qkv = enc[pre + "self_attention.query_key_value.weight"]
-        q, k, v = split_qkv_gqa(qkv, heads, qg, head_dim)
+        qkv = get_path(sd, layer_key(i, "self_attention.query_key_value.weight"))
+        q, k, v = split_qkv_gqa(qkv, heads, kv_heads, head_dim)
         out[hf + "self_attn.q_proj.weight"] = q.to(dtype).clone()
         out[hf + "self_attn.k_proj.weight"] = k.to(dtype).clone()
         out[hf + "self_attn.v_proj.weight"] = v.to(dtype).clone()
 
-        out[hf + "self_attn.o_proj.weight"] = enc[pre + "self_attention.dense.weight"].to(dtype).clone()
+        out[hf + "self_attn.o_proj.weight"] = get_path(sd, layer_key(i, "self_attention.dense.weight")).to(dtype).clone()
 
         # SwiGLU：Megatron 是 silu(前半) * 后半 ⇒ 前半 gate，后半 up
-        w = enc[pre + "mlp.dense_h_to_4h.weight"]
+        w = get_path(sd, layer_key(i, "mlp.dense_h_to_4h.weight"))
         if w.shape[0] != 2 * ffn:
             raise ValueError("dense_h_to_4h 行数 %d != 2*ffn %d" % (w.shape[0], 2 * ffn))
         out[hf + "mlp.gate_proj.weight"] = w[:ffn, :].to(dtype).clone()
         out[hf + "mlp.up_proj.weight"] = w[ffn:, :].to(dtype).clone()
-        out[hf + "mlp.down_proj.weight"] = enc[pre + "mlp.dense_4h_to_h.weight"].to(dtype).clone()
+        out[hf + "mlp.down_proj.weight"] = get_path(sd, layer_key(i, "mlp.dense_4h_to_h.weight")).to(dtype).clone()
 
         if (i + 1) % 8 == 0 or i == 0:
             print("    已转换 %d/%d 层" % (i + 1, num_layers))
@@ -291,7 +367,7 @@ def convert(args):
         "intermediate_size": ffn,
         "num_hidden_layers": num_layers,
         "num_attention_heads": heads,
-        "num_key_value_heads": qg,
+        "num_key_value_heads": kv_heads,
         "head_dim": head_dim,
         "vocab_size": vocab_size,
         "max_position_embeddings": args.max_position_embeddings,
@@ -301,7 +377,7 @@ def convert(args):
         # 写成 true 会让 HF/vLLM 随机初始化一份 bias，是静默错误。
         "qkv_bias": False,
         "mlp_bias": False,
-        "tie_word_embeddings": False,
+        "tie_word_embeddings": bool(tie),
         "use_cache": True,
         "torch_dtype": args.dtype,
         "bos_token_id": args.eos_token_id,
@@ -351,7 +427,7 @@ def convert(args):
     print("    参数量   : %.3f B" % (total / 1e9))
     print("    dtype    : %s" % args.dtype)
     print("    config   : vocab=%d layers=%d hidden=%d heads=%d kv_heads=%d rope_theta=%s"
-          % (vocab_size, num_layers, hidden, heads, qg, args.rope_theta))
+          % (vocab_size, num_layers, hidden, heads, kv_heads, args.rope_theta))
     print("\n[!] 两个必须人工核对的点：")
     print("    1) rope_theta=%s 必须等于训练时的 --rotary-emb-base（该 fork 默认 10000）"
           % args.rope_theta)
