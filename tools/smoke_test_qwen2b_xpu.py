@@ -42,7 +42,7 @@ def main():
     print("[2/4] 加载模型 (fp16) 并搬到 XPU ...")
     model = AutoModelForCausalLM.from_pretrained(
         a.model_dir, torch_dtype=torch.float16, attn_implementation="eager")
-    model = model.to("xpu")
+    model = model.to("cuda")
     model.eval()
     n_params = sum(p.numel() for p in model.parameters())
     print("      参数量: %.3f B" % (n_params / 1e9))
@@ -50,8 +50,8 @@ def main():
     print("[3/4] XPU 上 forward pass ...")
     prompt = "The patient presents with"
     enc = tok(prompt, return_tensors="pt")
-    input_ids = enc["input_ids"].to("xpu")
-    attention_mask = enc["attention_mask"].to("xpu")
+    input_ids = enc["input_ids"].to("cuda")
+    attention_mask = enc["attention_mask"].to("cuda")
     with torch.no_grad():
         out = model(input_ids=input_ids, attention_mask=attention_mask)
     logits = out.logits
