@@ -6,7 +6,7 @@
 
 与 CPU 版 smoke_test_qwen2b.py 的差异：
   1. torch_dtype=float16（贴近 vllm 实际）
-  2. model / 输入 显式 .to("xpu")
+  2. model / 输入 显式 .to("cuda")（昆仑芯训练容器把 XPU 伪装成 cuda，无 torch.xpu 接口）
   3. attn_implementation="eager"（绕开 sdpa 在 xpytorch 上可能缺失的 XPU 后端）
 
 用法：
@@ -26,11 +26,15 @@ def main():
     ap.add_argument("--model-dir", default="/workspace/hf_qwen2b")
     a = ap.parse_args()
 
-    has_xpu = hasattr(torch, "xpu") and callable(getattr(torch.xpu, "is_available", None))
-    print("[check] torch:", torch.__version__, "| has_xpu:", has_xpu)
-    if has_xpu:
-        print("[check] xpu is_available:", torch.xpu.is_available(),
-              "| device_count:", torch.xpu.device_count())
+    print("[check] torch:", torch.__version__,
+          "| cuda is_available:", torch.cuda.is_available())
+    if torch.cuda.is_available():
+        try:
+            dev_name = torch.cuda.get_device_name(0)
+        except Exception:
+            dev_name = "?"
+        print("[check] cuda device_count:", torch.cuda.device_count(),
+              "| device_name:", dev_name)
 
     print("[1/4] 加载 tokenizer ...")
     tok = AutoTokenizer.from_pretrained(a.model_dir)
